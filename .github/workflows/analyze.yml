@@ -1,0 +1,43 @@
+name: 代码分析
+
+on:
+  workflow_call:
+  pull_request:
+  push:
+    branches:
+      - main
+      - 'feature/**'
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      PUB_HOSTED_URL: https://mirrors.cloud.tencent.com/dart-pub/
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version-file: .fvmrc
+          architecture: x64
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - name: 检查 Dart 格式
+        run: dart format --output=none --set-exit-if-changed lib test
+      - run: flutter analyze --no-pub
+      - run: flutter test --no-pub --coverage
+      - name: 上传 Dart 覆盖率报告
+        uses: actions/upload-artifact@v7
+        with:
+          name: dart-coverage
+          path: coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 14
