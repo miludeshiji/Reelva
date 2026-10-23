@@ -146,7 +146,9 @@ void main() {
       },
     );
 
-    testWidgets('Home empty state action links to sources page', (tester) async {
+    testWidgets('Home empty state action links to sources page', (
+      tester,
+    ) async {
       final db = AppDatabase(executor: NativeDatabase.memory());
       addTearDown(db.close);
       tester.view.physicalSize = const Size(800, 600);
@@ -174,7 +176,9 @@ void main() {
       }
     });
 
-    testWidgets('Direct routes navigate to specified destinations', (tester) async {
+    testWidgets('Direct routes navigate to specified destinations', (
+      tester,
+    ) async {
       final db = AppDatabase(executor: NativeDatabase.memory());
       addTearDown(db.close);
       final router = createRouter(initialLocation: '/library');
