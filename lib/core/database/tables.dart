@@ -239,3 +239,83 @@ class MetadataCaches extends Table {
   @override
   Set<Column> get primaryKey => {cacheKey};
 }
+
+@DataClassName('SyncStateData')
+class SyncState extends Table {
+  @override
+  String get tableName => 'sync_state';
+
+  TextColumn get key => text()();
+  TextColumn get value => text()();
+
+  @override
+  Set<Column> get primaryKey => {key};
+}
+
+@DataClassName('SyncCursorData')
+class SyncCursors extends Table {
+  @override
+  String get tableName => 'sync_cursors';
+
+  TextColumn get deviceId => text()();
+  IntColumn get lastSequence => integer()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {deviceId};
+}
+
+@DataClassName('SyncLocalRegisterData')
+class SyncLocalRegisters extends Table {
+  @override
+  String get tableName => 'sync_local_registers';
+
+  TextColumn get recordKey => text()();
+  TextColumn get kind => text()();
+  TextColumn get targetId => text()();
+  TextColumn get targetJson => text()();
+  IntColumn get versionStamp => integer()();
+  TextColumn get versionDeviceId => text()();
+  TextColumn get valueJson => text()();
+  BoolColumn get dirty => boolean().withDefault(const Constant(false))();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {recordKey};
+}
+
+@DataClassName('SyncOutboxData')
+class SyncOutbox extends Table {
+  @override
+  String get tableName => 'sync_outbox';
+
+  IntColumn get sequence => integer()();
+  TextColumn get recordKey => text()();
+  TextColumn get kind => text()();
+  TextColumn get targetJson => text()();
+  IntColumn get versionStamp => integer()();
+  TextColumn get versionDeviceId => text()();
+  TextColumn get valueJson => text()();
+  IntColumn get createdAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {sequence, recordKey};
+}
+
+@DataClassName('SyncPendingData')
+class SyncPending extends Table {
+  @override
+  String get tableName => 'sync_pending';
+
+  TextColumn get recordKey => text()();
+  TextColumn get kind => text()();
+  TextColumn get targetId => text()();
+  TextColumn get targetJson => text()();
+  IntColumn get versionStamp => integer()();
+  TextColumn get versionDeviceId => text()();
+  TextColumn get valueJson => text()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {recordKey};
+}

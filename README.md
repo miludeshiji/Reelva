@@ -2,7 +2,7 @@
 
 Reelva 是一个客户端优先的跨平台影视库与播放器项目，首批目标平台为 Windows 和 Android。
 
-M0 工程基线与 M1 播放器最小闭环已由用户验收。本轮实施范围为 M5：在既有本地/SAF 媒体源、SQLite/Drift 索引、影视识别、海报墙和观看进度之上，接入 WebDAV、OpenList 与 SMB 网络媒体源。Windows / Android 原生应用验收限制继续保留；M5 成果等待用户审查，审查前不进入 M6。
+M0～M5 的既有实现继续保留。本轮实施范围为 M6：在现有媒体源、影视库、人工元数据修正和观看进度之上，提供可选的跨设备增量同步。同步不影响离线使用，也不上传视频文件。Windows / Android 原生应用的历史验收限制继续保留，M6 的验证结果见 [M6 验收记录](docs/M6-Acceptance.md)。
 
 ## 开发环境与检查
 
@@ -12,12 +12,12 @@ M0 工程基线与 M1 播放器最小闭环已由用户验收。本轮实施范�
 fvm install
 fvm flutter --version
 fvm flutter pub get
-fvm dart format --output=none --set-exit-if-changed lib test
+fvm dart format --output=none --set-exit-if-changed .
 fvm flutter analyze --no-pub
 fvm flutter test --no-pub
 ```
 
-需要应用格式化修改时，运行 `fvm dart format lib test`。静态检查使用 `flutter_lints`，并启用严格类型转换、类型推断和泛型检查。应用依赖版本由 `pubspec.lock` 锁定。CI 在 Ubuntu 24.04 上运行；本地文件系统测试使用实际大小写路径，externalId 仅 Windows 转小写，其他平台保留大小写。
+开发完成后运行 `fvm dart format .`，再执行上述格式检查。静态检查使用 `flutter_lints`，并启用严格类型转换、类型推断和泛型检查。应用依赖版本由 `pubspec.lock` 锁定。CI 在 Ubuntu 24.04 上运行；本地文件系统测试使用实际大小写路径，externalId 仅 Windows 转小写，其他平台保留大小写。
 
 ### 本地启动
 
@@ -40,23 +40,24 @@ Windows 需要 Visual Studio 的桌面 C++ 工具链；新增的 `flutter_secure
 | --- | --- |
 | `lib/main.dart` | 绑定、错误处理、media_kit 与 Windows 窗口初始化，Riverpod 入口 |
 | `lib/app/` | 根应用、路由和自适应导航 |
-| `lib/core/database/` | SQLite / Drift 数据库结构定义与迁移管理（Schema v2，保留 v1 数据） |
+| `lib/core/database/` | SQLite / Drift 数据库结构定义与迁移管理（Schema v3，保留 v1/v2 数据） |
 | `lib/core/errors/`、`lib/core/logging/` | 错误处理与日志脱敏 |
 | `lib/features/sources/` | 本地/SAF、WebDAV、OpenList、SMB 媒体源管理与扫描，安全凭据、远程播放解析及按需读取桥接 |
 | `lib/features/library/` | 作品分页海报墙、电影/季集详情、多版本选择与解析播放 |
 | `lib/features/metadata/` | 文件名解析、TMDB 请求与缓存、匹配评分、自动/手动匹配及安全凭据 |
 | `lib/features/player/` | 播放器领域、应用、基础设施与播放界面分层 |
 | `lib/features/home/`、`lib/features/progress/` | 首页继续观看与最近添加、按作品/剧集保存进度、节流与播放生命周期管理 |
-| `lib/features/settings/` | TMDB 凭据、缓存管理与关于界面 |
+| `lib/features/settings/` | TMDB 凭据、缓存管理、同步设置入口与关于界面 |
+| `lib/features/sync/` | 稳定作品身份、增量批次、冲突合并、同步状态与可选 WebDAV 传输 |
 | `lib/shared/widgets/` | 共用空状态、品牌标识与有回收策略的海报图片缓存 |
-| `test/` | 导航、数据库迁移、文件名识别、匹配与锁定、缓存/限流、扫描及播放流程测试 |
+| `test/` | 导航、数据库迁移、识别与匹配、扫描与播放、同步合并及协议测试 |
 | `android/`、`windows/` | 原生平台工程 |
 
 UI 通过 `SourceController` 驱动媒体源操作与扫描，通过 `MediaSourceAdapter` 访问本地文件系统、SAF 或网络协议，通过 `MediaLibraryRepository` 持久化索引和作品关联。播放使用 `PlaybackResource`：网络源在真正打开或重试时准备播放租约，退出、停止或切换时释放。播放器通过 `PlayerEngine` 和 `PlaybackSession` 管理生命周期，不依赖具体网络源协议。
 
-数据库沿用 Drift Schema v2，在原有 8 张表上增加的 `external_ids` 与 `metadata_cache` 及 v1 增表、增列迁移保持不变。M4 直接使用已有 `playback_progress` 表，按电影作品或具体剧集保存进度及最近播放文件 ID；同一目标切换文件版本时共享进度。保存事务会重新确认文件当前关联，以兼容后台元数据合并；移除媒体源仍保留观看历史。
+数据库使用 Drift Schema v3，保留 v1/v2 的升级路径、媒体索引、元数据缓存、人工锁定与观看历史；新增同步状态，不重建既有数据库。观看进度仍按电影作品或具体剧集保存，同一目标切换文件版本时共享进度；保存事务重新确认文件当前关联，兼容后台元数据合并，移除媒体源仍保留历史。
 
-M5 复用已有 `media_sources.credential_ref`，只在 SQLite 保存安全存储引用及稳定目录/文件身份，不保存密码、API Token 或临时签名直链；本轮不变更 Schema、不重建数据库。
+网络媒体源继续复用已有 `media_sources.credential_ref`，SQLite 只保存安全存储引用与稳定文件身份。同步配置单独保存在系统安全存储，不纳入同步载荷；密码、API Token 和临时签名直链不会写入同步批次。
 
 | 核心依赖 | 锁定版本 |
 | --- | --- |
@@ -87,6 +88,17 @@ Android 工程使用 Flutter 3.47.7 模板的 AGP 9.1.0、Gradle 9.3.1 和 Kotli
 本机依赖解析沿用了既有腾讯云 Pub 镜像配置，下载源及校验摘要记录于 `pubspec.lock`。未修改全局 SDK、下载镜像、Android 许可证或 adb 配置。
 
 `dart_smb2` 使用 worker isolate 和 libsmb2 原生共享库；首次执行对应平台的测试/构建时，其 hook 从固定的 `libsmb2-r9` 下载原生库并核对 SHA-256，Android 最低 API 24 与项目设置一致。原生库采用 LGPL-2.1+，关于页及第三方许可证入口已登记完整许可文本与[上游源码](https://github.com/sahlberg/libsmb2)、[对应二进制构建来源](https://github.com/ales-drnz/dart_smb2/releases/tag/libsmb2-r9)。未经授权仍不得构建应用。
+
+## M6 跨设备同步使用
+
+1. **配置**：在「设置 → 跨设备同步」填写已有 WebDAV 目录与可选用户名、密码。多台设备使用同一目录，Reelva 在其中创建独立的 `reelva-sync-v1` 子目录。同步默认关闭，保存配置后由「立即同步」手动执行；不需要部署 Reelva 后端。
+2. **同步内容**：观看进度、已看状态和人工修正的标题、年份、简介、海报路径。电影使用包含类型的 TMDB ID，剧集再使用真实季号与集号；两端的数据库编号、文件路径和媒体源可以不同。最近选择的文件版本由各设备保留，视频、目录索引、账号密码和 TMDB 凭据均不上传。
+3. **增量与恢复**：首次同步发送已有的可同步记录，随后仅发送发生变化的记录；未变化时仅查询远端批次列表。未完成的上传保存在本地，失败后可再次点击同步。已接收批次不会重复下载或重复生成本地变更；同步期间新产生的本地修改可在下次同步发送。
+4. **冲突处理**：进度与人工元数据分别按版本自动合并；同一条记录同时修改时，按修改时间及设备标识确定唯一结果，不逐项弹出确认。主动回退进度、从头重看和清空可编辑字段也是有效修改。建议设备保持正确的系统时间。
+5. **本地候选与待应用记录**：没有 TMDB 身份的本地候选仍可正常播放与保存进度，不按同名文件猜测跨设备身份。收到记录但本机尚无相应作品或季集时，保留为待应用记录；本机完成扫描与匹配后再次同步即可应用。不会为此创建虚假的媒体文件或下载视频。
+6. **停用与换目录**：停用删除本机同步配置，保留本地媒体库与观看历史，远端既有同步记录也保留。更换目录会重新发送本机已关联作品的同步状态，尚未关联的待应用记录仍保存在本机。密码留空仅在目录和用户名均不变时沿用；更换目录或用户名时需重新填写，清除同一账号的密码可先停用再配置。服务端管理员可读取同步目录中的观看记录和人工修正，同步数据没有额外的端到端加密。
+
+当前实现采用不可变增量批次，远端历史文件不会自动压缩或清理，批次较多时目录列表会增长。仅提供手动同步；未添加收藏、账号系统或后台同步任务。协议、双客户端持久化验证、全部变更文件和设备限制见 [M6 验收记录](docs/M6-Acceptance.md)。
 
 ## M5 网络媒体源使用
 
@@ -135,7 +147,7 @@ Android 工程使用 Flutter 3.47.7 模板的 AGP 9.1.0、Gradle 9.3.1 和 Kotli
 
 ## 验证现状说明
 
-本轮 M5 的静态分析、单元/Widget 测试及真实协议 smoke 结果见 [M5 验收记录](docs/M5-Acceptance.md)。M4 的进度与本地文件/磁盘 SQLite 验证记录保留于 [M4 验收记录](docs/M4-Acceptance.md)。此前 M3 首次交付为 198 项测试通过，后续有手动匹配回归记录；各阶段测试替身和 Widget 渲染均不等同于 Windows / Android 真机验收。
+本轮 M6 的静态分析、单元/Widget 测试及双客户端同步 smoke 结果见 [M6 验收记录](docs/M6-Acceptance.md)。既有网络协议证据保留于 [M5 验收记录](docs/M5-Acceptance.md)，进度与本地文件/磁盘 SQLite 验证记录保留于 [M4 验收记录](docs/M4-Acceptance.md)。测试替身和 Widget 渲染均不等同于 Windows / Android 真机验收。
 
 重新生成启动图标时，在安装 `resvg-py` 与 `Pillow` 后执行 `python tool/generate_icons.py`；应用运行不依赖 Python。Android 自适应图标使用黑色背景和带安全边距的前景。
 

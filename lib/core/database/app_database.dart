@@ -17,6 +17,11 @@ part 'app_database.g.dart';
     PlaybackProgresses,
     ExternalIds,
     MetadataCaches,
+    SyncState,
+    SyncCursors,
+    SyncLocalRegisters,
+    SyncOutbox,
+    SyncPending,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -24,7 +29,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? driftDatabase(name: 'reelva'));
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) async {
@@ -92,6 +97,13 @@ class AppDatabase extends _$AppDatabase {
         await m.addColumn(mediaFiles, mediaFiles.candidateSeasonNumber);
         await m.addColumn(mediaFiles, mediaFiles.candidateEpisodeNumber);
         await m.addColumn(mediaFiles, mediaFiles.candidateDetails);
+      }
+      if (from < 3) {
+        await m.createTable(syncState);
+        await m.createTable(syncCursors);
+        await m.createTable(syncLocalRegisters);
+        await m.createTable(syncOutbox);
+        await m.createTable(syncPending);
       }
     },
     beforeOpen: (details) async {

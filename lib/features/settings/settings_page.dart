@@ -7,12 +7,13 @@ import '../../shared/widgets/poster_image.dart';
 import '../metadata/application/metadata_providers.dart';
 import '../metadata/domain/tmdb_models.dart';
 import '../metadata/infrastructure/tmdb_token_store.dart';
+import '../sync/presentation/sync_settings_card.dart';
 
 /// 设置页面
 ///
 /// 包含：
 /// 1. TMDB 凭据配置（支持 API Key 与 Bearer Token，输入框受控遮蔽防泄漏，从不回显旧凭据）；
-/// 2. 凭据配置状态与安全清除；
+/// 2. WebDAV 跨设备同步配置（手动触发、凭据不回显、断点续传）；
 /// 3. 磁盘海报图片缓存清理；
 /// 4. 关于 Reelva、TMDB 官方归属与许可证入口。
 class SettingsPage extends ConsumerStatefulWidget {
@@ -362,8 +363,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 ),
               ),
               const SizedBox(height: 16),
+              // 2. WebDAV 跨设备同步卡片
+              const SyncSettingsCard(),
+              const SizedBox(height: 16),
 
-              // 2. 缓存管理卡片
+              // 3. 缓存管理卡片
               Card(
                 elevation: 0,
                 shape: RoundedRectangleBorder(
