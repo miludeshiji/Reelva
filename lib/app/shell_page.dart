@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:reelva/shared/widgets/reelva_logo.dart';
 
 class AppShell extends StatelessWidget {
   const AppShell({super.key, required this.navigationShell});
@@ -29,14 +30,7 @@ class AppShell extends StatelessWidget {
               labelType: NavigationRailLabelType.all,
               leading: const Padding(
                 padding: EdgeInsets.symmetric(vertical: 20.0),
-                child: Text(
-                  'Reelva',
-                  style: TextStyle(
-                    fontSize: 20.0,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.5,
-                  ),
-                ),
+                child: ReelvaLogo(size: 40.0),
               ),
               destinations: const [
                 NavigationRailDestination(

@@ -7,6 +7,7 @@ import 'package:reelva/features/library/library_page.dart';
 import 'package:reelva/features/settings/settings_page.dart';
 import 'package:reelva/features/sources/sources_page.dart';
 import 'package:reelva/shared/widgets/empty_state_view.dart';
+import 'package:reelva/features/player/presentation/player_page.dart';
 
 GoRouter createRouter({String initialLocation = '/'}) {
   return GoRouter(
@@ -48,6 +49,7 @@ GoRouter createRouter({String initialLocation = '/'}) {
           ),
         ],
       ),
+      GoRoute(path: '/player', builder: (context, state) => const PlayerPage()),
     ],
     errorBuilder: (context, state) => Scaffold(
       appBar: AppBar(title: const Text('Reelva')),
