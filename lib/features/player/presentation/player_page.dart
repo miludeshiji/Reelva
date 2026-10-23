@@ -23,7 +23,9 @@ import 'player_controls.dart';
 /// 全屏时复用同一直属视频渲染曲面；原生全屏操作成功后才更新 UI 状态，失败弹窗安全提示且不锁死；
 /// 返回操作受 PopScope 严格接管，全屏时优先退出全屏，非全屏退出路由（支持返回首页回退）。
 class PlayerPage extends ConsumerStatefulWidget {
-  const PlayerPage({super.key});
+  const PlayerPage({super.key, this.initialResource});
+
+  final PlaybackResource? initialResource;
 
   @override
   ConsumerState<PlayerPage> createState() => _PlayerPageState();
@@ -42,6 +44,27 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (widget.initialResource != null) {
+      _currentResource = widget.initialResource;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _openInitialResource();
+      });
+    }
+  }
+
+  Future<void> _openInitialResource() async {
+    final resource = widget.initialResource;
+    if (resource == null) return;
+    final actionId = ++_actionCounter;
+    try {
+      if (!mounted || _isExiting || actionId != _actionCounter) return;
+      await ref.read(playerSessionProvider).engine.open(resource);
+    } catch (e, st) {
+      if (!mounted || _isExiting || actionId != _actionCounter) return;
+      AppLogger.instance.error('打开初始视频资源异常', error: e, stackTrace: st);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('无法播放视频，请重试')));
+    }
   }
 
   @override
