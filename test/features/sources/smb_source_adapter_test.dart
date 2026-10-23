@@ -487,44 +487,41 @@ void main() {
       );
     });
 
-    test(
-      '权威 NT 认证状态即使底层为 connection 依然映射为 authentication_failed，无状态的 PDU 解析异常与网络拒绝保持 connection_failed',
-      () {
-        const logonFailureWithConnection = Smb2Exception(
-          'Cannot connect: STATUS_LOGON_FAILURE',
-          type: Smb2ErrorType.connection,
-          ntStatus: 0xC000006D,
-        );
-        final mapped1 = mapSmbException(logonFailureWithConnection);
-        expect(mapped1.code, 'authentication_failed');
-        expect(mapped1.message, contains('认证失败'));
+    test('权威 NT 认证状态即使底层为 connection 依然映射为 authentication_failed，无状态的 PDU 解析异常与网络拒绝保持 connection_failed', () {
+      const logonFailureWithConnection = Smb2Exception(
+        'Cannot connect: STATUS_LOGON_FAILURE',
+        type: Smb2ErrorType.connection,
+        ntStatus: 0xC000006D,
+      );
+      final mapped1 = mapSmbException(logonFailureWithConnection);
+      expect(mapped1.code, 'authentication_failed');
+      expect(mapped1.message, contains('认证失败'));
 
-        const wrongPasswordWithConnection = Smb2Exception(
-          'Session setup failed (0xC000006A)',
-          type: Smb2ErrorType.connection,
-        );
-        final mapped2 = mapSmbException(wrongPasswordWithConnection);
-        expect(mapped2.code, 'authentication_failed');
-        expect(mapped2.message, contains('认证失败'));
+      const wrongPasswordWithConnection = Smb2Exception(
+        'Session setup failed (0xC000006A)',
+        type: Smb2ErrorType.connection,
+      );
+      final mapped2 = mapSmbException(wrongPasswordWithConnection);
+      expect(mapped2.code, 'authentication_failed');
+      expect(mapped2.message, contains('认证失败'));
 
-        const unclassifiedPduError = Smb2Exception(
-          'Cannot connect to //127.0.0.1:1445/MEDIA: smb2_service failed with : Failed to parse fixed part of command payload. Error data extends beyond end of PDU',
-          type: Smb2ErrorType.connection,
-        );
-        final mapped3 = mapSmbException(unclassifiedPduError);
-        expect(mapped3.code, 'connection_failed');
-        expect(mapped3.message, '无法建立 SMB 会话，请检查网络、账号密码或服务端协议兼容性');
+      const unclassifiedPduError = Smb2Exception(
+        'Cannot connect to //127.0.0.1:1445/MEDIA: smb2_service failed with : Failed to parse fixed part of command payload. Error data extends beyond end of PDU',
+        type: Smb2ErrorType.connection,
+      );
+      final mapped3 = mapSmbException(unclassifiedPduError);
+      expect(mapped3.code, 'connection_failed');
+      expect(mapped3.message, '无法建立 SMB 会话，请检查网络、账号密码或服务端协议兼容性');
 
-        const connRefused = Smb2Exception(
-          'Cannot connect to //127.0.0.1:1445/MEDIA: socket connect failed with errno 111 (Connection refused)',
-          type: Smb2ErrorType.connection,
-          errno: 111,
-        );
-        final mappedNet = mapSmbException(connRefused);
-        expect(mappedNet.code, 'connection_failed');
-        expect(mappedNet.message, '无法建立 SMB 会话，请检查网络、账号密码或服务端协议兼容性');
-      },
-    );
+      const connRefused = Smb2Exception(
+        'Cannot connect to //127.0.0.1:1445/MEDIA: socket connect failed with errno 111 (Connection refused)',
+        type: Smb2ErrorType.connection,
+        errno: 111,
+      );
+      final mappedNet = mapSmbException(connRefused);
+      expect(mappedNet.code, 'connection_failed');
+      expect(mappedNet.message, '无法建立 SMB 会话，请检查网络、账号密码或服务端协议兼容性');
+    });
   });
 
   group('SmbByteReader Behavioral Tests via Callback Injection', () {

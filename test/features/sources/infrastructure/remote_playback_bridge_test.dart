@@ -272,127 +272,121 @@ void main() {
       },
     );
 
-    test(
-      'rejects 206 where Content-Range end or total does not match requested range',
-      () async {
-        const fullSize = 500;
+    test('rejects 206 where Content-Range end or total does not match requested range', () async {
+      const fullSize = 500;
 
-        upstreamServer.listen((req) async {
-          final range = req.headers.value(HttpHeaders.rangeHeader);
-          if (range == 'bytes=0-0') {
-            req.response.statusCode = HttpStatus.partialContent;
-            req.response.headers.set(
-              HttpHeaders.contentRangeHeader,
-              'bytes 0-0/$fullSize',
-            );
-            req.response.headers.set(HttpHeaders.contentLengthHeader, 1);
-            req.response.add([0]);
-            await req.response.close();
-          } else {
-            // 返回了错误的 end 范围 (请求 50-99，返回 50-70)
-            req.response.statusCode = HttpStatus.partialContent;
-            req.response.headers.set(
-              HttpHeaders.contentRangeHeader,
-              'bytes 50-70/$fullSize',
-            );
-            req.response.headers.set(HttpHeaders.contentLengthHeader, 21);
-            req.response.add(List<int>.filled(21, 0));
-            await req.response.close();
-          }
-        });
-
-        final resource = await bridge.open(
-          displayName: 'Mismatched Range',
-          resolve: ({required bool refresh, CancelToken? cancelToken}) async =>
-              RemotePlaybackTarget(uri: upstreamUri.resolve('/mismatch.mp4')),
-        );
-
-        String? emittedError;
-        final sub = resource.errors?.listen((err) => emittedError = err);
-
-        final testClient = HttpClient();
-        try {
-          final getReq = await testClient.getUrl(resource.uri);
-          getReq.headers.set(HttpHeaders.rangeHeader, 'bytes=50-99');
-          final getResp = await getReq.close();
-          expect(getResp.statusCode, HttpStatus.badGateway);
-          await getResp.drain<void>();
-
-          await pumpEventQueue();
-          expect(emittedError, '远程媒体分段范围不匹配');
-        } finally {
-          await sub?.cancel();
-          testClient.close(force: true);
-          await resource.release?.call();
-        }
-      },
-    );
-
-    test(
-      'cancels cleanly when released during pending link refresh and creates no upstream request',
-      () async {
-        int upstreamRequestCount = 0;
-        final refreshCompleter = Completer<RemotePlaybackTarget>();
-
-        upstreamServer.listen((req) async {
-          upstreamRequestCount++;
-          final range = req.headers.value(HttpHeaders.rangeHeader);
-          if (range == 'bytes=0-0') {
-            // 探测请求正常返回 206
-            req.response.statusCode = HttpStatus.partialContent;
-            req.response.headers.set(
-              HttpHeaders.contentRangeHeader,
-              'bytes 0-0/1000',
-            );
-            req.response.headers.set(HttpHeaders.contentLengthHeader, 1);
-            req.response.add([0]);
-            await req.response.close();
-          } else {
-            // 实际 GET 返回 403 诱发 target refresh
-            req.response.statusCode = HttpStatus.forbidden;
-            await req.response.close();
-          }
-        });
-
-        // 初始 target 未过期，允许 bridge.open 及 probe 正常完成初始化准备
-        final resource = await bridge.open(
-          displayName: 'Pending Refresh Test',
-          resolve: ({required bool refresh, CancelToken? cancelToken}) async {
-            if (refresh) {
-              return refreshCompleter.future;
-            }
-            return RemotePlaybackTarget(uri: upstreamUri.resolve('/video.mp4'));
-          },
-        );
-
-        final testClient = HttpClient();
-        try {
-          // 发起 GET 请求：由于 403 触发 resolve(refresh: true) 挂起在 refreshCompleter
-          final getReq = await testClient.getUrl(resource.uri);
-          final pendingGet = getReq.close();
-
-          await pumpEventQueue();
-
-          // 在刷新悬挂等待期间调用 release：必须安全取消并退出，绝不死锁或挂起
-          await resource.release?.call();
-
-          // 刷新随后完成
-          refreshCompleter.complete(
-            RemotePlaybackTarget(uri: upstreamUri.resolve('/video.mp4')),
+      upstreamServer.listen((req) async {
+        final range = req.headers.value(HttpHeaders.rangeHeader);
+        if (range == 'bytes=0-0') {
+          req.response.statusCode = HttpStatus.partialContent;
+          req.response.headers.set(
+            HttpHeaders.contentRangeHeader,
+            'bytes 0-0/$fullSize',
           );
-
-          try {
-            final resp = await pendingGet;
-            await resp.drain<void>();
-          } catch (_) {}
-
-          // 确认因为在 release 时及时取消并竞赛，未向 upstream 发起新的重试请求（仅 1 次 probe + 1 次 403 GET）
-          expect(upstreamRequestCount, 2);
-        } finally {
-          testClient.close(force: true);
+          req.response.headers.set(HttpHeaders.contentLengthHeader, 1);
+          req.response.add([0]);
+          await req.response.close();
+        } else {
+          // 返回了错误的 end 范围 (请求 50-99，返回 50-70)
+          req.response.statusCode = HttpStatus.partialContent;
+          req.response.headers.set(
+            HttpHeaders.contentRangeHeader,
+            'bytes 50-70/$fullSize',
+          );
+          req.response.headers.set(HttpHeaders.contentLengthHeader, 21);
+          req.response.add(List<int>.filled(21, 0));
+          await req.response.close();
         }
-      },
-    );
+      });
+
+      final resource = await bridge.open(
+        displayName: 'Mismatched Range',
+        resolve: ({required bool refresh, CancelToken? cancelToken}) async =>
+            RemotePlaybackTarget(uri: upstreamUri.resolve('/mismatch.mp4')),
+      );
+
+      String? emittedError;
+      final sub = resource.errors?.listen((err) => emittedError = err);
+
+      final testClient = HttpClient();
+      try {
+        final getReq = await testClient.getUrl(resource.uri);
+        getReq.headers.set(HttpHeaders.rangeHeader, 'bytes=50-99');
+        final getResp = await getReq.close();
+        expect(getResp.statusCode, HttpStatus.badGateway);
+        await getResp.drain<void>();
+
+        await pumpEventQueue();
+        expect(emittedError, '远程媒体分段范围不匹配');
+      } finally {
+        await sub?.cancel();
+        testClient.close(force: true);
+        await resource.release?.call();
+      }
+    });
+
+    test('cancels cleanly when released during pending link refresh and creates no upstream request', () async {
+      int upstreamRequestCount = 0;
+      final refreshCompleter = Completer<RemotePlaybackTarget>();
+
+      upstreamServer.listen((req) async {
+        upstreamRequestCount++;
+        final range = req.headers.value(HttpHeaders.rangeHeader);
+        if (range == 'bytes=0-0') {
+          // 探测请求正常返回 206
+          req.response.statusCode = HttpStatus.partialContent;
+          req.response.headers.set(
+            HttpHeaders.contentRangeHeader,
+            'bytes 0-0/1000',
+          );
+          req.response.headers.set(HttpHeaders.contentLengthHeader, 1);
+          req.response.add([0]);
+          await req.response.close();
+        } else {
+          // 实际 GET 返回 403 诱发 target refresh
+          req.response.statusCode = HttpStatus.forbidden;
+          await req.response.close();
+        }
+      });
+
+      // 初始 target 未过期，允许 bridge.open 及 probe 正常完成初始化准备
+      final resource = await bridge.open(
+        displayName: 'Pending Refresh Test',
+        resolve: ({required bool refresh, CancelToken? cancelToken}) async {
+          if (refresh) {
+            return refreshCompleter.future;
+          }
+          return RemotePlaybackTarget(uri: upstreamUri.resolve('/video.mp4'));
+        },
+      );
+
+      final testClient = HttpClient();
+      try {
+        // 发起 GET 请求：由于 403 触发 resolve(refresh: true) 挂起在 refreshCompleter
+        final getReq = await testClient.getUrl(resource.uri);
+        final pendingGet = getReq.close();
+
+        await pumpEventQueue();
+
+        // 在刷新悬挂等待期间调用 release：必须安全取消并退出，绝不死锁或挂起
+        await resource.release?.call();
+
+        // 刷新随后完成
+        refreshCompleter.complete(
+          RemotePlaybackTarget(uri: upstreamUri.resolve('/video.mp4')),
+        );
+
+        try {
+          final resp = await pendingGet;
+          await resp.drain<void>();
+        } catch (_) {}
+
+        // 确认因为在 release 时及时取消并竞赛，未向 upstream 发起新的重试请求（仅 1 次 probe + 1 次 403 GET）
+        expect(upstreamRequestCount, 2);
+      } finally {
+        testClient.close(force: true);
+      }
+    });
 
     test(
       'never leaks internal URLs, tokens, or raw exception strings',

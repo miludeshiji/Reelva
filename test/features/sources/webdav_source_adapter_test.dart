@@ -375,198 +375,189 @@ void main() {
         expect(entries.length, 3);
       });
 
-      test(
-        'handles subdirectories, URL decoding, and ignores non-direct children',
-        () async {
-          const nestedXml =
-              '<?xml version="1.0" encoding="UTF-8"?>'
-              '<d:multistatus xmlns:d="DAV:">'
-              '<d:response>'
-              '<d:href>/dav/Media/Movies/</d:href>'
-              '<d:propstat>'
-              '<d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop>'
-              '<d:status>HTTP/1.1 200 OK</d:status>'
-              '</d:propstat>'
-              '</d:response>'
-              '<d:response>'
-              '<d:href>/dav/Media/Movies/Action%20Movies/</d:href>'
-              '<d:propstat>'
-              '<d:prop>'
-              '<d:resourcetype><d:collection/></d:resourcetype>'
-              '<d:getlastmodified>Fri, 23 Oct 2026 10:00:00 GMT</d:getlastmodified>'
-              '</d:prop>'
-              '<d:status>HTTP/1.1 200 OK</d:status>'
-              '</d:propstat>'
-              '</d:response>'
-              '<d:response>'
-              '<d:href>/dav/Media/Movies/Action%20Movies/Deep.mp4</d:href>'
-              '<d:propstat>'
-              '<d:prop>'
-              '<d:resourcetype/>'
-              '<d:getcontentlength>12345</d:getcontentlength>'
-              '</d:prop>'
-              '<d:status>HTTP/1.1 200 OK</d:status>'
-              '</d:propstat>'
-              '</d:response>'
-              '<d:response>'
-              '<d:href>/dav/Media/Movies/Movie%201.mp4</d:href>'
-              '<d:propstat>'
-              '<d:prop>'
-              '<d:resourcetype/>'
-              '<d:getcontentlength>1048576</d:getcontentlength>'
-              '</d:prop>'
-              '<d:status>HTTP/1.1 200 OK</d:status>'
-              '</d:propstat>'
-              '</d:response>'
-              '</d:multistatus>';
+      test('handles subdirectories, URL decoding, and ignores non-direct children', () async {
+        const nestedXml =
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<d:multistatus xmlns:d="DAV:">'
+            '<d:response>'
+            '<d:href>/dav/Media/Movies/</d:href>'
+            '<d:propstat>'
+            '<d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop>'
+            '<d:status>HTTP/1.1 200 OK</d:status>'
+            '</d:propstat>'
+            '</d:response>'
+            '<d:response>'
+            '<d:href>/dav/Media/Movies/Action%20Movies/</d:href>'
+            '<d:propstat>'
+            '<d:prop>'
+            '<d:resourcetype><d:collection/></d:resourcetype>'
+            '<d:getlastmodified>Fri, 23 Oct 2026 10:00:00 GMT</d:getlastmodified>'
+            '</d:prop>'
+            '<d:status>HTTP/1.1 200 OK</d:status>'
+            '</d:propstat>'
+            '</d:response>'
+            '<d:response>'
+            '<d:href>/dav/Media/Movies/Action%20Movies/Deep.mp4</d:href>'
+            '<d:propstat>'
+            '<d:prop>'
+            '<d:resourcetype/>'
+            '<d:getcontentlength>12345</d:getcontentlength>'
+            '</d:prop>'
+            '<d:status>HTTP/1.1 200 OK</d:status>'
+            '</d:propstat>'
+            '</d:response>'
+            '<d:response>'
+            '<d:href>/dav/Media/Movies/Movie%201.mp4</d:href>'
+            '<d:propstat>'
+            '<d:prop>'
+            '<d:resourcetype/>'
+            '<d:getcontentlength>1048576</d:getcontentlength>'
+            '</d:prop>'
+            '<d:status>HTTP/1.1 200 OK</d:status>'
+            '</d:propstat>'
+            '</d:response>'
+            '</d:multistatus>';
 
-          httpClient.handler =
-              (
-                uri, {
-                required method,
-                required headers,
-                required data,
-                required responseType,
-                cancelToken,
-              }) async {
-                expect(
-                  uri.toString(),
-                  'http://127.0.0.1:15244/dav/Media/Movies/',
-                );
-                return Response<dynamic>(
-                  requestOptions: RequestOptions(path: uri.toString()),
-                  statusCode: 207,
-                  data: Stream.value(nestedXml),
-                );
-              };
+        httpClient.handler =
+            (
+              uri, {
+              required method,
+              required headers,
+              required data,
+              required responseType,
+              cancelToken,
+            }) async {
+              expect(
+                uri.toString(),
+                'http://127.0.0.1:15244/dav/Media/Movies/',
+              );
+              return Response<dynamic>(
+                requestOptions: RequestOptions(path: uri.toString()),
+                statusCode: 207,
+                data: Stream.value(nestedXml),
+              );
+            };
 
-          final entries = await adapter.listEntries(source, 'Movies').toList();
+        final entries = await adapter.listEntries(source, 'Movies').toList();
 
-          expect(entries.length, 2);
+        expect(entries.length, 2);
 
-          final dirEntry = entries.firstWhere((e) => e.isDirectory);
-          expect(dirEntry.name, 'Action Movies');
-          expect(dirEntry.externalId, 'Movies/Action Movies');
-          expect(dirEntry.locator, 'Movies/Action Movies');
-          expect(dirEntry.size, isNull);
+        final dirEntry = entries.firstWhere((e) => e.isDirectory);
+        expect(dirEntry.name, 'Action Movies');
+        expect(dirEntry.externalId, 'Movies/Action Movies');
+        expect(dirEntry.locator, 'Movies/Action Movies');
+        expect(dirEntry.size, isNull);
 
-          final fileEntry = entries.firstWhere((e) => !e.isDirectory);
-          expect(fileEntry.name, 'Movie 1.mp4');
-          expect(fileEntry.externalId, 'Movies/Movie 1.mp4');
-          expect(fileEntry.size, 1048576);
-        },
-      );
+        final fileEntry = entries.firstWhere((e) => !e.isDirectory);
+        expect(fileEntry.name, 'Movie 1.mp4');
+        expect(fileEntry.externalId, 'Movies/Movie 1.mp4');
+        expect(fileEntry.size, 1048576);
+      });
 
-      test(
-        'fails listing when a child returns 403 Forbidden (preserves failure)',
-        () async {
-          const with403ChildXml =
-              '<?xml version="1.0" encoding="UTF-8"?>'
-              '<D:multistatus xmlns:D="DAV:">'
-              '<D:response>'
-              '<D:href>/dav/Media/</D:href>'
-              '<D:propstat>'
-              '<D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop>'
-              '<D:status>HTTP/1.1 200 OK</D:status>'
-              '</D:propstat>'
-              '</D:response>'
-              '<D:response>'
-              '<D:href>/dav/Media/Allowed.mp4</D:href>'
-              '<D:propstat>'
-              '<D:prop><D:resourcetype/><D:getcontentlength>100</D:getcontentlength></D:prop>'
-              '<D:status>HTTP/1.1 200 OK</D:status>'
-              '</D:propstat>'
-              '</D:response>'
-              '<D:response>'
-              '<D:href>/dav/Media/Protected.mp4</D:href>'
-              '<D:propstat>'
-              '<D:status>HTTP/1.1 403 Forbidden</D:status>'
-              '</D:propstat>'
-              '</D:response>'
-              '</D:multistatus>';
+      test('fails listing when a child returns 403 Forbidden (preserves failure)', () async {
+        const with403ChildXml =
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<D:multistatus xmlns:D="DAV:">'
+            '<D:response>'
+            '<D:href>/dav/Media/</D:href>'
+            '<D:propstat>'
+            '<D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop>'
+            '<D:status>HTTP/1.1 200 OK</D:status>'
+            '</D:propstat>'
+            '</D:response>'
+            '<D:response>'
+            '<D:href>/dav/Media/Allowed.mp4</D:href>'
+            '<D:propstat>'
+            '<D:prop><D:resourcetype/><D:getcontentlength>100</D:getcontentlength></D:prop>'
+            '<D:status>HTTP/1.1 200 OK</D:status>'
+            '</D:propstat>'
+            '</D:response>'
+            '<D:response>'
+            '<D:href>/dav/Media/Protected.mp4</D:href>'
+            '<D:propstat>'
+            '<D:status>HTTP/1.1 403 Forbidden</D:status>'
+            '</D:propstat>'
+            '</D:response>'
+            '</D:multistatus>';
 
-          httpClient.handler =
-              (
-                uri, {
-                required method,
-                required headers,
-                required data,
-                required responseType,
-                cancelToken,
-              }) async {
-                return Response<dynamic>(
-                  requestOptions: RequestOptions(path: uri.toString()),
-                  statusCode: 207,
-                  data: Stream.value(with403ChildXml),
-                );
-              };
+        httpClient.handler =
+            (
+              uri, {
+              required method,
+              required headers,
+              required data,
+              required responseType,
+              cancelToken,
+            }) async {
+              return Response<dynamic>(
+                requestOptions: RequestOptions(path: uri.toString()),
+                statusCode: 207,
+                data: Stream.value(with403ChildXml),
+              );
+            };
 
-          expect(
-            () => adapter.listEntries(source, source.rootLocator).toList(),
-            throwsA(
-              isA<MediaSourceException>().having(
-                (e) => e.code,
-                'code',
-                'forbidden',
-              ),
+        expect(
+          () => adapter.listEntries(source, source.rootLocator).toList(),
+          throwsA(
+            isA<MediaSourceException>().having(
+              (e) => e.code,
+              'code',
+              'forbidden',
             ),
-          );
-        },
-      );
-      test(
-        'fails listing when a collection without trailing slash has denied resourcetype and 200 displayname',
-        () async {
-          const noTrailingSlashDeniedResTypeXml =
-              '<?xml version="1.0" encoding="UTF-8"?>'
-              '<D:multistatus xmlns:D="DAV:">'
-              '<D:response>'
-              '<D:href>/dav/Media/</D:href>'
-              '<D:propstat>'
-              '<D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop>'
-              '<D:status>HTTP/1.1 200 OK</D:status>'
-              '</D:propstat>'
-              '</D:response>'
-              '<D:response>'
-              '<D:href>/dav/Media/RestrictedFolder</D:href>'
-              '<D:propstat>'
-              '<D:prop><D:displayname>RestrictedFolder</D:displayname></D:prop>'
-              '<D:status>HTTP/1.1 200 OK</D:status>'
-              '</D:propstat>'
-              '<D:propstat>'
-              '<D:prop><D:resourcetype/></D:prop>'
-              '<D:status>HTTP/1.1 403 Forbidden</D:status>'
-              '</D:propstat>'
-              '</D:response>'
-              '</D:multistatus>';
+          ),
+        );
+      });
+      test('fails listing when a collection without trailing slash has denied resourcetype and 200 displayname', () async {
+        const noTrailingSlashDeniedResTypeXml =
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<D:multistatus xmlns:D="DAV:">'
+            '<D:response>'
+            '<D:href>/dav/Media/</D:href>'
+            '<D:propstat>'
+            '<D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop>'
+            '<D:status>HTTP/1.1 200 OK</D:status>'
+            '</D:propstat>'
+            '</D:response>'
+            '<D:response>'
+            '<D:href>/dav/Media/RestrictedFolder</D:href>'
+            '<D:propstat>'
+            '<D:prop><D:displayname>RestrictedFolder</D:displayname></D:prop>'
+            '<D:status>HTTP/1.1 200 OK</D:status>'
+            '</D:propstat>'
+            '<D:propstat>'
+            '<D:prop><D:resourcetype/></D:prop>'
+            '<D:status>HTTP/1.1 403 Forbidden</D:status>'
+            '</D:propstat>'
+            '</D:response>'
+            '</D:multistatus>';
 
-          httpClient.handler =
-              (
-                uri, {
-                required method,
-                required headers,
-                required data,
-                required responseType,
-                cancelToken,
-              }) async {
-                return Response<dynamic>(
-                  requestOptions: RequestOptions(path: uri.toString()),
-                  statusCode: 207,
-                  data: Stream.value(noTrailingSlashDeniedResTypeXml),
-                );
-              };
+        httpClient.handler =
+            (
+              uri, {
+              required method,
+              required headers,
+              required data,
+              required responseType,
+              cancelToken,
+            }) async {
+              return Response<dynamic>(
+                requestOptions: RequestOptions(path: uri.toString()),
+                statusCode: 207,
+                data: Stream.value(noTrailingSlashDeniedResTypeXml),
+              );
+            };
 
-          expect(
-            () => adapter.listEntries(source, source.rootLocator).toList(),
-            throwsA(
-              isA<MediaSourceException>().having(
-                (e) => e.code,
-                'code',
-                'forbidden',
-              ),
+        expect(
+          () => adapter.listEntries(source, source.rootLocator).toList(),
+          throwsA(
+            isA<MediaSourceException>().having(
+              (e) => e.code,
+              'code',
+              'forbidden',
             ),
-          );
-        },
-      );
+          ),
+        );
+      });
 
       test(
         'fails listing when target self collection is missing from response',
@@ -648,99 +639,93 @@ void main() {
     });
 
     group('Unicode, spaces, literal %, # in paths and stat', () {
-      test(
-        'resolves literal % and # without double-encoding or decoding as logical IDs',
-        () async {
-          const specialName = 'Special 100% #1 电影.mp4';
-          const fileStatXml =
-              '<?xml version="1.0" encoding="UTF-8"?>'
-              '<D:multistatus xmlns:D="DAV:">'
-              '<D:response>'
-              '<D:href>/dav/Media/Special%20100%25%20%231%20%E7%94%B5%E5%BD%B1.mp4</D:href>'
-              '<D:propstat>'
-              '<D:prop>'
-              '<D:resourcetype/>'
-              '<D:getcontentlength>54321</D:getcontentlength>'
-              '<D:getetag>"special-etag"</D:getetag>'
-              '<D:getlastmodified>Fri, 23 Oct 2026 10:33:00 GMT</D:getlastmodified>'
-              '</D:prop>'
-              '<D:status>HTTP/1.1 200 OK</D:status>'
-              '</D:propstat>'
-              '</D:response>'
-              '</D:multistatus>';
+      test('resolves literal % and # without double-encoding or decoding as logical IDs', () async {
+        const specialName = 'Special 100% #1 电影.mp4';
+        const fileStatXml =
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<D:multistatus xmlns:D="DAV:">'
+            '<D:response>'
+            '<D:href>/dav/Media/Special%20100%25%20%231%20%E7%94%B5%E5%BD%B1.mp4</D:href>'
+            '<D:propstat>'
+            '<D:prop>'
+            '<D:resourcetype/>'
+            '<D:getcontentlength>54321</D:getcontentlength>'
+            '<D:getetag>"special-etag"</D:getetag>'
+            '<D:getlastmodified>Fri, 23 Oct 2026 10:33:00 GMT</D:getlastmodified>'
+            '</D:prop>'
+            '<D:status>HTTP/1.1 200 OK</D:status>'
+            '</D:propstat>'
+            '</D:response>'
+            '</D:multistatus>';
 
-          httpClient.handler =
-              (
-                uri, {
-                required method,
-                required headers,
-                required data,
-                required responseType,
-                cancelToken,
-              }) async {
-                expect(method, 'PROPFIND');
-                expect(headers['Depth'], '0');
-                // 确认 URL 编码中空格为 %20，% 为 %25，# 为 %23，Unicode 正确编码
-                expect(
-                  uri.path,
-                  '/dav/Media/Special%20100%25%20%231%20%E7%94%B5%E5%BD%B1.mp4',
-                );
+        httpClient.handler =
+            (
+              uri, {
+              required method,
+              required headers,
+              required data,
+              required responseType,
+              cancelToken,
+            }) async {
+              expect(method, 'PROPFIND');
+              expect(headers['Depth'], '0');
+              // 确认 URL 编码中空格为 %20，% 为 %25，# 为 %23，Unicode 正确编码
+              expect(
+                uri.path,
+                '/dav/Media/Special%20100%25%20%231%20%E7%94%B5%E5%BD%B1.mp4',
+              );
 
-                return Response<dynamic>(
-                  requestOptions: RequestOptions(path: uri.toString()),
-                  statusCode: 207,
-                  data: fileStatXml,
-                );
-              };
+              return Response<dynamic>(
+                requestOptions: RequestOptions(path: uri.toString()),
+                statusCode: 207,
+                data: fileStatXml,
+              );
+            };
 
-          final stat = await adapter.stat(source, specialName);
-          expect(stat.size, 54321);
-          expect(stat.etag, '"special-etag"');
-        },
-      );
+        final stat = await adapter.stat(source, specialName);
+        expect(stat.size, 54321);
+        expect(stat.etag, '"special-etag"');
+      });
 
-      test(
-        'stat matches requested resource and ignores unrelated responses in 207',
-        () async {
-          const multipleResponsesXml =
-              '<?xml version="1.0" encoding="UTF-8"?>'
-              '<D:multistatus xmlns:D="DAV:">'
-              '<D:response>'
-              '<D:href>/dav/Media/Unrelated.mp4</D:href>'
-              '<D:propstat>'
-              '<D:prop><D:resourcetype/><D:getcontentlength>999</D:getcontentlength></D:prop>'
-              '<D:status>HTTP/1.1 200 OK</D:status>'
-              '</D:propstat>'
-              '</D:response>'
-              '<D:response>'
-              '<D:href>/dav/Media/Target.mp4</D:href>'
-              '<D:propstat>'
-              '<D:prop><D:resourcetype/><D:getcontentlength>888</D:getcontentlength></D:prop>'
-              '<D:status>HTTP/1.1 200 OK</D:status>'
-              '</D:propstat>'
-              '</D:response>'
-              '</D:multistatus>';
+      test('stat matches requested resource and ignores unrelated responses in 207', () async {
+        const multipleResponsesXml =
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<D:multistatus xmlns:D="DAV:">'
+            '<D:response>'
+            '<D:href>/dav/Media/Unrelated.mp4</D:href>'
+            '<D:propstat>'
+            '<D:prop><D:resourcetype/><D:getcontentlength>999</D:getcontentlength></D:prop>'
+            '<D:status>HTTP/1.1 200 OK</D:status>'
+            '</D:propstat>'
+            '</D:response>'
+            '<D:response>'
+            '<D:href>/dav/Media/Target.mp4</D:href>'
+            '<D:propstat>'
+            '<D:prop><D:resourcetype/><D:getcontentlength>888</D:getcontentlength></D:prop>'
+            '<D:status>HTTP/1.1 200 OK</D:status>'
+            '</D:propstat>'
+            '</D:response>'
+            '</D:multistatus>';
 
-          httpClient.handler =
-              (
-                uri, {
-                required method,
-                required headers,
-                required data,
-                required responseType,
-                cancelToken,
-              }) async {
-                return Response<dynamic>(
-                  requestOptions: RequestOptions(path: uri.toString()),
-                  statusCode: 207,
-                  data: multipleResponsesXml,
-                );
-              };
+        httpClient.handler =
+            (
+              uri, {
+              required method,
+              required headers,
+              required data,
+              required responseType,
+              cancelToken,
+            }) async {
+              return Response<dynamic>(
+                requestOptions: RequestOptions(path: uri.toString()),
+                statusCode: 207,
+                data: multipleResponsesXml,
+              );
+            };
 
-          final stat = await adapter.stat(source, 'Target.mp4');
-          expect(stat.size, 888);
-        },
-      );
+        final stat = await adapter.stat(source, 'Target.mp4');
+        expect(stat.size, 888);
+      });
     });
 
     group('strict containment', () {

@@ -687,69 +687,66 @@ void main() {
         },
       );
 
-      test(
-        'pagination failure throws pagination_error when page 2 returns empty list while total remains unreached',
-        () async {
-          httpClient.handler =
-              (
-                uri, {
-                required method,
-                required headers,
-                required data,
-                required responseType,
-                required allowedStatusCodes,
-              }) async {
-                final reqJson =
-                    jsonDecode(data as String) as Map<String, dynamic>;
-                final page = reqJson['page'] as int;
-                if (page == 1) {
-                  return Response<dynamic>(
-                    requestOptions: RequestOptions(path: uri.toString()),
-                    statusCode: 200,
-                    data: <String, dynamic>{
-                      'code': 200,
-                      'message': 'success',
-                      'data': <String, dynamic>{
-                        'content': List.generate(
-                          100,
-                          (i) => <String, dynamic>{
-                            'name': 'file_$i.mp4',
-                            'size': 100,
-                            'is_dir': false,
-                          },
-                        ),
-                        'total': 150,
-                      },
+      test('pagination failure throws pagination_error when page 2 returns empty list while total remains unreached', () async {
+        httpClient.handler =
+            (
+              uri, {
+              required method,
+              required headers,
+              required data,
+              required responseType,
+              required allowedStatusCodes,
+            }) async {
+              final reqJson =
+                  jsonDecode(data as String) as Map<String, dynamic>;
+              final page = reqJson['page'] as int;
+              if (page == 1) {
+                return Response<dynamic>(
+                  requestOptions: RequestOptions(path: uri.toString()),
+                  statusCode: 200,
+                  data: <String, dynamic>{
+                    'code': 200,
+                    'message': 'success',
+                    'data': <String, dynamic>{
+                      'content': List.generate(
+                        100,
+                        (i) => <String, dynamic>{
+                          'name': 'file_$i.mp4',
+                          'size': 100,
+                          'is_dir': false,
+                        },
+                      ),
+                      'total': 150,
                     },
-                  );
-                } else {
-                  return Response<dynamic>(
-                    requestOptions: RequestOptions(path: uri.toString()),
-                    statusCode: 200,
-                    data: <String, dynamic>{
-                      'code': 200,
-                      'message': 'success',
-                      'data': <String, dynamic>{
-                        'content': <dynamic>[],
-                        'total': 150,
-                      },
+                  },
+                );
+              } else {
+                return Response<dynamic>(
+                  requestOptions: RequestOptions(path: uri.toString()),
+                  statusCode: 200,
+                  data: <String, dynamic>{
+                    'code': 200,
+                    'message': 'success',
+                    'data': <String, dynamic>{
+                      'content': <dynamic>[],
+                      'total': 150,
                     },
-                  );
-                }
-              };
+                  },
+                );
+              }
+            };
 
-          expect(
-            () => adapter.listEntries(source, source.rootLocator).toList(),
-            throwsA(
-              isA<MediaSourceException>().having(
-                (e) => e.code,
-                'code',
-                'pagination_error',
-              ),
+        expect(
+          () => adapter.listEntries(source, source.rootLocator).toList(),
+          throwsA(
+            isA<MediaSourceException>().having(
+              (e) => e.code,
+              'code',
+              'pagination_error',
             ),
-          );
-        },
-      );
+          ),
+        );
+      });
 
       test('handles API envelope error codes safely', () async {
         httpClient.handler =
@@ -850,44 +847,41 @@ void main() {
         );
       });
 
-      test(
-        'rejects empty content when total > 0 on page 1 (prevents clearing library)',
-        () async {
-          httpClient.handler =
-              (
-                uri, {
-                required method,
-                required headers,
-                required data,
-                required responseType,
-                required allowedStatusCodes,
-              }) async {
-                return Response<dynamic>(
-                  requestOptions: RequestOptions(path: uri.toString()),
-                  statusCode: 200,
-                  data: <String, dynamic>{
-                    'code': 200,
-                    'message': 'success',
-                    'data': <String, dynamic>{
-                      'content': <dynamic>[],
-                      'total': 10,
-                    },
+      test('rejects empty content when total > 0 on page 1 (prevents clearing library)', () async {
+        httpClient.handler =
+            (
+              uri, {
+              required method,
+              required headers,
+              required data,
+              required responseType,
+              required allowedStatusCodes,
+            }) async {
+              return Response<dynamic>(
+                requestOptions: RequestOptions(path: uri.toString()),
+                statusCode: 200,
+                data: <String, dynamic>{
+                  'code': 200,
+                  'message': 'success',
+                  'data': <String, dynamic>{
+                    'content': <dynamic>[],
+                    'total': 10,
                   },
-                );
-              };
+                },
+              );
+            };
 
-          expect(
-            () => adapter.listEntries(source, source.rootLocator).toList(),
-            throwsA(
-              isA<MediaSourceException>().having(
-                (e) => e.code,
-                'code',
-                'pagination_error',
-              ),
+        expect(
+          () => adapter.listEntries(source, source.rootLocator).toList(),
+          throwsA(
+            isA<MediaSourceException>().having(
+              (e) => e.code,
+              'code',
+              'pagination_error',
             ),
-          );
-        },
-      );
+          ),
+        );
+      });
 
       test(
         'rejects entry name with slash, backslash, dot segments or empty',
@@ -1139,8 +1133,7 @@ void main() {
                   statusCode: 200,
                   data: <String, dynamic>{
                     'code': 401,
-                    'message':
-                        'Sensitive Token=secret_tok_123 Cookie=session_xyz signedURL=https://oss.example.com/movie.mp4?sign=leak',
+                    'message': 'Sensitive Token=secret_tok_123 Cookie=session_xyz signedURL=https://oss.example.com/movie.mp4?sign=leak',
                     'data': null,
                   },
                 );
@@ -1161,34 +1154,31 @@ void main() {
         },
       );
 
-      test(
-        'exception secrecy: network errors throw constant safe message without raw error interpolation',
-        () async {
-          httpClient.handler =
-              (
-                uri, {
-                required method,
-                required headers,
-                required data,
-                required responseType,
-                required allowedStatusCodes,
-              }) async {
-                throw const SocketException(
-                  'Sensitive internal IP 192.168.1.100 refused with auth token_leak',
-                );
-              };
+      test('exception secrecy: network errors throw constant safe message without raw error interpolation', () async {
+        httpClient.handler =
+            (
+              uri, {
+              required method,
+              required headers,
+              required data,
+              required responseType,
+              required allowedStatusCodes,
+            }) async {
+              throw const SocketException(
+                'Sensitive internal IP 192.168.1.100 refused with auth token_leak',
+              );
+            };
 
-          try {
-            await adapter.listEntries(source, source.rootLocator).toList();
-            fail('Should have thrown MediaSourceException');
-          } on MediaSourceException catch (e) {
-            expect(e.code, 'network_error');
-            expect(e.message, '列出 OpenList 目录条目失败');
-            expect(e.message.contains('192.168.1.100'), isFalse);
-            expect(e.message.contains('token_leak'), isFalse);
-          }
-        },
-      );
+        try {
+          await adapter.listEntries(source, source.rootLocator).toList();
+          fail('Should have thrown MediaSourceException');
+        } on MediaSourceException catch (e) {
+          expect(e.code, 'network_error');
+          expect(e.message, '列出 OpenList 目录条目失败');
+          expect(e.message.contains('192.168.1.100'), isFalse);
+          expect(e.message.contains('token_leak'), isFalse);
+        }
+      });
     });
 
     group('stat', () {
@@ -1276,86 +1266,81 @@ void main() {
         expect(resource.prepare, isNotNull);
       });
 
-      test(
-        'prepare resolves fresh raw_url, strips API token, and applies only User-Agent/Referer',
-        () async {
-          final authSource = source.copyWith(credentialRef: 'cred_1');
-          await credentialsStore.write(
-            'cred_1',
-            const RemoteCredentials(
-              token: 'super_secret_api_token',
-              password: 'dir_pwd',
-              playbackHeaders: {
-                'User-Agent': 'CustomPlayer/1.0',
-                'Referer': 'https://custom.site/',
-                'X-Custom-Header': 'should_be_ignored',
-                'Authorization': 'forbidden_token',
-              },
-            ),
-          );
+      test('prepare resolves fresh raw_url, strips API token, and applies only User-Agent/Referer', () async {
+        final authSource = source.copyWith(credentialRef: 'cred_1');
+        await credentialsStore.write(
+          'cred_1',
+          const RemoteCredentials(
+            token: 'super_secret_api_token',
+            password: 'dir_pwd',
+            playbackHeaders: {
+              'User-Agent': 'CustomPlayer/1.0',
+              'Referer': 'https://custom.site/',
+              'X-Custom-Header': 'should_be_ignored',
+              'Authorization': 'forbidden_token',
+            },
+          ),
+        );
 
-          httpClient.handler =
-              (
-                uri, {
-                required method,
-                required headers,
-                required data,
-                required responseType,
-                required allowedStatusCodes,
-              }) async {
-                expect(uri.toString(), 'http://127.0.0.1:15244/api/fs/get');
-                expect(headers['Authorization'], 'super_secret_api_token');
+        httpClient.handler =
+            (
+              uri, {
+              required method,
+              required headers,
+              required data,
+              required responseType,
+              required allowedStatusCodes,
+            }) async {
+              expect(uri.toString(), 'http://127.0.0.1:15244/api/fs/get');
+              expect(headers['Authorization'], 'super_secret_api_token');
 
-                return Response<dynamic>(
-                  requestOptions: RequestOptions(path: uri.toString()),
-                  statusCode: 200,
-                  data: <String, dynamic>{
-                    'code': 200,
-                    'message': 'success',
-                    'data': <String, dynamic>{
-                      'name': 'movie.mp4',
-                      'size': 6771770,
-                      'is_dir': false,
-                      'raw_url':
-                          'http://127.0.0.1:15244/p/Media/movie.mp4?sign=abc&expires=1893456789',
-                      'header':
-                          '<h1>HTML directory header should not be used as HTTP header</h1>',
-                    },
+              return Response<dynamic>(
+                requestOptions: RequestOptions(path: uri.toString()),
+                statusCode: 200,
+                data: <String, dynamic>{
+                  'code': 200,
+                  'message': 'success',
+                  'data': <String, dynamic>{
+                    'name': 'movie.mp4',
+                    'size': 6771770,
+                    'is_dir': false,
+                    'raw_url': 'http://127.0.0.1:15244/p/Media/movie.mp4?sign=abc&expires=1893456789',
+                    'header': '<h1>HTML directory header should not be used as HTTP header</h1>',
                   },
-                );
-              };
+                },
+              );
+            };
 
-          final resource = await adapter.resolvePlayback(
-            authSource,
-            '/Media/movie.mp4',
-          );
+        final resource = await adapter.resolvePlayback(
+          authSource,
+          '/Media/movie.mp4',
+        );
 
-          final concrete = await resource.prepare!();
-          expect(concrete.uri.toString(), 'http://127.0.0.1:9999/relay');
+        final concrete = await resource.prepare!();
+        expect(concrete.uri.toString(), 'http://127.0.0.1:9999/relay');
 
-          final target = playbackBridge.lastTarget!;
-          expect(
-            target.uri.toString(),
-            'http://127.0.0.1:15244/p/Media/movie.mp4?sign=abc&expires=1893456789',
-          );
+        final target = playbackBridge.lastTarget!;
+        expect(
+          target.uri.toString(),
+          'http://127.0.0.1:15244/p/Media/movie.mp4?sign=abc&expires=1893456789',
+        );
 
-          // 绝不透传 API Token 到媒体播放地址
-          expect(target.headers['Authorization'], isNull);
-          // 忽略非 User-Agent / Referer 的头部
-          expect(target.headers['X-Custom-Header'], isNull);
-          // HTML header 绝不当作 HTTP 头
-          expect(target.headers.values.any((v) => v.contains('HTML')), isFalse);
-          // 显式白名单头部透传
-          expect(target.headers['User-Agent'], 'CustomPlayer/1.0');
-          expect(target.headers['Referer'], 'https://custom.site/');
-          // 解析过期时间
-          expect(target.expiresAt, isNotNull);
-          expect(
-            target.expiresAt,
-            DateTime.fromMillisecondsSinceEpoch(1893456789 * 1000, isUtc: true),
-          );
-        },
-      );
+        // 绝不透传 API Token 到媒体播放地址
+        expect(target.headers['Authorization'], isNull);
+        // 忽略非 User-Agent / Referer 的头部
+        expect(target.headers['X-Custom-Header'], isNull);
+        // HTML header 绝不当作 HTTP 头
+        expect(target.headers.values.any((v) => v.contains('HTML')), isFalse);
+        // 显式白名单头部透传
+        expect(target.headers['User-Agent'], 'CustomPlayer/1.0');
+        expect(target.headers['Referer'], 'https://custom.site/');
+        // 解析过期时间
+        expect(target.expiresAt, isNotNull);
+        expect(
+          target.expiresAt,
+          DateTime.fromMillisecondsSinceEpoch(1893456789 * 1000, isUtc: true),
+        );
+      });
 
       test('resolves relative raw_url against API base', () async {
         httpClient.handler =
@@ -1525,64 +1510,61 @@ void main() {
         },
       );
 
-      test(
-        'aborts and throws cancellation if cancelToken is cancelled during prepare/resolve',
-        () async {
-          httpClient.handler =
-              (
-                uri, {
-                required method,
-                required headers,
-                required data,
-                required responseType,
-                required allowedStatusCodes,
-              }) async {
-                return Response<dynamic>(
-                  requestOptions: RequestOptions(path: uri.toString()),
-                  statusCode: 200,
-                  data: <String, dynamic>{
-                    'code': 200,
-                    'message': 'success',
-                    'data': <String, dynamic>{
-                      'name': 'movie.mp4',
-                      'size': 1000,
-                      'is_dir': false,
-                      'raw_url': 'http://127.0.0.1:15244/p/Media/movie.mp4',
-                    },
+      test('aborts and throws cancellation if cancelToken is cancelled during prepare/resolve', () async {
+        httpClient.handler =
+            (
+              uri, {
+              required method,
+              required headers,
+              required data,
+              required responseType,
+              required allowedStatusCodes,
+            }) async {
+              return Response<dynamic>(
+                requestOptions: RequestOptions(path: uri.toString()),
+                statusCode: 200,
+                data: <String, dynamic>{
+                  'code': 200,
+                  'message': 'success',
+                  'data': <String, dynamic>{
+                    'name': 'movie.mp4',
+                    'size': 1000,
+                    'is_dir': false,
+                    'raw_url': 'http://127.0.0.1:15244/p/Media/movie.mp4',
                   },
-                );
-              };
+                },
+              );
+            };
 
-          final resource = await adapter.resolvePlayback(
-            source,
-            '/Media/movie.mp4',
-          );
+        final resource = await adapter.resolvePlayback(
+          source,
+          '/Media/movie.mp4',
+        );
 
-          await resource.prepare!();
-          expect(playbackBridge.lastResolver, isNotNull);
-          final initialRequestCount = httpClient.recordedRequests.length;
+        await resource.prepare!();
+        expect(playbackBridge.lastResolver, isNotNull);
+        final initialRequestCount = httpClient.recordedRequests.length;
 
-          final cancelledToken = CancelToken();
-          cancelledToken.cancel('Release requested');
+        final cancelledToken = CancelToken();
+        cancelledToken.cancel('Release requested');
 
-          expect(
-            () => playbackBridge.lastResolver!(
-              refresh: true,
-              cancelToken: cancelledToken,
+        expect(
+          () => playbackBridge.lastResolver!(
+            refresh: true,
+            cancelToken: cancelledToken,
+          ),
+          throwsA(
+            isA<DioException>().having(
+              (e) => CancelToken.isCancel(e),
+              'isCancel',
+              isTrue,
             ),
-            throwsA(
-              isA<DioException>().having(
-                (e) => CancelToken.isCancel(e),
-                'isCancel',
-                isTrue,
-              ),
-            ),
-          );
+          ),
+        );
 
-          // 确认未发起任何新的 HTTP 请求
-          expect(httpClient.recordedRequests.length, initialRequestCount);
-        },
-      );
+        // 确认未发起任何新的 HTTP 请求
+        expect(httpClient.recordedRequests.length, initialRequestCount);
+      });
     });
   });
   group('OpenListSourceAdapter Real Loopback HttpServer Tests', () {
@@ -1626,71 +1608,68 @@ void main() {
       await server.close(force: true);
     });
 
-    test(
-      'verifies real HTTP request body, raw token and pagination over loopback socket',
-      () async {
-        final authSource = source.copyWith(credentialRef: 'cred_loopback');
-        await credentialsStore.write(
-          'cred_loopback',
-          const RemoteCredentials(
-            token: 'token_socket_123',
-            password: 'pwd_socket_456',
-          ),
-        );
+    test('verifies real HTTP request body, raw token and pagination over loopback socket', () async {
+      final authSource = source.copyWith(credentialRef: 'cred_loopback');
+      await credentialsStore.write(
+        'cred_loopback',
+        const RemoteCredentials(
+          token: 'token_socket_123',
+          password: 'pwd_socket_456',
+        ),
+      );
 
-        server.listen((HttpRequest request) async {
-          final path = request.uri.path;
-          final auth = request.headers.value('Authorization');
-          expect(auth, 'token_socket_123');
+      server.listen((HttpRequest request) async {
+        final path = request.uri.path;
+        final auth = request.headers.value('Authorization');
+        expect(auth, 'token_socket_123');
 
-          if (path == '/api/fs/list') {
-            final bodyBytes = await request.fold<List<int>>(
-              [],
-              (p, e) => p..addAll(e),
+        if (path == '/api/fs/list') {
+          final bodyBytes = await request.fold<List<int>>(
+            [],
+            (p, e) => p..addAll(e),
+          );
+          final bodyJson =
+              jsonDecode(utf8.decode(bodyBytes)) as Map<String, dynamic>;
+          expect(bodyJson['path'], '/Media');
+          expect(bodyJson['password'], 'pwd_socket_456');
+
+          request.response
+            ..statusCode = HttpStatus.ok
+            ..headers.contentType = ContentType.json
+            ..write(
+              jsonEncode({
+                'code': 200,
+                'message': 'success',
+                'data': {
+                  'content': [
+                    {
+                      'name': 'LoopbackMovie.mp4',
+                      'size': 123456,
+                      'is_dir': false,
+                      'modified': '2026-10-23T10:00:00Z',
+                    },
+                  ],
+                  'total': 1,
+                },
+              }),
             );
-            final bodyJson =
-                jsonDecode(utf8.decode(bodyBytes)) as Map<String, dynamic>;
-            expect(bodyJson['path'], '/Media');
-            expect(bodyJson['password'], 'pwd_socket_456');
+          await request.response.close();
+        } else {
+          request.response
+            ..statusCode = HttpStatus.notFound
+            ..close();
+        }
+      });
 
-            request.response
-              ..statusCode = HttpStatus.ok
-              ..headers.contentType = ContentType.json
-              ..write(
-                jsonEncode({
-                  'code': 200,
-                  'message': 'success',
-                  'data': {
-                    'content': [
-                      {
-                        'name': 'LoopbackMovie.mp4',
-                        'size': 123456,
-                        'is_dir': false,
-                        'modified': '2026-10-23T10:00:00Z',
-                      },
-                    ],
-                    'total': 1,
-                  },
-                }),
-              );
-            await request.response.close();
-          } else {
-            request.response
-              ..statusCode = HttpStatus.notFound
-              ..close();
-          }
-        });
+      final entries = await adapter
+          .listEntries(authSource, authSource.rootLocator)
+          .toList();
 
-        final entries = await adapter
-            .listEntries(authSource, authSource.rootLocator)
-            .toList();
-
-        expect(entries.length, 1);
-        expect(entries[0].name, 'LoopbackMovie.mp4');
-        expect(entries[0].externalId, '/Media/LoopbackMovie.mp4');
-        expect(entries[0].size, 123456);
-      },
-    );
+      expect(entries.length, 1);
+      expect(entries[0].name, 'LoopbackMovie.mp4');
+      expect(entries[0].externalId, '/Media/LoopbackMovie.mp4');
+      expect(entries[0].size, 123456);
+    });
     test('verifies stat and 404 mapping over loopback socket', () async {
       server.listen((HttpRequest request) async {
         final path = request.uri.path;
@@ -1754,196 +1733,190 @@ void main() {
       );
     });
 
-    test(
-      'verifies resolvePlayback and raw_url resolution without token leakage over loopback',
-      () async {
-        final authSource = source.copyWith(credentialRef: 'cred_loopback');
-        await credentialsStore.write(
-          'cred_loopback',
-          const RemoteCredentials(
-            token: 'secret_token_123',
-            password: 'pwd',
-            playbackHeaders: {'User-Agent': 'LoopbackUA'},
-          ),
-        );
+    test('verifies resolvePlayback and raw_url resolution without token leakage over loopback', () async {
+      final authSource = source.copyWith(credentialRef: 'cred_loopback');
+      await credentialsStore.write(
+        'cred_loopback',
+        const RemoteCredentials(
+          token: 'secret_token_123',
+          password: 'pwd',
+          playbackHeaders: {'User-Agent': 'LoopbackUA'},
+        ),
+      );
 
-        server.listen((HttpRequest request) async {
-          final path = request.uri.path;
-          if (path == '/api/fs/get') {
-            final auth = request.headers.value('Authorization');
-            expect(auth, 'secret_token_123');
-
-            request.response
-              ..statusCode = HttpStatus.ok
-              ..headers.contentType = ContentType.json
-              ..write(
-                jsonEncode({
-                  'code': 200,
-                  'message': 'success',
-                  'data': {
-                    'name': 'stream.mp4',
-                    'raw_url': 'http://127.0.0.1:${server.port}/stream.mp4',
-                  },
-                }),
-              );
-            await request.response.close();
-          } else {
-            request.response
-              ..statusCode = HttpStatus.notFound
-              ..close();
-          }
-        });
-
-        final resource = await adapter.resolvePlayback(
-          authSource,
-          '/Media/stream.mp4',
-        );
-        final concrete = await resource.prepare!();
-        expect(concrete, isNotNull);
-
-        final target = playbackBridge.lastTarget!;
-        expect(
-          target.uri.toString(),
-          'http://127.0.0.1:${server.port}/stream.mp4',
-        );
-        expect(target.headers['Authorization'], isNull);
-        expect(target.headers['User-Agent'], 'LoopbackUA');
-      },
-    );
-
-    test(
-      'recovers from mid-playback 403 by refreshing ephemeral link and resuming Range on fresh target',
-      () async {
-        final authSource = source.copyWith(credentialRef: 'cred_loopback');
-        await credentialsStore.write(
-          'cred_loopback',
-          const RemoteCredentials(
-            token: 'secret_token_123',
-            password: 'pwd',
-            playbackHeaders: {'User-Agent': 'LoopbackUA'},
-          ),
-        );
-
-        final realBridge = RemotePlaybackBridge(http: realHttpClient);
-        final realAdapter = OpenListSourceAdapter(
-          credentials: credentialsStore,
-          http: realHttpClient,
-          playback: realBridge,
-        );
-
-        int fsGetCallCount = 0;
-        int oldMediaRequests = 0;
-        int freshMediaRequests = 0;
-        bool oldExpired = false;
-        bool tokenLeakedToMedia = false;
-
-        server.listen((HttpRequest request) async {
-          final path = request.uri.path;
+      server.listen((HttpRequest request) async {
+        final path = request.uri.path;
+        if (path == '/api/fs/get') {
           final auth = request.headers.value('Authorization');
+          expect(auth, 'secret_token_123');
 
-          if (path.startsWith('/media/')) {
-            if (auth != null) {
-              tokenLeakedToMedia = true;
-            }
+          request.response
+            ..statusCode = HttpStatus.ok
+            ..headers.contentType = ContentType.json
+            ..write(
+              jsonEncode({
+                'code': 200,
+                'message': 'success',
+                'data': {
+                  'name': 'stream.mp4',
+                  'raw_url': 'http://127.0.0.1:${server.port}/stream.mp4',
+                },
+              }),
+            );
+          await request.response.close();
+        } else {
+          request.response
+            ..statusCode = HttpStatus.notFound
+            ..close();
+        }
+      });
+
+      final resource = await adapter.resolvePlayback(
+        authSource,
+        '/Media/stream.mp4',
+      );
+      final concrete = await resource.prepare!();
+      expect(concrete, isNotNull);
+
+      final target = playbackBridge.lastTarget!;
+      expect(
+        target.uri.toString(),
+        'http://127.0.0.1:${server.port}/stream.mp4',
+      );
+      expect(target.headers['Authorization'], isNull);
+      expect(target.headers['User-Agent'], 'LoopbackUA');
+    });
+
+    test('recovers from mid-playback 403 by refreshing ephemeral link and resuming Range on fresh target', () async {
+      final authSource = source.copyWith(credentialRef: 'cred_loopback');
+      await credentialsStore.write(
+        'cred_loopback',
+        const RemoteCredentials(
+          token: 'secret_token_123',
+          password: 'pwd',
+          playbackHeaders: {'User-Agent': 'LoopbackUA'},
+        ),
+      );
+
+      final realBridge = RemotePlaybackBridge(http: realHttpClient);
+      final realAdapter = OpenListSourceAdapter(
+        credentials: credentialsStore,
+        http: realHttpClient,
+        playback: realBridge,
+      );
+
+      int fsGetCallCount = 0;
+      int oldMediaRequests = 0;
+      int freshMediaRequests = 0;
+      bool oldExpired = false;
+      bool tokenLeakedToMedia = false;
+
+      server.listen((HttpRequest request) async {
+        final path = request.uri.path;
+        final auth = request.headers.value('Authorization');
+
+        if (path.startsWith('/media/')) {
+          if (auth != null) {
+            tokenLeakedToMedia = true;
           }
+        }
 
-          if (path == '/api/fs/get') {
-            fsGetCallCount++;
-            expect(auth, 'secret_token_123');
-            final rawUrl = fsGetCallCount == 1
-                ? 'http://127.0.0.1:${server.port}/media/old?sign=sig_old'
-                : 'http://127.0.0.1:${server.port}/media/fresh?sign=sig_fresh';
+        if (path == '/api/fs/get') {
+          fsGetCallCount++;
+          expect(auth, 'secret_token_123');
+          final rawUrl = fsGetCallCount == 1
+              ? 'http://127.0.0.1:${server.port}/media/old?sign=sig_old'
+              : 'http://127.0.0.1:${server.port}/media/fresh?sign=sig_fresh';
 
-            request.response
-              ..statusCode = HttpStatus.ok
-              ..headers.contentType = ContentType.json
-              ..write(
-                jsonEncode({
-                  'code': 200,
-                  'message': 'success',
-                  'data': {'name': 'movie.mp4', 'raw_url': rawUrl},
-                }),
-              );
-            await request.response.close();
-          } else if (path == '/media/old') {
-            oldMediaRequests++;
-            final rangeHeader = request.headers.value('Range');
-            if (!oldExpired) {
-              // 初始准备阶段探测：Range: bytes=0-0
-              expect(rangeHeader, 'bytes=0-0');
-              request.response
-                ..statusCode = HttpStatus.partialContent
-                ..headers.set('Content-Range', 'bytes 0-0/100')
-                ..headers.set('Content-Length', '1')
-                ..headers.set('Accept-Ranges', 'bytes')
-                ..add([42]);
-              await request.response.close();
-            } else {
-              // 过期链接直接返回 403 Forbidden
-              request.response
-                ..statusCode = HttpStatus.forbidden
-                ..write('Link expired');
-              await request.response.close();
-            }
-          } else if (path == '/media/fresh') {
-            freshMediaRequests++;
-            expect(oldExpired, isTrue);
-            final rangeHeader = request.headers.value('Range');
-            expect(rangeHeader, 'bytes=10-19');
-            expect(request.headers.value('User-Agent'), 'LoopbackUA');
-
-            final chunk = List<int>.generate(10, (i) => 10 + i);
+          request.response
+            ..statusCode = HttpStatus.ok
+            ..headers.contentType = ContentType.json
+            ..write(
+              jsonEncode({
+                'code': 200,
+                'message': 'success',
+                'data': {'name': 'movie.mp4', 'raw_url': rawUrl},
+              }),
+            );
+          await request.response.close();
+        } else if (path == '/media/old') {
+          oldMediaRequests++;
+          final rangeHeader = request.headers.value('Range');
+          if (!oldExpired) {
+            // 初始准备阶段探测：Range: bytes=0-0
+            expect(rangeHeader, 'bytes=0-0');
             request.response
               ..statusCode = HttpStatus.partialContent
-              ..headers.set('Content-Range', 'bytes 10-19/100')
-              ..headers.set('Content-Length', '10')
+              ..headers.set('Content-Range', 'bytes 0-0/100')
+              ..headers.set('Content-Length', '1')
               ..headers.set('Accept-Ranges', 'bytes')
-              ..add(chunk);
+              ..add([42]);
             await request.response.close();
           } else {
+            // 过期链接直接返回 403 Forbidden
             request.response
-              ..statusCode = HttpStatus.notFound
-              ..close();
+              ..statusCode = HttpStatus.forbidden
+              ..write('Link expired');
+            await request.response.close();
           }
-        });
+        } else if (path == '/media/fresh') {
+          freshMediaRequests++;
+          expect(oldExpired, isTrue);
+          final rangeHeader = request.headers.value('Range');
+          expect(rangeHeader, 'bytes=10-19');
+          expect(request.headers.value('User-Agent'), 'LoopbackUA');
 
-        // 1. 初始 prepare 探测成功，获取本地 concrete 租约
-        final resource = await realAdapter.resolvePlayback(
-          authSource,
-          '/Media/movie.mp4',
-        );
-        final concrete = await resource.prepare!();
-        expect(concrete, isNotNull);
-        expect(fsGetCallCount, 1);
-        expect(oldMediaRequests, 1); // 成功探测 bytes 0-0
-        expect(freshMediaRequests, 0);
+          final chunk = List<int>.generate(10, (i) => 10 + i);
+          request.response
+            ..statusCode = HttpStatus.partialContent
+            ..headers.set('Content-Range', 'bytes 10-19/100')
+            ..headers.set('Content-Length', '10')
+            ..headers.set('Accept-Ranges', 'bytes')
+            ..add(chunk);
+          await request.response.close();
+        } else {
+          request.response
+            ..statusCode = HttpStatus.notFound
+            ..close();
+        }
+      });
 
-        // 2. 模拟链接过期：后续对旧地址的请求将直接返回 403
-        oldExpired = true;
+      // 1. 初始 prepare 探测成功，获取本地 concrete 租约
+      final resource = await realAdapter.resolvePlayback(
+        authSource,
+        '/Media/movie.mp4',
+      );
+      final concrete = await resource.prepare!();
+      expect(concrete, isNotNull);
+      expect(fsGetCallCount, 1);
+      expect(oldMediaRequests, 1); // 成功探测 bytes 0-0
+      expect(freshMediaRequests, 0);
 
-        // 3. 向租约本地 URI 发送分段读取 Range: bytes=10-19
-        final rangeResponse = await realHttpClient.request(
-          concrete.uri,
-          method: 'GET',
-          headers: {'Range': 'bytes=10-19'},
-          responseType: ResponseType.bytes,
-          allowedStatusCodes: const {HttpStatus.partialContent},
-        );
+      // 2. 模拟链接过期：后续对旧地址的请求将直接返回 403
+      oldExpired = true;
 
-        // 4. 校验 206 Partial Content 及分段数据完整正确
-        expect(rangeResponse.statusCode, HttpStatus.partialContent);
-        final expectedBytes = List<int>.generate(10, (i) => 10 + i);
-        expect(rangeResponse.data, expectedBytes);
+      // 3. 向租约本地 URI 发送分段读取 Range: bytes=10-19
+      final rangeResponse = await realHttpClient.request(
+        concrete.uri,
+        method: 'GET',
+        headers: {'Range': 'bytes=10-19'},
+        responseType: ResponseType.bytes,
+        allowedStatusCodes: const {HttpStatus.partialContent},
+      );
 
-        // 5. 严格断言重试契约与安全性
-        expect(fsGetCallCount, 2); // /api/fs/get 刷新递增恰好 1 次
-        expect(oldMediaRequests, 2); // 旧地址仅包含探测与 403 触发，刷新后绝不再被复用
-        expect(freshMediaRequests, 1); // 刷新后的目标正确承接保留的 Range 分段
-        expect(tokenLeakedToMedia, isFalse); // API 凭据绝不泄露给媒体服务器
+      // 4. 校验 206 Partial Content 及分段数据完整正确
+      expect(rangeResponse.statusCode, HttpStatus.partialContent);
+      final expectedBytes = List<int>.generate(10, (i) => 10 + i);
+      expect(rangeResponse.data, expectedBytes);
 
-        // 6. 安全释放资源
-        await concrete.release?.call();
-      },
-    );
+      // 5. 严格断言重试契约与安全性
+      expect(fsGetCallCount, 2); // /api/fs/get 刷新递增恰好 1 次
+      expect(oldMediaRequests, 2); // 旧地址仅包含探测与 403 触发，刷新后绝不再被复用
+      expect(freshMediaRequests, 1); // 刷新后的目标正确承接保留的 Range 分段
+      expect(tokenLeakedToMedia, isFalse); // API 凭据绝不泄露给媒体服务器
+
+      // 6. 安全释放资源
+      await concrete.release?.call();
+    });
   });
 }

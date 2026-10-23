@@ -479,9 +479,8 @@ class RemotePlaybackBridge {
         await sub.cancel();
         await server.close(force: true);
         if (activeHandlers.isNotEmpty) {
-          await Future.wait(
-            activeHandlers.toList(),
-          ).catchError((_) => <void>[]);
+          await Future.wait(activeHandlers.toList())
+              .catchError((_) => <void>[]);
         }
         if (!errorsController.isClosed) {
           await errorsController.close();
@@ -678,9 +677,8 @@ class RemotePlaybackBridge {
         await server.close(force: true);
         await reader.close();
         if (activeReaderHandlers.isNotEmpty) {
-          await Future.wait(
-            activeReaderHandlers.toList(),
-          ).catchError((_) => <void>[]);
+          await Future.wait(activeReaderHandlers.toList())
+              .catchError((_) => <void>[]);
         }
         if (!errorsController.isClosed) {
           await errorsController.close();
@@ -882,9 +880,8 @@ class RemotePlaybackBridge {
     int? expectedEnd,
     int? totalLength,
   ) {
-    final match = RegExp(
-      r'^bytes\s+(\d+)-(\d+)/(\d+|\*)$',
-    ).firstMatch(contentRange.trim());
+    final match = RegExp(r'^bytes\s+(\d+)-(\d+)/(\d+|\*)$')
+        .firstMatch(contentRange.trim());
     if (match == null) return false;
     final start = int.tryParse(match.group(1)!);
     final end = int.tryParse(match.group(2)!);
