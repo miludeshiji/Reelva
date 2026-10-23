@@ -16,6 +16,10 @@ class TestPlatformPlayer extends PlatformPlayer {
   bool stopCalled = false;
   bool disposeCalled = false;
 
+  AudioTrack? lastAudioTrack;
+  SubtitleTrack? lastSubtitleTrack;
+  Future<void> Function(AudioTrack track)? onSetAudioTrack;
+  Future<void> Function(SubtitleTrack track)? onSetSubtitleTrack;
   final List<String> callLog = [];
   Future<void> Function(Playable playable)? onOpen;
   Future<void> Function()? onPlay;
@@ -30,6 +34,12 @@ class TestPlatformPlayer extends PlatformPlayer {
   Future<void> open(Playable playable, {bool play = true}) async {
     callLog.add('player.open');
     lastOpened = playable;
+    // media_kit NativePlayer.open 在加载新媒体前通过 stop 重置文件状态。
+    state = state.copyWith(
+      position: Duration.zero,
+      duration: Duration.zero,
+      completed: false,
+    );
     final handler = onOpen;
     if (handler != null) {
       await handler(playable);
@@ -97,6 +107,30 @@ class TestPlatformPlayer extends PlatformPlayer {
   }
 
   @override
+  Future<void> setAudioTrack(AudioTrack track) async {
+    callLog.add('player.setAudioTrack');
+    lastAudioTrack = track;
+    final handler = onSetAudioTrack;
+    if (handler != null) {
+      await handler(track);
+    }
+    state = state.copyWith(track: state.track.copyWith(audio: track));
+    trackController.add(state.track);
+  }
+
+  @override
+  Future<void> setSubtitleTrack(SubtitleTrack track) async {
+    callLog.add('player.setSubtitleTrack');
+    lastSubtitleTrack = track;
+    final handler = onSetSubtitleTrack;
+    if (handler != null) {
+      await handler(track);
+    }
+    state = state.copyWith(track: state.track.copyWith(subtitle: track));
+    trackController.add(state.track);
+  }
+
+  @override
   Future<void> stop() async {
     callLog.add('player.stop');
     stopCalled = true;
@@ -125,6 +159,11 @@ class TestPlatformPlayer extends PlatformPlayer {
     durationController.add(duration);
   }
 
+  /// 重放旧文件排队的通知，保留当前文件的公开状态。
+  void emitQueuedDuration(Duration duration) {
+    durationController.add(duration);
+  }
+
   void emitPosition(Duration position) {
     state = state.copyWith(position: position);
     positionController.add(position);
@@ -142,5 +181,15 @@ class TestPlatformPlayer extends PlatformPlayer {
 
   void emitError(String error) {
     errorController.add(error);
+  }
+
+  void emitTracks(Tracks tracks) {
+    state = state.copyWith(tracks: tracks);
+    tracksController.add(tracks);
+  }
+
+  void emitTrack(Track track) {
+    state = state.copyWith(track: track);
+    trackController.add(track);
   }
 }

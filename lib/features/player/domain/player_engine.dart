@@ -31,6 +31,12 @@ abstract interface class PlayerEngine {
   /// 设置播放音量（范围 0..100）
   Future<void> setVolume(double volume);
 
+  /// 切换音频轨道
+  Future<void> setAudioTrack(String id);
+
+  /// 切换字幕轨道
+  Future<void> setSubtitleTrack(String id);
+
   /// 停止播放并将状态重置为空闲
   Future<void> stop();
 

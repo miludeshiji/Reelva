@@ -180,6 +180,40 @@ class _PlayerControlsState extends State<PlayerControls> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // 0. 非致命保存错误提示栏
+          if (snapshot.progressErrorMessage != null &&
+              snapshot.progressErrorMessage!.isNotEmpty)
+            Container(
+              key: const Key('player_progress_error_banner'),
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.errorContainer.withValues(alpha: 0.85),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    size: 16,
+                    color: theme.colorScheme.onErrorContainer,
+                  ),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      snapshot.progressErrorMessage!,
+                      key: const Key('player_progress_error_text'),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onErrorContainer,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           // 1. 时长与缓冲时间独立行（防止大字体下与 SeekSlider 挤压溢出）
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -305,6 +339,118 @@ class _PlayerControlsState extends State<PlayerControls> {
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: widget.isFullscreen ? Colors.white : null,
                       fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ],
+              ),
+
+              // 音频与字幕轨道选择组
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  PopupMenuButton<String>(
+                    key: const Key('player_audio_track_button'),
+                    tooltip: '音频轨道',
+                    initialValue: snapshot.audioTrackId,
+                    enabled: snapshot.audioTracks.isNotEmpty,
+                    onSelected: (id) => engine.setAudioTrack(id),
+                    itemBuilder: (context) => snapshot.audioTracks
+                        .map(
+                          (t) => PopupMenuItem<String>(
+                            value: t.id,
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    t.label,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (t.id == snapshot.audioTrackId) ...[
+                                  const SizedBox(width: 8),
+                                  const Icon(Icons.check, size: 16),
+                                ],
+                              ],
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 4,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.audiotrack,
+                            size: 18,
+                            color: widget.isFullscreen ? Colors.white : null,
+                          ),
+                          const SizedBox(width: 2),
+                          Text(
+                            '音频',
+                            key: const Key('player_audio_track_text'),
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: widget.isFullscreen ? Colors.white : null,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  PopupMenuButton<String>(
+                    key: const Key('player_subtitle_track_button'),
+                    tooltip: '字幕轨道',
+                    initialValue: snapshot.subtitleTrackId,
+                    enabled: snapshot.subtitleTracks.isNotEmpty,
+                    onSelected: (id) => engine.setSubtitleTrack(id),
+                    itemBuilder: (context) => snapshot.subtitleTracks
+                        .map(
+                          (t) => PopupMenuItem<String>(
+                            value: t.id,
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    t.label,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (t.id == snapshot.subtitleTrackId) ...[
+                                  const SizedBox(width: 8),
+                                  const Icon(Icons.check, size: 16),
+                                ],
+                              ],
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 4,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.subtitles,
+                            size: 18,
+                            color: widget.isFullscreen ? Colors.white : null,
+                          ),
+                          const SizedBox(width: 2),
+                          Text(
+                            '字幕',
+                            key: const Key('player_subtitle_track_text'),
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: widget.isFullscreen ? Colors.white : null,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],

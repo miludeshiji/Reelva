@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:reelva/core/database/app_database.dart';
 import 'package:reelva/features/library/infrastructure/media_library_repository.dart';
 import 'package:reelva/features/player/domain/playback_resource.dart';
+import 'package:reelva/features/progress/infrastructure/playback_progress_repository.dart';
 import 'package:reelva/features/sources/application/source_providers.dart';
 import 'package:reelva/features/sources/domain/media_source_adapter.dart';
 import 'package:reelva/features/sources/domain/source_models.dart';
@@ -323,11 +324,18 @@ void main() {
           ),
         ];
 
+        final v2Video = library.firstWhere((v) => v.fileName == 'v2.mp4');
+        final progressRepo = PlaybackProgressRepository(db: db);
+        await progressRepo.saveProgress(
+          fileId: v2Video.fileId,
+          position: const Duration(seconds: 40),
+          duration: const Duration(seconds: 120),
+        );
+
         final refreshFuture = controller.refreshSource(source.id);
         // 触发取消
         controller.cancelScan(source.id);
         await refreshFuture;
-
         final progress = container.read(sourceControllerProvider)[source.id];
         expect(progress!.cancelled, isTrue);
         expect(progress.running, isFalse);
@@ -338,9 +346,13 @@ void main() {
           library.any((v) => v.fileName == 'v2.mp4' && v.available),
           isTrue,
         );
+
+        // 验证取消扫描后已有播放进度依然完整保留
+        final v2Progress = await progressRepo.getProgress(v2Video.fileId);
+        expect(v2Progress, isNotNull);
+        expect(v2Progress!.position, const Duration(seconds: 40));
       },
     );
-
     test('enumeration failure fails whole scan without deleting/marking old rows missing', () async {
       final source = await repo.upsertSource(
         kind: 'local',
@@ -364,6 +376,14 @@ void main() {
       expect(library.length, 1);
       expect(library.first.available, isTrue);
 
+      final stableVideo = library.first;
+      final progressRepo = PlaybackProgressRepository(db: db);
+      await progressRepo.saveProgress(
+        fileId: stableVideo.fileId,
+        position: const Duration(seconds: 35),
+        duration: const Duration(seconds: 90),
+      );
+
       // 第二次扫描发生权限或 I/O 异常
       fakeAdapter.listError = const MediaSourceException(
         '网络共享连接已断开',
@@ -382,8 +402,12 @@ void main() {
 
       final refreshedSource = await repo.getSource(source.id);
       expect(refreshedSource.errorMessage, contains('网络共享连接已断开'));
-    });
 
+      // 验证扫描失败后旧视频进度依然完好无损
+      final stableProgress = await progressRepo.getProgress(stableVideo.fileId);
+      expect(stableProgress, isNotNull);
+      expect(stableProgress!.position, const Duration(seconds: 35));
+    });
     test('reauthorizeSource requires same root locator', () async {
       final source = await repo.upsertSource(
         kind: 'local',
@@ -455,12 +479,19 @@ void main() {
 
       final controller = container.read(sourceControllerProvider.notifier);
       await controller.refreshSource(source.id);
+      final library = await repo.watchLibrary().first;
+      final video = library.first;
+      final progressRepo = PlaybackProgressRepository(db: db);
+      await progressRepo.saveProgress(
+        fileId: video.fileId,
+        position: const Duration(seconds: 45),
+        duration: const Duration(seconds: 120),
+      );
 
       var sources = await repo.watchSources().first;
       expect(sources.length, 1);
 
       await controller.removeSource(source.id);
-
       // watchSources 仅返回 active 源，已软停用的不再出现在活跃源列表
       sources = await repo.watchSources().first;
       expect(sources, isEmpty);
@@ -468,8 +499,17 @@ void main() {
       // 但该源记录与数据依然安全保存在 DB 中
       final dbSource = await repo.getSource(source.id);
       expect(dbSource.enabled, isFalse);
-    });
 
+      // 软删除源后播放进度依然保留，Continue Watching 保持条目但标记为不可用
+      final preservedProgress = await progressRepo.getProgress(video.fileId);
+      expect(preservedProgress, isNotNull);
+      expect(preservedProgress!.position, const Duration(seconds: 45));
+
+      final continueList = await progressRepo.getContinueWatching();
+      expect(continueList, hasLength(1));
+      expect(continueList.first.fileId, video.fileId);
+      expect(continueList.first.available, isFalse);
+    });
     test(
       'resolvePlayback looks up video and source and delegates to adapter',
       () async {
@@ -498,7 +538,7 @@ void main() {
         final resource = await controller.resolvePlayback(video.fileId);
         expect(resource.displayName, 'play_me.mp4');
         expect(resource.uri.toString(), 'file:///videos/play_me.mp4');
-
+        expect(resource.libraryFileId, video.fileId);
         // 当媒体源停用时，抛出 source_disabled 异常
         await controller.removeSource(source.id);
         expect(

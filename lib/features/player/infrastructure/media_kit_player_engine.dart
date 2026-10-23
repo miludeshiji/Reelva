@@ -60,6 +60,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
   int _openEpoch = 0;
   bool _disposed = false;
   bool _isOpening = false;
+  Duration? _pendingResumeAt;
   Future<void>? _disposeFuture;
   Future<void> _operationQueue = Future<void>.value();
 
@@ -109,11 +110,11 @@ class MediaKitPlayerEngine implements PlayerEngine {
       _snapshot.status == PlaybackStatus.error;
 
   PlaybackStatus _computeActiveStatus() {
-    if (_player.state.completed) {
-      return PlaybackStatus.completed;
-    }
     if (_isOpening) {
       return PlaybackStatus.opening;
+    }
+    if (_player.state.completed) {
+      return PlaybackStatus.completed;
     }
     if (_player.state.playing) {
       return _player.state.buffering
@@ -135,7 +136,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
 
     _subscriptions.add(
       _player.stream.position.listen((pos) {
-        if (_isEventIgnored) return;
+        if (_isEventIgnored || _isOpening) return;
         _updateSnapshot(
           _snapshot.copyWith(status: _computeActiveStatus(), position: pos),
         );
@@ -144,17 +145,32 @@ class MediaKitPlayerEngine implements PlayerEngine {
 
     _subscriptions.add(
       _player.stream.duration.listen((dur) {
-        if (_isEventIgnored) return;
+        if (_isEventIgnored || _isOpening) return;
         _updateSnapshot(
           _snapshot.copyWith(status: _computeActiveStatus(), duration: dur),
         );
+        _checkResumeRange(dur);
       }),
     );
 
     _subscriptions.add(
       _player.stream.buffer.listen((buf) {
-        if (_isEventIgnored) return;
+        if (_isEventIgnored || _isOpening) return;
         _updateSnapshot(_snapshot.copyWith(buffered: buf));
+      }),
+    );
+
+    _subscriptions.add(
+      _player.stream.tracks.listen((tracks) {
+        if (_disposed) return;
+        _syncTracks(tracks, _player.state.track);
+      }),
+    );
+
+    _subscriptions.add(
+      _player.stream.track.listen((track) {
+        if (_disposed) return;
+        _syncTracks(_player.state.tracks, track);
       }),
     );
 
@@ -184,6 +200,64 @@ class MediaKitPlayerEngine implements PlayerEngine {
         );
       }),
     );
+  }
+
+  void _checkResumeRange(Duration dur) {
+    if (dur <= Duration.zero) return;
+    final resumeAt = _pendingResumeAt;
+    if (resumeAt != null) {
+      _pendingResumeAt = null;
+      if (resumeAt >= dur || resumeAt < Duration.zero) {
+        seek(Duration.zero);
+      }
+    }
+  }
+
+  void _syncTracks(Tracks tracks, Track track) {
+    if (_disposed || _isEventIgnored || _isOpening) return;
+    final audioList = tracks.audio.map((t) {
+      return PlaybackTrack(
+        id: t.id,
+        label: _formatTrackLabel(t.id, t.title, t.language, isSubtitle: false),
+      );
+    }).toList();
+
+    final subtitleList = tracks.subtitle.map((t) {
+      return PlaybackTrack(
+        id: t.id,
+        label: _formatTrackLabel(t.id, t.title, t.language, isSubtitle: true),
+      );
+    }).toList();
+
+    _updateSnapshot(
+      _snapshot.copyWith(
+        audioTracks: audioList,
+        subtitleTracks: subtitleList,
+        audioTrackId: () => track.audio.id,
+        subtitleTrackId: () => track.subtitle.id,
+      ),
+    );
+  }
+
+  static String _formatTrackLabel(
+    String id,
+    String? title,
+    String? language, {
+    required bool isSubtitle,
+  }) {
+    if (id == 'auto') return '自动';
+    if (id == 'no') return isSubtitle ? '关闭字幕' : '关闭音频';
+    final parts = <String>[];
+    if (title != null && title.trim().isNotEmpty) {
+      parts.add(title.trim());
+    }
+    if (language != null && language.trim().isNotEmpty) {
+      parts.add(language.trim());
+    }
+    if (parts.isEmpty) {
+      return isSubtitle ? '字幕 $id' : '音轨 $id';
+    }
+    return parts.join(' - ');
   }
 
   void _updateSnapshot(PlaybackSnapshot next) {
@@ -216,6 +290,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
     if (_disposed) return Future.value();
     final epoch = ++_openEpoch;
     _isOpening = true;
+    _pendingResumeAt = resumeAt;
 
     // 新 open 立即重置 UI 状态避免旧画面残留
     _updateSnapshot(
@@ -227,6 +302,10 @@ class MediaKitPlayerEngine implements PlayerEngine {
         duration: Duration.zero,
         buffered: Duration.zero,
         errorMessage: () => null,
+        audioTracks: const [],
+        subtitleTracks: const [],
+        audioTrackId: () => null,
+        subtitleTrackId: () => null,
       ),
     );
 
@@ -357,6 +436,8 @@ class MediaKitPlayerEngine implements PlayerEngine {
         return;
       }
       _syncStatus();
+      _syncTracks(_player.state.tracks, _player.state.track);
+      _checkResumeRange(_player.state.duration);
     });
   }
 
@@ -462,10 +543,71 @@ class MediaKitPlayerEngine implements PlayerEngine {
   }
 
   @override
+  Future<void> setAudioTrack(String id) {
+    if (_disposed) return Future.value();
+    return _enqueue(() async {
+      if (_disposed) return;
+      try {
+        final AudioTrack track;
+        if (id == 'auto') {
+          track = AudioTrack.auto();
+        } else if (id == 'no' || id == 'off') {
+          track = AudioTrack.no();
+        } else {
+          track = _player.state.tracks.audio.firstWhere(
+            (t) => t.id == id,
+            orElse: () => AudioTrack(id, null, null),
+          );
+        }
+        await _player.setAudioTrack(track);
+      } catch (e, st) {
+        AppLogger.instance.error('底层设置音频轨道异常', error: e, stackTrace: st);
+        _updateSnapshot(
+          _snapshot.copyWith(
+            status: PlaybackStatus.error,
+            errorMessage: () => _safeErrorMessage(e),
+          ),
+        );
+      }
+    });
+  }
+
+  @override
+  Future<void> setSubtitleTrack(String id) {
+    if (_disposed) return Future.value();
+    return _enqueue(() async {
+      if (_disposed) return;
+      try {
+        final SubtitleTrack track;
+        if (id == 'auto') {
+          track = SubtitleTrack.auto();
+        } else if (id == 'no' || id == 'off') {
+          track = SubtitleTrack.no();
+        } else {
+          track = _player.state.tracks.subtitle.firstWhere(
+            (t) => t.id == id,
+            orElse: () => SubtitleTrack(id, null, null),
+          );
+        }
+        await _player.setSubtitleTrack(track);
+      } catch (e, st) {
+        AppLogger.instance.error('底层设置字幕轨道异常', error: e, stackTrace: st);
+        _updateSnapshot(
+          _snapshot.copyWith(
+            status: PlaybackStatus.error,
+            errorMessage: () => _safeErrorMessage(e),
+          ),
+        );
+      }
+    });
+  }
+
+  @override
   Future<void> stop() {
     if (_disposed) return Future.value();
     _openEpoch++;
     _isOpening = false;
+    _pendingResumeAt = null;
     _updateSnapshot(
       PlaybackSnapshot(
         status: PlaybackStatus.idle,
@@ -491,6 +633,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
     }
     _disposed = true;
     _isOpening = false;
+    _pendingResumeAt = null;
     _openEpoch++;
 
     _disposeFuture = _enqueue(() async {

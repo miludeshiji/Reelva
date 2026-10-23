@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:reelva/features/player/domain/playback_resource.dart';
@@ -212,6 +214,124 @@ void main() {
 
       expect(docEngine.snapshot.status, PlaybackStatus.error);
       expect(docEngine.snapshot.errorMessage, isNotNull);
+    });
+
+    test('tracks/off/auto: 轨道同步与切换功能正常', () async {
+      final resource = PlaybackResource(
+        uri: Uri.parse('https://example.com/movie.mp4'),
+        displayName: '测试影片',
+      );
+      await engine.open(resource);
+
+      const testTracks = Tracks(
+        audio: [
+          AudioTrack('auto', null, null),
+          AudioTrack('no', null, null),
+          AudioTrack('1', '英语', 'eng'),
+          AudioTrack('2', '国语', 'chi'),
+        ],
+        subtitle: [
+          SubtitleTrack('auto', null, null),
+          SubtitleTrack('no', null, null),
+          SubtitleTrack('sub-1', '中文字幕', 'chi'),
+        ],
+      );
+      platformPlayer.emitTracks(testTracks);
+      platformPlayer.emitTrack(
+        const Track(
+          audio: AudioTrack('1', '英语', 'eng'),
+          subtitle: SubtitleTrack('no', null, null),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(engine.snapshot.audioTracks.length, 4);
+      expect(engine.snapshot.subtitleTracks.length, 3);
+      expect(engine.snapshot.audioTrackId, '1');
+      expect(engine.snapshot.subtitleTrackId, 'no');
+
+      // Select track
+      await engine.setAudioTrack('2');
+      expect(platformPlayer.lastAudioTrack?.id, '2');
+
+      // Select off
+      await engine.setAudioTrack('off');
+      expect(platformPlayer.lastAudioTrack?.id, 'no');
+
+      // Select auto
+      await engine.setSubtitleTrack('auto');
+      expect(platformPlayer.lastSubtitleTrack?.id, 'auto');
+    });
+
+    test('实际时长到达后若起播进度越界则安全从零重播', () async {
+      final resource = PlaybackResource(
+        uri: Uri.parse('https://example.com/trimmed.mp4'),
+        displayName: '裁剪视频',
+      );
+      // 传入超出实际时长(30m)的 50m 起播位置
+      await engine.open(resource, resumeAt: const Duration(minutes: 50));
+
+      platformPlayer.emitDuration(const Duration(minutes: 30));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(platformPlayer.lastSeek, Duration.zero);
+    });
+
+    test('起播进度在实际时长范围内时不触发越界重播', () async {
+      final resource = PlaybackResource(
+        uri: Uri.parse('https://example.com/normal.mp4'),
+        displayName: '正常视频',
+      );
+      platformPlayer.lastSeek = null;
+      await engine.open(resource, resumeAt: const Duration(minutes: 10));
+
+      platformPlayer.emitDuration(const Duration(minutes: 30));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(platformPlayer.lastSeek, isNull);
+    });
+
+    test('切换较长版本时旧时长通知不会抹去有效续播位置', () async {
+      final oldResource = PlaybackResource(
+        uri: Uri.parse('https://example.com/old.mp4'),
+        displayName: '旧视频',
+      );
+      await engine.open(oldResource);
+      platformPlayer.emitDuration(const Duration(minutes: 10));
+      await Future<void>.delayed(Duration.zero);
+
+      final newResource = PlaybackResource(
+        uri: Uri.parse('https://example.com/new.mp4'),
+        displayName: '新长视频',
+      );
+      platformPlayer.lastSeek = null;
+
+      // 旧通知仍可能排队，但插件的公开状态已按新媒体重置。
+      final openCompleter = Completer<void>();
+      platformPlayer.onOpen = (_) async {
+        platformPlayer.emitQueuedDuration(const Duration(minutes: 10));
+        await openCompleter.future;
+      };
+
+      final openFuture = engine.open(
+        newResource,
+        resumeAt: const Duration(minutes: 15),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      // 旧通知小于续播位置，打开期间不能因此重置到零。
+      expect(platformPlayer.lastSeek, isNull);
+
+      // 新媒体打开后才到达实际时长。
+      platformPlayer.onOpen = null;
+      openCompleter.complete();
+      await openFuture;
+
+      platformPlayer.emitDuration(const Duration(minutes: 30));
+      await Future<void>.delayed(Duration.zero);
+
+      // 新版本足够长，保留 15 分钟的续播起点。
+      expect(platformPlayer.lastSeek, isNull);
     });
   });
 }

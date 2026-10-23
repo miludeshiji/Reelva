@@ -13,6 +13,7 @@ import '../application/playback_session.dart';
 import '../application/player_providers.dart';
 import '../domain/playback_resource.dart';
 import '../domain/playback_snapshot.dart';
+import '../domain/player_engine.dart';
 import 'network_address_dialog.dart';
 import 'player_controls.dart';
 
@@ -32,23 +33,79 @@ class PlayerPage extends ConsumerStatefulWidget {
 }
 
 class _PlayerPageState extends ConsumerState<PlayerPage>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, WindowListener {
   PlaybackSession? _session;
   bool _isFullscreen = false;
   bool _isTogglingFullscreen = false;
   bool _isExiting = false;
   PlaybackResource? _currentResource;
   int _actionCounter = 0;
-
+  final FocusNode _focusNode = FocusNode();
+  bool _isWindowClosing = false;
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+      windowManager.addListener(this);
+      windowManager.setPreventClose(true).catchError((Object e, StackTrace st) {
+        AppLogger.instance.error(
+          '设置 Windows 窗口阻止关闭失败',
+          error: e,
+          stackTrace: st,
+        );
+      });
+    }
     if (widget.initialResource != null) {
       _currentResource = widget.initialResource;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _openInitialResource();
       });
+    }
+  }
+
+  @override
+  void onWindowClose() async {
+    if (_isWindowClosing || _isExiting) return;
+    _isWindowClosing = true;
+    _isExiting = true;
+    _actionCounter++;
+
+    bool isPreventClose = false;
+    try {
+      isPreventClose = await windowManager.isPreventClose();
+    } catch (e, st) {
+      AppLogger.instance.error('查询窗口阻止关闭状态异常', error: e, stackTrace: st);
+    }
+    if (isPreventClose) {
+      final engine = _session?.engine;
+      if (engine != null) {
+        try {
+          await engine.dispose();
+        } catch (e, st) {
+          AppLogger.instance.error('窗口关闭前释放播放引擎异常', error: e, stackTrace: st);
+        }
+      }
+      try {
+        await windowManager.destroy();
+      } catch (e, st) {
+        AppLogger.instance.error('销毁窗口异常', error: e, stackTrace: st);
+      }
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant PlayerPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialResource != oldWidget.initialResource) {
+      _currentResource = widget.initialResource;
+      if (widget.initialResource != null) {
+        _openInitialResource();
+      } else {
+        _session?.engine.stop().catchError((Object e, StackTrace st) {
+          AppLogger.instance.error('停止播放引擎异常', error: e, stackTrace: st);
+        });
+      }
     }
   }
 
@@ -71,7 +128,24 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   void dispose() {
     _isExiting = true;
     _actionCounter++;
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+      windowManager.removeListener(this);
+      windowManager.setPreventClose(false).catchError((
+        Object e,
+        StackTrace st,
+      ) {
+        AppLogger.instance.error(
+          '还原 Windows 窗口阻止关闭失败',
+          error: e,
+          stackTrace: st,
+        );
+      });
+    }
     WidgetsBinding.instance.removeObserver(this);
+    _focusNode.dispose();
+    _session?.engine.stop().catchError((Object e, StackTrace st) {
+      AppLogger.instance.error('卸载页面停止播放引擎异常', error: e, stackTrace: st);
+    });
     if (_isFullscreen) {
       if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
         windowManager.setFullScreen(false).catchError((
@@ -366,6 +440,15 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                   color: Colors.white,
                 ),
               ),
+              const SizedBox(height: 8),
+              Text(
+                '建议检查网络连接、视频文件完整性或选择其他媒体重试',
+                key: const Key('player_error_suggestion_text'),
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: Colors.white70,
+                ),
+              ),
               const SizedBox(height: 16),
               Wrap(
                 spacing: 12,
@@ -402,6 +485,114 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     return Center(child: SingleChildScrollView(child: overlayContent));
   }
 
+  bool _canHandleShortcuts(BuildContext context) {
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) {
+      return false;
+    }
+    final focus = FocusManager.instance.primaryFocus;
+    if (focus != null) {
+      final ctx = focus.context;
+      if (ctx != null) {
+        if (ctx.widget is EditableText ||
+            ctx.findAncestorWidgetOfExactType<EditableText>() != null) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  KeyEventResult _handleKeyEvent(
+    FocusNode node,
+    KeyEvent event,
+    PlaybackSnapshot snapshot,
+    PlayerEngine engine,
+  ) {
+    if (event is! KeyDownEvent) {
+      return KeyEventResult.ignored;
+    }
+
+    if (!_canHandleShortcuts(context)) {
+      return KeyEventResult.ignored;
+    }
+
+    final key = event.logicalKey;
+
+    if (key == LogicalKeyboardKey.space) {
+      if (snapshot.status == PlaybackStatus.idle ||
+          snapshot.status == PlaybackStatus.resolving ||
+          snapshot.status == PlaybackStatus.opening ||
+          snapshot.status == PlaybackStatus.error) {
+        return KeyEventResult.handled;
+      }
+      if (snapshot.status == PlaybackStatus.completed) {
+        engine.seek(Duration.zero);
+        engine.play();
+        return KeyEventResult.handled;
+      }
+      if (snapshot.isPlaying) {
+        engine.pause();
+      } else {
+        engine.play();
+      }
+      return KeyEventResult.handled;
+    }
+
+    if (key == LogicalKeyboardKey.arrowLeft) {
+      if (snapshot.duration <= Duration.zero ||
+          snapshot.status == PlaybackStatus.idle ||
+          snapshot.status == PlaybackStatus.resolving ||
+          snapshot.status == PlaybackStatus.opening ||
+          snapshot.status == PlaybackStatus.error) {
+        return KeyEventResult.handled;
+      }
+      final target = snapshot.position - const Duration(seconds: 10);
+      engine.seek(target < Duration.zero ? Duration.zero : target);
+      return KeyEventResult.handled;
+    }
+
+    if (key == LogicalKeyboardKey.arrowRight) {
+      if (snapshot.duration <= Duration.zero ||
+          snapshot.status == PlaybackStatus.idle ||
+          snapshot.status == PlaybackStatus.resolving ||
+          snapshot.status == PlaybackStatus.opening ||
+          snapshot.status == PlaybackStatus.error) {
+        return KeyEventResult.handled;
+      }
+      final target = snapshot.position + const Duration(seconds: 10);
+      engine.seek(target > snapshot.duration ? snapshot.duration : target);
+      return KeyEventResult.handled;
+    }
+
+    if (key == LogicalKeyboardKey.arrowUp) {
+      if (snapshot.status == PlaybackStatus.error) {
+        return KeyEventResult.handled;
+      }
+      final nextVol = (snapshot.volume + 5.0).clamp(0.0, 100.0);
+      engine.setVolume(nextVol);
+      return KeyEventResult.handled;
+    }
+
+    if (key == LogicalKeyboardKey.arrowDown) {
+      if (snapshot.status == PlaybackStatus.error) {
+        return KeyEventResult.handled;
+      }
+      final nextVol = (snapshot.volume - 5.0).clamp(0.0, 100.0);
+      engine.setVolume(nextVol);
+      return KeyEventResult.handled;
+    }
+
+    if (key == LogicalKeyboardKey.escape) {
+      if (_isFullscreen && !_isTogglingFullscreen) {
+        _setFullscreen(false);
+        return KeyEventResult.handled;
+      }
+    }
+
+    return KeyEventResult.ignored;
+  }
+
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(playerSessionProvider);
@@ -419,158 +610,153 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         }
         await _handleExit();
       },
-      child: CallbackShortcuts(
-        bindings: {
-          const SingleActivator(LogicalKeyboardKey.escape): () {
-            if (_isFullscreen && !_isTogglingFullscreen) {
-              _setFullscreen(false);
+      child: StreamBuilder<PlaybackSnapshot>(
+        stream: session.engine.snapshots,
+        initialData: session.engine.snapshot,
+        builder: (context, snapshotAsync) {
+          final snapshot = snapshotAsync.data ?? const PlaybackSnapshot();
+
+          void handleReplayOrRetry() async {
+            if (snapshot.status == PlaybackStatus.completed) {
+              await session.engine.seek(Duration.zero);
+              await session.engine.play();
+            } else if (_currentResource != null) {
+              await session.engine.open(_currentResource!);
             }
-          },
-        },
-        child: Focus(
-          autofocus: true,
-          child: StreamBuilder<PlaybackSnapshot>(
-            stream: session.engine.snapshots,
-            initialData: session.engine.snapshot,
-            builder: (context, snapshotAsync) {
-              final snapshot = snapshotAsync.data ?? const PlaybackSnapshot();
+          }
 
-              void handleReplayOrRetry() async {
-                if (snapshot.status == PlaybackStatus.completed) {
-                  await session.engine.seek(Duration.zero);
-                  await session.engine.play();
-                } else if (_currentResource != null) {
-                  await session.engine.open(_currentResource!);
-                }
-              }
-
-              return Scaffold(
-                backgroundColor: Colors.black,
-                appBar: _isFullscreen
-                    ? null
-                    : AppBar(
-                        leading: BackButton(
-                          key: const Key('player_back_button'),
-                          onPressed: _handleExit,
-                        ),
-                        title: Row(
-                          children: [
-                            const ReelvaLogo(size: 24),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                displayName,
-                                key: const Key('player_title_text'),
-                                overflow: TextOverflow.ellipsis,
-                              ),
+          return Focus(
+            focusNode: _focusNode,
+            autofocus: true,
+            onKeyEvent: (node, event) =>
+                _handleKeyEvent(node, event, snapshot, session.engine),
+            child: Scaffold(
+              backgroundColor: Colors.black,
+              appBar: _isFullscreen
+                  ? null
+                  : AppBar(
+                      leading: BackButton(
+                        key: const Key('player_back_button'),
+                        onPressed: _handleExit,
+                      ),
+                      title: Row(
+                        children: [
+                          const ReelvaLogo(size: 24),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              displayName,
+                              key: const Key('player_title_text'),
+                              overflow: TextOverflow.ellipsis,
                             ),
-                          ],
-                        ),
-                        actions: [
-                          IconButton(
-                            key: const Key('appbar_pick_file_button'),
-                            icon: const Icon(Icons.folder_open),
-                            tooltip: '选择本地视频',
-                            onPressed: _pickNativeVideo,
-                          ),
-                          IconButton(
-                            key: const Key('appbar_open_url_button'),
-                            icon: const Icon(Icons.link),
-                            tooltip: '输入网络链接',
-                            onPressed: _openNetworkVideo,
                           ),
                         ],
                       ),
-                body: SafeArea(
-                  top: !_isFullscreen,
-                  bottom: !_isFullscreen,
-                  child: Stack(
-                    children: [
-                      // 主视频画面（全屏与非全屏使用同一直属 session.videoBuilder）
-                      Positioned.fill(
+                      actions: [
+                        IconButton(
+                          key: const Key('appbar_pick_file_button'),
+                          icon: const Icon(Icons.folder_open),
+                          tooltip: '选择本地视频',
+                          onPressed: _pickNativeVideo,
+                        ),
+                        IconButton(
+                          key: const Key('appbar_open_url_button'),
+                          icon: const Icon(Icons.link),
+                          tooltip: '输入网络链接',
+                          onPressed: _openNetworkVideo,
+                        ),
+                      ],
+                    ),
+              body: SafeArea(
+                top: !_isFullscreen,
+                bottom: !_isFullscreen,
+                child: Stack(
+                  children: [
+                    // 主视频画面（全屏与非全屏使用同一直属 session.videoBuilder）
+                    Positioned.fill(
+                      child: Container(
+                        color: Colors.black,
+                        child: Center(child: session.videoBuilder(context)),
+                      ),
+                    ),
+
+                    // 状态遮罩层（空闲、缓冲加载、播放完成重播、错误提示；内嵌滚动支持小高度视口）
+                    Positioned.fill(
+                      child: _buildStatusOverlay(
+                        context,
+                        snapshot,
+                        handleReplayOrRetry,
+                      ),
+                    ),
+
+                    // 全屏模式下的顶部控制浮层（提供退出全屏返回与标题展示）
+                    if (_isFullscreen)
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
                         child: Container(
-                          color: Colors.black,
-                          child: Center(child: session.videoBuilder(context)),
-                        ),
-                      ),
-
-                      // 状态遮罩层（空闲、缓冲加载、播放完成重播、错误提示；内嵌滚动支持小高度视口）
-                      Positioned.fill(
-                        child: _buildStatusOverlay(
-                          context,
-                          snapshot,
-                          handleReplayOrRetry,
-                        ),
-                      ),
-
-                      // 全屏模式下的顶部控制浮层（提供退出全屏返回与标题展示）
-                      if (_isFullscreen)
-                        Positioned(
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  Colors.black.withValues(alpha: 0.8),
-                                  Colors.transparent,
-                                ],
-                              ),
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
-                            child: Row(
-                              children: [
-                                IconButton(
-                                  key: const Key('fullscreen_exit_back_button'),
-                                  icon: const Icon(
-                                    Icons.arrow_back,
-                                    color: Colors.white,
-                                  ),
-                                  tooltip: '退出全屏',
-                                  onPressed: () => _setFullscreen(false),
-                                ),
-                                const SizedBox(width: 8),
-                                const ReelvaLogo(size: 20),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    displayName,
-                                    style: theme.textTheme.titleMedium
-                                        ?.copyWith(color: Colors.white),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.black.withValues(alpha: 0.8),
+                                Colors.transparent,
                               ],
                             ),
                           ),
-                        ),
-
-                      // 底部控制面板（进度条、时长缓冲独立行、Wrap响应式控制按钮）
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        child: PlayerControls(
-                          snapshot: snapshot,
-                          engine: session.engine,
-                          isFullscreen: _isFullscreen,
-                          onToggleFullscreen: () =>
-                              _setFullscreen(!_isFullscreen),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          child: Row(
+                            children: [
+                              IconButton(
+                                key: const Key('fullscreen_exit_back_button'),
+                                icon: const Icon(
+                                  Icons.arrow_back,
+                                  color: Colors.white,
+                                ),
+                                tooltip: '退出全屏',
+                                onPressed: () => _setFullscreen(false),
+                              ),
+                              const SizedBox(width: 8),
+                              const ReelvaLogo(size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  displayName,
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    color: Colors.white,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ],
-                  ),
+
+                    // 底部控制面板（进度条、时长缓冲独立行、Wrap响应式控制按钮）
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: PlayerControls(
+                        snapshot: snapshot,
+                        engine: session.engine,
+                        isFullscreen: _isFullscreen,
+                        onToggleFullscreen: () =>
+                            _setFullscreen(!_isFullscreen),
+                      ),
+                    ),
+                  ],
                 ),
-              );
-            },
-          ),
-        ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

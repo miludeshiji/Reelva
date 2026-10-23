@@ -26,6 +26,8 @@ class FakePlayerEngine implements PlayerEngine {
   int seekCount = 0;
   int setRateCount = 0;
   int setVolumeCount = 0;
+  int setAudioTrackCount = 0;
+  int setSubtitleTrackCount = 0;
   int disposeCount = 0;
 
   PlaybackResource? lastOpenedResource;
@@ -33,6 +35,8 @@ class FakePlayerEngine implements PlayerEngine {
   Duration? lastSeekPosition;
   double? lastRate;
   double? lastVolume;
+  String? lastAudioTrackId;
+  String? lastSubtitleTrackId;
 
   @override
   PlaybackSnapshot get snapshot => _snapshot;
@@ -55,6 +59,7 @@ class FakePlayerEngine implements PlayerEngine {
     emit(
       _snapshot.copyWith(
         status: PlaybackStatus.playing,
+        position: resumeAt ?? Duration.zero,
         errorMessage: () => null,
       ),
     );
@@ -91,6 +96,20 @@ class FakePlayerEngine implements PlayerEngine {
     setVolumeCount++;
     lastVolume = volume;
     emit(_snapshot.copyWith(volume: volume));
+  }
+
+  @override
+  Future<void> setAudioTrack(String id) async {
+    setAudioTrackCount++;
+    lastAudioTrackId = id;
+    emit(_snapshot.copyWith(audioTrackId: () => id));
+  }
+
+  @override
+  Future<void> setSubtitleTrack(String id) async {
+    setSubtitleTrackCount++;
+    lastSubtitleTrackId = id;
+    emit(_snapshot.copyWith(subtitleTrackId: () => id));
   }
 
   @override

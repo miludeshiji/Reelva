@@ -9,14 +9,18 @@ import 'package:reelva/app/router.dart';
 import 'package:reelva/core/database/app_database.dart';
 import 'package:reelva/features/home/home_page.dart';
 import 'package:reelva/features/library/library_page.dart';
+import 'package:reelva/features/player/application/player_providers.dart';
 import 'package:reelva/features/settings/settings_page.dart';
 import 'package:reelva/features/sources/application/source_providers.dart';
 import 'package:reelva/features/sources/sources_page.dart';
+
+import 'features/player/fake_player_engine.dart';
 
 Widget createTestApp({required AppDatabase db, GoRouter? router}) {
   return ProviderScope(
     overrides: [
       appDatabaseProvider.overrideWithValue(db),
+      playerSessionProvider.overrideWith((ref) => createFakeSession()),
       if (router != null) routerProvider.overrideWithValue(router),
     ],
     child: const ReelvaApp(),

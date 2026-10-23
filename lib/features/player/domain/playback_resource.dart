@@ -10,14 +10,34 @@ class PlaybackResource {
     required this.uri,
     required this.displayName,
     this.httpHeaders = const {},
+    this.libraryFileId,
   });
 
   final Uri uri;
   final String displayName;
   final Map<String, String> httpHeaders;
+  final int? libraryFileId;
+
+  PlaybackResource copyWith({
+    Uri? uri,
+    String? displayName,
+    Map<String, String>? httpHeaders,
+    int? Function()? libraryFileId,
+  }) {
+    return PlaybackResource(
+      uri: uri ?? this.uri,
+      displayName: displayName ?? this.displayName,
+      httpHeaders: httpHeaders ?? this.httpHeaders,
+      libraryFileId: libraryFileId != null
+          ? libraryFileId()
+          : this.libraryFileId,
+    );
+  }
 
   @override
-  String toString() => 'PlaybackResource(displayName: $displayName)';
+  String toString() =>
+      'PlaybackResource(displayName: $displayName'
+      '${libraryFileId != null ? ', libraryFileId: $libraryFileId' : ''})';
 
   @override
   bool operator ==(Object other) =>
@@ -26,12 +46,14 @@ class PlaybackResource {
           runtimeType == other.runtimeType &&
           uri == other.uri &&
           displayName == other.displayName &&
+          libraryFileId == other.libraryFileId &&
           mapEquals(httpHeaders, other.httpHeaders);
 
   @override
   int get hashCode => Object.hash(
     uri,
     displayName,
+    libraryFileId,
     Object.hashAll(httpHeaders.entries.map((e) => Object.hash(e.key, e.value))),
   );
 }

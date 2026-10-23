@@ -813,6 +813,54 @@ class MediaLibraryRepository {
         .map((rows) => rows.map(_workFromRow).toList());
   }
 
+  /// 监视最近添加的媒体作品列表，DB 层级分页。
+  ///
+  /// 按 created_at DESC, id DESC 排序，首次发射前触发识别。
+  Stream<List<LibraryWork>> watchRecentWorks({int limit = 20}) async* {
+    await recognizePendingFiles();
+    yield* _watchRecentWorksInternal(limit);
+  }
+
+  Stream<List<LibraryWork>> _watchRecentWorksInternal(int limit) {
+    const queryStr =
+        '''
+      $_workBaseSelectSql
+      WHERE EXISTS (
+        SELECT 1 FROM media_assignments ma
+        JOIN media_files mf ON mf.id = ma.file_id
+        JOIN media_entries me ON me.id = mf.entry_id
+        JOIN media_sources ms ON ms.id = me.source_id
+        WHERE ms.enabled = 1 AND me.is_directory = 0 AND (
+          ma.work_id = w.id OR
+          ma.episode_id IN (
+            SELECT e2.id FROM episodes e2
+            JOIN seasons s2 ON s2.id = e2.season_id
+            WHERE s2.series_id = w.id
+          )
+        )
+      )
+      ORDER BY w.created_at DESC, w.id DESC
+      LIMIT ?
+    ''';
+
+    return db
+        .customSelect(
+          queryStr,
+          variables: [Variable.withInt(limit)],
+          readsFrom: <TableInfo<Table, dynamic>>{
+            db.works,
+            db.mediaAssignments,
+            db.mediaFiles,
+            db.mediaEntries,
+            db.mediaSources,
+            db.seasons,
+            db.episodes,
+          },
+        )
+        .watch()
+        .map((rows) => rows.map(_workFromRow).toList());
+  }
+
   /// 监视指定作品的详情与版本列表。
   Stream<WorkDetails?> watchWorkDetails(int workId) async* {
     await recognizePendingFiles();

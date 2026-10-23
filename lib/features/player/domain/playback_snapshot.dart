@@ -27,6 +27,32 @@ enum PlaybackStatus {
   error,
 }
 
+/// 媒体轨道描述值对象（音频/字幕）
+@immutable
+class PlaybackTrack {
+  const PlaybackTrack({required this.id, required this.label});
+
+  /// 轨道唯一标识（如底层索引、'auto' 或 'no'/'off'）
+  final String id;
+
+  /// 用户可读的友好轨道名称（如 "英语 (aac)" 或 "简体中文"）
+  final String label;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PlaybackTrack &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          label == other.label;
+
+  @override
+  int get hashCode => Object.hash(id, label);
+
+  @override
+  String toString() => 'PlaybackTrack(id: $id, label: $label)';
+}
+
 /// 播放器瞬时状态快照（不可变）
 @immutable
 class PlaybackSnapshot {
@@ -38,6 +64,11 @@ class PlaybackSnapshot {
     this.volume = 100.0,
     this.rate = 1.0,
     this.errorMessage,
+    this.audioTracks = const [],
+    this.subtitleTracks = const [],
+    this.audioTrackId,
+    this.subtitleTrackId,
+    this.progressErrorMessage,
   });
 
   /// 当前播放状态
@@ -61,6 +92,21 @@ class PlaybackSnapshot {
   /// 用户友好的安全中文错误信息（不包含敏感凭据或裸 URL）
   final String? errorMessage;
 
+  /// 可用音频轨道列表
+  final List<PlaybackTrack> audioTracks;
+
+  /// 可用字幕轨道列表
+  final List<PlaybackTrack> subtitleTracks;
+
+  /// 当前选中的音频轨道 ID
+  final String? audioTrackId;
+
+  /// 当前选中的字幕轨道 ID
+  final String? subtitleTrackId;
+
+  /// 播放进度保存/恢复非致命错误提示信息（如存储异常）
+  final String? progressErrorMessage;
+
   /// 便捷判断当前是否正处于活跃播放或缓冲播放状态
   ///
   /// 涵盖 [PlaybackStatus.playing] 与活跃缓冲 [PlaybackStatus.buffering]，
@@ -77,6 +123,11 @@ class PlaybackSnapshot {
     double? volume,
     double? rate,
     String? Function()? errorMessage,
+    List<PlaybackTrack>? audioTracks,
+    List<PlaybackTrack>? subtitleTracks,
+    String? Function()? audioTrackId,
+    String? Function()? subtitleTrackId,
+    String? Function()? progressErrorMessage,
   }) {
     return PlaybackSnapshot(
       status: status ?? this.status,
@@ -86,6 +137,15 @@ class PlaybackSnapshot {
       volume: volume ?? this.volume,
       rate: rate ?? this.rate,
       errorMessage: errorMessage != null ? errorMessage() : this.errorMessage,
+      audioTracks: audioTracks ?? this.audioTracks,
+      subtitleTracks: subtitleTracks ?? this.subtitleTracks,
+      audioTrackId: audioTrackId != null ? audioTrackId() : this.audioTrackId,
+      subtitleTrackId: subtitleTrackId != null
+          ? subtitleTrackId()
+          : this.subtitleTrackId,
+      progressErrorMessage: progressErrorMessage != null
+          ? progressErrorMessage()
+          : this.progressErrorMessage,
     );
   }
 
@@ -93,7 +153,12 @@ class PlaybackSnapshot {
   String toString() {
     return 'PlaybackSnapshot(status: $status, pos: $position, dur: $duration, '
         'buf: $buffered, vol: $volume, rate: $rate'
-        '${errorMessage != null ? ', err: $errorMessage' : ''})';
+        '${errorMessage != null ? ', err: $errorMessage' : ''}'
+        '${audioTracks.isNotEmpty ? ', audioTracks: $audioTracks' : ''}'
+        '${subtitleTracks.isNotEmpty ? ', subtitleTracks: $subtitleTracks' : ''}'
+        '${audioTrackId != null ? ', audioTrackId: $audioTrackId' : ''}'
+        '${subtitleTrackId != null ? ', subtitleTrackId: $subtitleTrackId' : ''}'
+        '${progressErrorMessage != null ? ', progressErr: $progressErrorMessage' : ''})';
   }
 
   @override
@@ -107,7 +172,12 @@ class PlaybackSnapshot {
           buffered == other.buffered &&
           volume == other.volume &&
           rate == other.rate &&
-          errorMessage == other.errorMessage;
+          errorMessage == other.errorMessage &&
+          listEquals(audioTracks, other.audioTracks) &&
+          listEquals(subtitleTracks, other.subtitleTracks) &&
+          audioTrackId == other.audioTrackId &&
+          subtitleTrackId == other.subtitleTrackId &&
+          progressErrorMessage == other.progressErrorMessage;
 
   @override
   int get hashCode => Object.hash(
@@ -118,5 +188,10 @@ class PlaybackSnapshot {
     volume,
     rate,
     errorMessage,
+    Object.hashAll(audioTracks),
+    Object.hashAll(subtitleTracks),
+    audioTrackId,
+    subtitleTrackId,
+    progressErrorMessage,
   );
 }

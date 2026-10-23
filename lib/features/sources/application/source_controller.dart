@@ -228,6 +228,7 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
         uri: resource.uri,
         displayName: displayName,
         httpHeaders: resource.httpHeaders,
+        libraryFileId: fileId,
       );
     } on MediaSourceException {
       rethrow;

@@ -239,5 +239,76 @@ void main() {
       final f2 = engine.dispose();
       expect(identical(f1, f2), isTrue);
     });
+
+    test(
+      'rapid switch/seek/dispose: 连续切换资源时取消前序起播，实际打开的每个FD仅关闭一次且状态归一',
+      () async {
+        final res1 = PlaybackResource(
+          uri: Uri.parse('content://com.android.providers.media/video/1'),
+          displayName: 'video1.mp4',
+        );
+        final res2 = PlaybackResource(
+          uri: Uri.parse('content://com.android.providers.media/video/2'),
+          displayName: 'video2.mp4',
+        );
+
+        final openCompleter = Completer<void>();
+        var res1Opened = false;
+        platformPlayer.onOpen = (_) async {
+          if (!res1Opened) {
+            res1Opened = true;
+            // 第一个资源已由 documents 打开 FD 并进入 player.open 挂起
+            await openCompleter.future;
+          }
+        };
+
+        final future1 = engine.open(
+          res1,
+          resumeAt: const Duration(seconds: 10),
+        );
+        // 等待 res1 实际打开 FD
+        while (documents.openedFds.isEmpty) {
+          await Future<void>.delayed(Duration.zero);
+        }
+
+        // 并发切换到第二个资源并放行 res1
+        final future2 = engine.open(
+          res2,
+          resumeAt: const Duration(seconds: 25),
+        );
+        openCompleter.complete();
+
+        await Future.wait([future1, future2]);
+        expect(engine.snapshot.position, const Duration(seconds: 25));
+
+        // 在最新资源上执行 seek
+        await engine.seek(const Duration(seconds: 30));
+        expect(platformPlayer.lastSeek, const Duration(seconds: 30));
+
+        // dispose 释放所有句柄
+        await engine.dispose();
+
+        // 验证实际打开的每个描述符均被关闭，且每个描述符仅关闭一次
+        expect(documents.openedFds.isNotEmpty, isTrue);
+        for (final fd in documents.openedFds) {
+          expect(
+            documents.closedFds.where((c) => c == fd).length,
+            1,
+            reason: 'FD $fd 必须且仅能关闭一次',
+          );
+        }
+        expect(platformPlayer.disposeCalled, isTrue);
+
+        // dispose 后调用 play 无副作用
+        final playCountBefore = platformPlayer.callLog
+            .where((c) => c == 'player.play')
+            .length;
+        await engine.play();
+        expect(
+          platformPlayer.callLog.where((c) => c == 'player.play').length,
+          playCountBefore,
+        );
+      },
+    );
   });
 }

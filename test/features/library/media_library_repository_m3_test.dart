@@ -1155,5 +1155,104 @@ void main() {
       final finalFiles = await db.select(db.mediaFiles).get();
       expect(finalFiles.first.parseState, 'needs_review');
     });
+
+    test('watchRecentWorks orders works by created_at DESC, id DESC and groups versions', () async {
+      final source = await repo.upsertSource(
+        kind: 'local',
+        rootLocator: 'C:/Movies',
+        name: 'Movies',
+      );
+
+      final now = DateTime.now();
+      final entries = [
+        MediaEntry(
+          externalId: 'm1_1080',
+          locator: 'Inception.2010.1080p.mkv',
+          name: 'Inception.2010.1080p.mkv',
+          isDirectory: false,
+          size: 2000000000,
+          modifiedAt: now,
+        ),
+        MediaEntry(
+          externalId: 'm1_4k',
+          locator: 'Inception.2010.2160p.4K.mkv',
+          name: 'Inception.2010.2160p.4K.mkv',
+          isDirectory: false,
+          size: 8000000000,
+          modifiedAt: now,
+        ),
+        MediaEntry(
+          externalId: 'm2',
+          locator: 'Interstellar.2014.1080p.mkv',
+          name: 'Interstellar.2014.1080p.mkv',
+          isDirectory: false,
+          size: 3000000000,
+          modifiedAt: now,
+        ),
+      ];
+
+      final scanId = await repo.beginScan(source.id);
+      await repo.applyScanBatch(source.id, scanId, entries);
+      await repo.finishScan(source.id, scanId);
+
+      // watchRecentWorks automatically triggers recognizePendingFiles
+      final recents = await repo.watchRecentWorks(limit: 20).first;
+      expect(recents, hasLength(2));
+
+      // Inception has 2 versions deduped into 1 work
+      final inception = recents.firstWhere((w) => w.title == 'Inception');
+      expect(inception.versionCount, 2);
+
+      final interstellar = recents.firstWhere((w) => w.title == 'Interstellar');
+      expect(interstellar.versionCount, 1);
+
+      // Update created_at to verify order
+      await (db.update(
+        db.works,
+      )..where((w) => w.id.equals(inception.id))).write(
+        WorksCompanion(createdAt: Value(now.subtract(const Duration(days: 1)))),
+      );
+      await (db.update(db.works)..where((w) => w.id.equals(interstellar.id)))
+          .write(WorksCompanion(createdAt: Value(now)));
+
+      final orderedRecents = await repo.watchRecentWorks(limit: 20).first;
+      expect(orderedRecents.first.id, interstellar.id);
+      expect(orderedRecents.last.id, inception.id);
+    });
+
+    test(
+      'watchRecentWorks respects limit and excludes disabled sources',
+      () async {
+        final source = await repo.upsertSource(
+          kind: 'local',
+          rootLocator: 'C:/Movies',
+          name: 'Movies',
+        );
+
+        final now = DateTime.now();
+        final entries = List.generate(
+          5,
+          (i) => MediaEntry(
+            externalId: 'm$i',
+            locator: 'Movie.$i.2020.mkv',
+            name: 'Movie.$i.2020.mkv',
+            isDirectory: false,
+            size: 1000000000,
+            modifiedAt: now,
+          ),
+        );
+
+        final scanId = await repo.beginScan(source.id);
+        await repo.applyScanBatch(source.id, scanId, entries);
+        await repo.finishScan(source.id, scanId);
+
+        final bounded = await repo.watchRecentWorks(limit: 3).first;
+        expect(bounded, hasLength(3));
+
+        await repo.disableSource(source.id);
+        final afterDisabled = await repo.watchRecentWorks().first;
+        expect(afterDisabled, isEmpty);
+      },
+    );
   });
 }

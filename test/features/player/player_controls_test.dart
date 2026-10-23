@@ -355,5 +355,100 @@ void main() {
         );
       },
     );
+
+    testWidgets(
+      'Audio and subtitle track menus trigger engine track selection',
+      (tester) async {
+        final engine = FakePlayerEngine();
+        const audioTracks = [
+          PlaybackTrack(id: 'auto', label: '自动'),
+          PlaybackTrack(id: '1', label: '英语 5.1'),
+          PlaybackTrack(id: '2', label: '国语配音'),
+        ];
+        const subtitleTracks = [
+          PlaybackTrack(id: 'no', label: '关闭字幕'),
+          PlaybackTrack(id: 'sub-1', label: '简体中文'),
+        ];
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: PlayerControls(
+                snapshot: const PlaybackSnapshot(
+                  status: PlaybackStatus.playing,
+                  position: Duration(seconds: 10),
+                  duration: Duration(minutes: 5),
+                  audioTracks: audioTracks,
+                  subtitleTracks: subtitleTracks,
+                  audioTrackId: '1',
+                  subtitleTrackId: 'no',
+                ),
+                engine: engine,
+                isFullscreen: false,
+                onToggleFullscreen: () {},
+              ),
+            ),
+          ),
+        );
+
+        // Audio track popup
+        final audioBtn = find.byKey(const Key('player_audio_track_button'));
+        expect(audioBtn, findsOneWidget);
+        await tester.tap(audioBtn);
+        await tester.pumpAndSettle();
+
+        expect(find.text('国语配音'), findsOneWidget);
+        await tester.tap(find.text('国语配音'));
+        await tester.pumpAndSettle();
+
+        expect(engine.setAudioTrackCount, 1);
+        expect(engine.lastAudioTrackId, '2');
+
+        // Subtitle track popup
+        final subtitleBtn = find.byKey(
+          const Key('player_subtitle_track_button'),
+        );
+        expect(subtitleBtn, findsOneWidget);
+        await tester.tap(subtitleBtn);
+        await tester.pumpAndSettle();
+
+        expect(find.text('简体中文'), findsOneWidget);
+        await tester.tap(find.text('简体中文'));
+        await tester.pumpAndSettle();
+
+        expect(engine.setSubtitleTrackCount, 1);
+        expect(engine.lastSubtitleTrackId, 'sub-1');
+      },
+    );
+
+    testWidgets('Nonfatal progressErrorMessage displays in banner safely', (
+      tester,
+    ) async {
+      final engine = FakePlayerEngine();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PlayerControls(
+              snapshot: const PlaybackSnapshot(
+                status: PlaybackStatus.playing,
+                position: Duration(seconds: 10),
+                duration: Duration(minutes: 5),
+                progressErrorMessage: '保存播放进度失败：磁盘空间不足',
+              ),
+              engine: engine,
+              isFullscreen: false,
+              onToggleFullscreen: () {},
+            ),
+          ),
+        ),
+      );
+
+      expect(
+        find.byKey(const Key('player_progress_error_banner')),
+        findsOneWidget,
+      );
+      expect(find.text('保存播放进度失败：磁盘空间不足'), findsOneWidget);
+    });
   });
 }

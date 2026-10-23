@@ -4,6 +4,8 @@ import 'package:drift/drift.dart' hide isNotNull, isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:reelva/core/database/app_database.dart';
+import 'package:reelva/features/progress/domain/playback_progress.dart';
+import 'package:reelva/features/progress/infrastructure/playback_progress_repository.dart';
 
 void main() {
   group('Schema v2 migration and tables', () {
@@ -230,6 +232,32 @@ void main() {
             expect(progress, hasLength(1));
             expect(progress.first.positionMs, 5000);
 
+            // 验证迁移后的 v1 进度可通过新版 PlaybackProgressRepository 正常读取并进入继续观看展架
+            final progressRepo = PlaybackProgressRepository(db: appDb);
+            final migratedProgress = await progressRepo.getProgress(1);
+            expect(migratedProgress, isNotNull);
+            expect(migratedProgress!.targetType, ProgressTargetType.work);
+            expect(migratedProgress.targetId, 1);
+            expect(
+              migratedProgress.position,
+              const Duration(milliseconds: 5000),
+            );
+            expect(
+              migratedProgress.duration,
+              const Duration(milliseconds: 100000),
+            );
+            expect(migratedProgress.completed, isFalse);
+
+            final continueList = await progressRepo.getContinueWatching();
+            expect(continueList, hasLength(1));
+            expect(continueList.first.workId, 1);
+            expect(continueList.first.title, 'Movie');
+            expect(continueList.first.fileId, 1);
+            expect(
+              continueList.first.position,
+              const Duration(milliseconds: 5000),
+            );
+            expect(continueList.first.available, isTrue);
             // 验证 v2 新增的 candidate 列已存在
             final cols = await appDb
                 .customSelect("PRAGMA table_info('media_files')")
