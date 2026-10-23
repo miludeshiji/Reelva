@@ -1,0 +1,354 @@
+name: 构建
+
+on:
+  workflow_call:
+    inputs:
+      build_android:
+        type: boolean
+        default: true
+        description: '是否构建 Android 安装包'
+      build_windows:
+        type: boolean
+        default: true
+        description: '是否构建 Windows 安装包'
+      release:
+        type: boolean
+        default: false
+        description: '是否正式构建（Android 正式签名，打包发布版）'
+    secrets:
+      ANDROID_KEYSTORE:
+        required: false
+        description: 'Base64 编码的 Android Keystore 文件内容'
+      ANDROID_KEY_PROPERTIES:
+        required: false
+        description: 'Android key.properties 签名配置内容'
+  workflow_dispatch:
+    inputs:
+      build_android:
+        type: boolean
+        default: true
+        description: '是否构建 Android 安装包'
+      build_windows:
+        type: boolean
+        default: true
+        description: '是否构建 Windows 安装包'
+      release:
+        type: boolean
+        default: false
+        description: '是否正式构建（Android 正式签名，打包发布版）'
+  pull_request:
+    paths:
+      - 'lib/**'
+      - 'assets/**'
+      - 'android/**'
+      - 'windows/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - '.fvmrc'
+      - '.github/workflows/**'
+      - '.github/scripts/**'
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
+
+permissions:
+  contents: read
+
+env:
+  PUB_HOSTED_URL: https://mirrors.cloud.tencent.com/dart-pub/
+
+jobs:
+  metadata:
+    name: 构建元数据
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      mode: ${{ steps.meta.outputs.mode }}
+      build_android: ${{ steps.meta.outputs.build_android }}
+      build_windows: ${{ steps.meta.outputs.build_windows }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: 确定构建参数与版本
+        id: meta
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_BUILD_ANDROID: ${{ inputs.build_android }}
+          INPUT_BUILD_WINDOWS: ${{ inputs.build_windows }}
+          INPUT_RELEASE: ${{ inputs.release }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            BUILD_ANDROID="true"
+            BUILD_WINDOWS="true"
+            MODE="debug"
+          else
+            if [ "$INPUT_BUILD_ANDROID" = "false" ]; then
+              BUILD_ANDROID="false"
+            else
+              BUILD_ANDROID="true"
+            fi
+
+            if [ "$INPUT_BUILD_WINDOWS" = "false" ]; then
+              BUILD_WINDOWS="false"
+            else
+              BUILD_WINDOWS="true"
+            fi
+
+            if [ "$INPUT_RELEASE" = "true" ]; then
+              MODE="release"
+            else
+              MODE="debug"
+            fi
+          fi
+
+          if [ "$BUILD_ANDROID" != "true" ] && [ "$BUILD_WINDOWS" != "true" ]; then
+            echo "::error::build_android 和 build_windows 至少需要启用一个平台"
+            exit 1
+          fi
+
+          VERSION=$(python3 .github/scripts/release_metadata.py --print-version)
+          if [ -z "$VERSION" ]; then
+            echo "::error::未能从 release_metadata.py 获取版本号"
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "build_android=$BUILD_ANDROID" >> "$GITHUB_OUTPUT"
+          echo "build_windows=$BUILD_WINDOWS" >> "$GITHUB_OUTPUT"
+          echo "构建目标: Android=$BUILD_ANDROID, Windows=$BUILD_WINDOWS, Mode=$MODE, Version=$VERSION"
+
+  android:
+    name: 构建 Android
+    needs: metadata
+    if: needs.metadata.outputs.build_android == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: 设置 Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: 设置 Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version-file: .fvmrc
+          architecture: x64
+          cache: true
+      - name: 解析依赖
+        run: flutter pub get --enforce-lockfile
+      - name: 恢复 Android 签名凭据
+        if: needs.metadata.outputs.mode == 'release'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE }}
+          KEY_PROPERTIES: ${{ secrets.ANDROID_KEY_PROPERTIES }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEY_PROPERTIES" ]; then
+            echo "::error::正式构建缺少必需的 ANDROID_KEYSTORE 或 ANDROID_KEY_PROPERTIES Secrets"
+            exit 1
+          fi
+          (
+            umask 077
+            echo "$KEYSTORE_BASE64" | base64 --decode > android/keystore.jks
+            printf '%s\n' "$KEY_PROPERTIES" > android/key.properties
+          )
+          if [ ! -s android/keystore.jks ] || [ ! -s android/key.properties ]; then
+            echo "::error::签名文件恢复失败或为空"
+            exit 1
+          fi
+      - name: 构建 Android APK
+        run: |
+          flutter build apk --${{ needs.metadata.outputs.mode }} --split-per-abi --target-platform android-arm,android-arm64,android-x64 --no-pub
+      - name: 清理 Android 签名凭据
+        if: always()
+        run: |
+          rm -f android/keystore.jks android/key.properties
+      - name: 收集与重命名 Android APK
+        run: |
+          set -euo pipefail
+          MODE="${{ needs.metadata.outputs.mode }}"
+          VERSION="${{ needs.metadata.outputs.version }}"
+          SRC_DIR="build/app/outputs/flutter-apk"
+          DEST_DIR="dist/android"
+          mkdir -p "$DEST_DIR"
+
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            src_file="${SRC_DIR}/app-${abi}-${MODE}.apk"
+            if [ ! -f "$src_file" ]; then
+              echo "::error::未找到预期的构建产物: $src_file"
+              exit 1
+            fi
+            if [ "$MODE" = "release" ]; then
+              dest_name="Reelva-${VERSION}-android-${abi}.apk"
+            else
+              dest_name="Reelva-${VERSION}-android-${abi}-debug.apk"
+            fi
+            cp "$src_file" "${DEST_DIR}/${dest_name}"
+            echo "已就绪: ${DEST_DIR}/${dest_name}"
+          done
+
+          apk_count=$(find "$DEST_DIR" -maxdepth 1 -name "*.apk" | wc -l)
+          if [ "$apk_count" -ne 3 ]; then
+            echo "::error::预期收集 3 个 APK，实际为 $apk_count 个"
+            exit 1
+          fi
+      - name: 上传 Android APK 产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-apks
+          path: dist/android/*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+  windows:
+    name: 构建 Windows
+    needs: metadata
+    if: needs.metadata.outputs.build_windows == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+      - name: 检查 MSVC 与 ATL 工具链
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = if (Get-Command vswhere.exe -ErrorAction SilentlyContinue) {
+            "vswhere.exe"
+          } elseif (Test-Path "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe") {
+            "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          } else {
+            Write-Error "vswhere.exe 未找到"
+            exit 1
+          }
+
+          $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 Microsoft.VisualStudio.Component.VC.ATL -property installationPath
+          if (-not $vsPath) {
+            Write-Error "未找到具备 MSVC x64 与 ATL 组件的 Visual Studio 安装"
+            exit 1
+          }
+          Write-Host "已定位 Visual Studio 安装目录: $vsPath"
+      - name: 设置 Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version-file: .fvmrc
+          architecture: x64
+          cache: true
+      - name: 解析依赖
+        run: |
+          $ErrorActionPreference = 'Stop'
+          flutter pub get --enforce-lockfile
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: 构建 Windows 应用
+        run: |
+          $ErrorActionPreference = 'Stop'
+          flutter build windows --${{ needs.metadata.outputs.mode }} --target-platform windows-x64 --no-pub
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: 打包 Windows 产物
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $mode = "${{ needs.metadata.outputs.mode }}"
+          $version = "${{ needs.metadata.outputs.version }}"
+          $configName = if ($mode -eq "release") { "Release" } else { "Debug" }
+          $bundleDir = "build/windows/x64/runner/$configName"
+
+          if (-not (Test-Path "$bundleDir/reelva.exe")) {
+            Write-Error "构建输出缺少可执行文件: $bundleDir/reelva.exe"
+            exit 1
+          }
+
+          if ($mode -eq "release") {
+            Write-Host "正式构建：定位并复制 MSVC x64 运行时 CRT DLL..."
+            $vswhere = if (Get-Command vswhere.exe -ErrorAction SilentlyContinue) {
+              "vswhere.exe"
+            } elseif (Test-Path "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe") {
+              "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+            } else {
+              Write-Error "vswhere.exe 未找到"
+              exit 1
+            }
+
+            $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+            if (-not $vsPath) {
+              Write-Error "未定位到包含 VC.Tools.x86.x64 的 Visual Studio"
+              exit 1
+            }
+
+            $msvcRedistBase = Join-Path $vsPath "VC\Redist\MSVC"
+            if (-not (Test-Path $msvcRedistBase)) {
+              Write-Error "未找到 MSVC Redist 目录: $msvcRedistBase"
+              exit 1
+            }
+
+            $versionDirs = Get-ChildItem -Path $msvcRedistBase -Directory | Where-Object {
+              Test-Path (Join-Path $_.FullName "x64")
+            } | Sort-Object {
+              try { [version]$_.Name } catch { [version]"0.0.0.0" }
+            } -Descending
+
+            if (-not $versionDirs) {
+              Write-Error "在 $msvcRedistBase 下未找到可用的 x64 Redist 目录"
+              exit 1
+            }
+
+            $latestVersionDir = $versionDirs[0]
+            $x64Dir = Join-Path $latestVersionDir.FullName "x64"
+            $crtDirs = Get-ChildItem -Path $x64Dir -Directory -Filter "Microsoft.VC*.CRT"
+            if (-not $crtDirs) {
+              Write-Error "在 $x64Dir 下未找到 Microsoft.VC*.CRT 目录"
+              exit 1
+            }
+
+            $crtDir = $crtDirs[0]
+            $dlls = Get-ChildItem -Path $crtDir.FullName -Filter "*.dll"
+            if (-not $dlls) {
+              Write-Error "在 $($crtDir.FullName) 下未找到任何 CRT DLL"
+              exit 1
+            }
+
+            Write-Host "从 $($crtDir.FullName) 复制 $($dlls.Count) 个 CRT DLL 到 $bundleDir..."
+            foreach ($dll in $dlls) {
+              Copy-Item -Path $dll.FullName -Destination $bundleDir -Force
+            }
+          }
+
+          $destDir = "dist/windows"
+          if (-not (Test-Path $destDir)) {
+            New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+          }
+
+          $zipName = if ($mode -eq "release") {
+            "Reelva-$version-windows-x64.zip"
+          } else {
+            "Reelva-$version-windows-x64-debug.zip"
+          }
+
+          $destZip = Join-Path $destDir $zipName
+          if (Test-Path $destZip) {
+            Remove-Item -Force $destZip
+          }
+
+          Write-Host "正在打包 Windows 便携包至 $destZip ..."
+          Compress-Archive -Path "$bundleDir\*" -DestinationPath $destZip -Force
+
+          if (-not (Test-Path $destZip) -or ((Get-Item $destZip).Length -le 0)) {
+            Write-Error "ZIP 文件生成失败或为空: $destZip"
+            exit 1
+          }
+          Write-Host "成功生成 Windows 产物: $destZip (大小: $((Get-Item $destZip).Length) 字节)"
+      - name: 上传 Windows 产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-x64
+          path: dist/windows/*.zip
+          if-no-files-found: error
+          retention-days: 7

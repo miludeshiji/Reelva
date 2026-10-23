@@ -12,7 +12,6 @@ migrate_working_dir/
 */*/generated_*
 */*/Generated*
 .worktrees/
-docs/
 cache/
 
 # IntelliJ 相关

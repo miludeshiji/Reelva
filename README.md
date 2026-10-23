@@ -34,6 +34,92 @@ fvm flutter run -d <android-device-id>
 
 Windows 需要 Visual Studio 的桌面 C++ 工具链；新增的 `flutter_secure_storage_windows` 还要求安装 C++ ATL 组件。Android 需要 Android SDK、JDK 和已接受的 SDK 许可证；可通过 `fvm flutter doctor -v` 查看环境状态。许可证需由开发者自行审阅并接受。
 
+### Android Release 签名
+
+正式构建使用本地密钥签名。密钥库文件位于 `android/reelva-release.jks`，别名为 `reelva`。构建配置通过 `android/key.properties` 读取，其中 `storeFile` 相对于 `android` 目录解析：
+
+```properties
+storeFile=reelva-release.jks
+keyAlias=reelva
+```
+
+在本地打包 Release 前，需在该文件中追加真实的 `storePassword` 和 `keyPassword`。密钥文件与 `key.properties` 均已配置为 Git 忽略，切勿提交到版本库。正式构建缺失凭据时直接失败，不会回退到调试证书；Debug 构建无需正式凭据。更换为正式签名后，生成的安装包无法覆盖此前安装的调试签名版本，需先卸载旧包（卸载会清除应用本地数据）。
+
+
+## CI/CD 与自动化工作流
+
+项目通过 GitHub Actions 提供 3 个核心工作流，覆盖质量分析、跨平台构建与正式发布：
+
+1. **代码分析 (`analyze.yml`)**：
+   - **触发条件**：Pull Request、`main` 分支推送，以及被发布工作流调用 (`workflow_call`)。
+   - **执行内容**：检查锁定依赖（`--enforce-lockfile`）、全项目 Dart 格式（`dart format .`）、静态分析（`flutter analyze --no-pub`）、单元与部件测试及覆盖率报告（上传 `dart-coverage` 产物，保留 14 天），以及发布元数据校验脚本的标准单元测试。
+   - **并发策略**：PR 与常规推送可取消旧运行，被发布流程调用时禁止取消父工作流。
+
+2. **跨平台构建 (`build.yml`)**：
+   - **触发条件**：Pull Request（覆盖源码、资源、配置及脚本等关键路径）、手动触发 (`workflow_dispatch`)、发布工作流调用 (`workflow_call`)。
+   - **参数配置**：
+     - `build_android`（布尔，默认 `true`）：是否构建 Android 安装包。
+     - `build_windows`（布尔，默认 `true`）：是否构建 Windows 便携包。
+     - `release`（布尔，手动默认 `false`）：是否为正式发布构建；手动构建默认为 Debug 模式。
+     - 构建平台不可全部关闭。
+   - **产物与构件名称**：
+     - Artifact 构件名：`android-apks`（Android 安装包）、`windows-x64`（Windows 便携包压缩包），均保留 7 天。
+     - 正式构建文件名（`release: true`，`{version}` 为 `pubspec.yaml` 去除 `+build` 后的版本名）：
+       - `Reelva-{version}-android-arm64-v8a.apk`
+       - `Reelva-{version}-android-armeabi-v7a.apk`
+       - `Reelva-{version}-android-x86_64.apk`
+       - `Reelva-{version}-windows-x64.zip`
+     - 调试构建文件名（`release: false`）：
+       - `Reelva-{version}-android-arm64-v8a-debug.apk`
+       - `Reelva-{version}-android-armeabi-v7a-debug.apk`
+       - `Reelva-{version}-android-x86_64-debug.apk`
+       - `Reelva-{version}-windows-x64-debug.zip`
+   - **平台要求与安全边界**：
+     - Windows 正式包附带 Visual Studio MSVC 运行时库（CRT DLL）打包；Windows Debug 包仅供编译与开发测试用途，不附带且不分发不可再分发的调试 CRT。
+     - PR 冒烟构建无条件执行 Debug 模式，严禁注入或读取正式签名 Secrets。
+
+3. **版本发布 (`release.yml`)**：
+   - **触发条件**：仅在推送版本标签 `v*` 时触发（如 `v0.1.0` 或 `v0.1.0-beta1`）。发布流程不可并发取消。
+   - **执行流程**：
+     - **元数据校验**：调用 `.github/scripts/release_metadata.py` 核验版本规范、Tag 严格匹配、CHANGELOG 对应章节、Beta 警告与正式版 README 下载链接，提取日志并上传 `release-notes` 产物。
+     - **质量门禁**：调用 `analyze.yml` 执行完整分析与测试。
+     - **正式构建**：调用 `build.yml`（开启双平台与 `release: true` 正式模式），传入仓库 Android 签名 Secrets。
+     - **GitHub Release**：下载全部 4 个产物与发布日志，检查是否已有已公开版本（已公开版本严禁修改覆盖；若存在同名草稿则予以恢复）；一次性完整上传产物并公开（正式版设为 latest 发布，Beta 版设为 prerelease 且不设为 latest）。
+
+### CI 凭据配置 (Repository Secrets)
+
+正式构建与发布依赖 GitHub 仓库 Secrets：
+
+- **`ANDROID_KEYSTORE`**：正式签名证书库（JKS 文件）的 Base64 编码字符串。CI 在严格权限下将其解码写入临时文件 `android/keystore.jks`，并在构建完成后清理。
+- **`ANDROID_KEY_PROPERTIES`**：`key.properties` 的原始多行属性配置文本。CI 构建解析路径固定为相对 `android` 目录的 `keystore.jks`：
+
+```properties
+storeFile=keystore.jks
+keyAlias=<your-key-alias>
+storePassword=<your-store-password>
+keyPassword=<your-key-password>
+```
+
+PR 与手动调试构建不使用上述 Secrets；正式构建若缺失任一凭据将直接失败。
+
+### 正式版与 Beta 版发布准备
+
+1. **版本号规范**：`pubspec.yaml` 中的 `version` 需符合：
+   - 正式版本：`X.Y.Z+<正整数>`（如 `0.1.0+1`），对应的 Git Tag 必须为 `vX.Y.Z`（如 `v0.1.0`）。
+   - Beta 版本：`X.Y.Z-beta<N>+<正整数>`（$N \ge 1$，如 `0.1.0-beta1+1`），对应的 Git Tag 必须为 `vX.Y.Z-beta<N>`。
+2. **准备 CHANGELOG.md**：
+   - 必须建立 `## v<版本名>` 章节并包含非空更新日志。
+   - **Beta 版本**：发布工具在生成 Release 日志时会自动在正文顶部添加规定的两行警告（`## **注意**\n**beta版可能存在大量bug，无必要请勿下载**`），无需开发者在 CHANGELOG 中手动编写。
+   - **正式版本严禁**在 CHANGELOG 中带有上述 Beta 警告。
+3. **准备 README.md 下载链接（仅正式版要求）**：
+   - 正式版本发布前，必须在 `README.md` 中提供当前版本 4 个产物的完整 GitHub Release 下载链接：
+     - `https://github.com/<owner>/<repo>/releases/download/<tag>/Reelva-<version>-android-arm64-v8a.apk`
+     - `https://github.com/<owner>/<repo>/releases/download/<tag>/Reelva-<version>-android-armeabi-v7a.apk`
+     - `https://github.com/<owner>/<repo>/releases/download/<tag>/Reelva-<version>-android-x86_64.apk`
+     - `https://github.com/<owner>/<repo>/releases/download/<tag>/Reelva-<version>-windows-x64.zip`
+   - Beta 版本不强制要求在 README 中配置下载链接。
+   - *说明*：当前 0.1.0 尚未发布，请勿提前伪造已可下载的 Release 链接；上述链接占位符仅用于说明发布前的更新规则，避免被发布校验器误识别。
+
 ## 目录与依赖
 
 | 目录 | 职责 |

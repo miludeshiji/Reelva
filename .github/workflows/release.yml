@@ -1,0 +1,152 @@
+name: 发布
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  metadata:
+    name: 验证发布元数据
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: meta
+        name: 校验并提取发布元数据
+        run: |
+          python3 .github/scripts/release_metadata.py \
+            --notes-output release-notes.md
+      - name: 上传发布日志
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-notes
+          path: release-notes.md
+          retention-days: 1
+
+  quality:
+    name: 质量门禁检查
+    needs: metadata
+    uses: ./.github/workflows/analyze.yml
+
+  build:
+    name: 跨平台正式构建
+    needs: [metadata, quality]
+    uses: ./.github/workflows/build.yml
+    with:
+      build_android: true
+      build_windows: true
+      release: true
+    secrets:
+      ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+      ANDROID_KEY_PROPERTIES: ${{ secrets.ANDROID_KEY_PROPERTIES }}
+
+  publish:
+    name: 发布至 GitHub Releases
+    needs: [metadata, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: 下载 Android 构件
+        uses: actions/download-artifact@v8
+        with:
+          name: android-apks
+          path: artifacts/android
+      - name: 下载 Windows 构件
+        uses: actions/download-artifact@v8
+        with:
+          name: windows-x64
+          path: artifacts/windows
+      - name: 下载发布日志
+        uses: actions/download-artifact@v8
+        with:
+          name: release-notes
+          path: artifacts/notes
+      - name: 执行草稿创建与一次性发布
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+          PRERELEASE: ${{ needs.metadata.outputs.prerelease }}
+        run: |
+          python3 - << 'EOF'
+          import json
+          import os
+          import subprocess
+          import sys
+
+          tag = os.environ["TAG"]
+          version = os.environ["VERSION"]
+          is_prerelease = os.environ["PRERELEASE"].strip().lower() == "true"
+          repo = os.environ.get("GITHUB_REPOSITORY", "miludeshiji/Reelva")
+          notes_path = "artifacts/notes/release-notes.md"
+
+          if not os.path.isfile(notes_path):
+              sys.exit(f"Missing release notes file: {notes_path}")
+
+          expected_files = [
+              f"artifacts/android/Reelva-{version}-android-arm64-v8a.apk",
+              f"artifacts/android/Reelva-{version}-android-armeabi-v7a.apk",
+              f"artifacts/android/Reelva-{version}-android-x86_64.apk",
+              f"artifacts/windows/Reelva-{version}-windows-x64.zip",
+          ]
+
+          for path in expected_files:
+              if not os.path.isfile(path):
+                  sys.exit(f"Expected artifact not found: {path}")
+
+          print(f"Listing releases for {repo} to check {tag}...")
+          list_cmd = ["gh", "api", "--paginate", "--slurp", f"repos/{repo}/releases?per_page=100"]
+          res = subprocess.run(list_cmd, capture_output=True, text=True, check=True)
+
+          pages = json.loads(res.stdout)
+          releases = [r for page in pages for r in page]
+
+          existing_release = next((r for r in releases if r.get("tag_name") == tag), None)
+
+          if existing_release:
+              if not existing_release.get("draft", False):
+                  sys.exit(f"Release {tag} has already been published. Modifying published releases is forbidden.")
+              print(f"Found existing draft release for {tag} (id: {existing_release.get('id')}). Resuming draft.")
+              subprocess.run(["gh", "release", "edit", tag, "--notes-file", notes_path], check=True)
+          else:
+              print(f"Creating new draft release for {tag}...")
+              create_cmd = [
+                  "gh", "release", "create", tag,
+                  "--draft",
+                  "--verify-tag",
+                  "--title", tag,
+                  "--notes-file", notes_path,
+              ]
+              if is_prerelease:
+                  create_cmd.append("--prerelease")
+              subprocess.run(create_cmd, check=True)
+
+          print(f"Uploading {len(expected_files)} assets in one shot...")
+          upload_cmd = ["gh", "release", "upload", tag, "--clobber"] + expected_files
+          subprocess.run(upload_cmd, check=True)
+
+          print(f"Publishing release {tag} (prerelease={is_prerelease})...")
+          publish_cmd = [
+              "gh", "release", "edit", tag,
+              "--draft=false",
+              f"--prerelease={'true' if is_prerelease else 'false'}",
+              f"--latest={'false' if is_prerelease else 'true'}",
+          ]
+          subprocess.run(publish_cmd, check=True)
+
+          print(f"Successfully published release {tag}!")
+          EOF
