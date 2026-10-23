@@ -132,6 +132,7 @@ def validate_release(
             f"Reelva-{version_name}-android-armeabi-v7a.apk",
             f"Reelva-{version_name}-android-x86_64.apk",
             f"Reelva-{version_name}-windows-x64.zip",
+            f"Reelva-{version_name}-windows-x64-installer.exe",
         ]
 
         for artifact in expected_artifacts:

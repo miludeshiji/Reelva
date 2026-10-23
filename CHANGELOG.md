@@ -5,8 +5,8 @@
 - 初始化基于 FVM Flutter 3.47.7 的 Windows / Android 工程，锁定核心依赖并配置静态分析与基础测试。
 - 新增 Reelva 暗色应用界面，提供首页、影视库、媒体源、设置的自适应导航；首页展示继续观看和最近添加作品，包含进度、季集、多版本与离线恢复入口。
 - 新增统一错误处理与日志脱敏，隐藏认证凭据和网络 URL，构建错误显示安全提示。
-- 补充开发检查、操作说明与分阶段回归验收记录，明确 Windows / Android 原生手工验收边界。
-- 新增 GitHub Actions 代码检查、Windows / Android 构建与版本发布工作流，支持 Android 正式签名、分架构 APK 和 Windows 便携包。
+- 重写 README 为面向新用户的快速入门，开发与发布操作说明、架构介绍迁移至 docs（用户指南、开发检查、发布流程、架构总览分类），保留 Windows / Android 原生手工验收边界。
+- 新增 GitHub Actions 代码检查、Windows / Android 构建与版本发布工作流，支持 Android 正式签名、分架构 APK 和 Windows 便携包及安装包。
 - 新增基于 libmpv 的独立播放器，支持 Windows 本地文件与 HTTP/HTTPS 地址，以及 Android SAF 单文件读取；提供播放控制、进度与缓冲显示、倍速、音量、全屏、字幕和音轨选择、键盘快捷键、安全错误提示及退出时的资源释放。
 - 将 Reelva SVG 原稿应用于界面标识、Windows 多尺寸图标和 Android 普通及自适应启动图标，并提供统一生成脚本。
 - 新增基于 Drift/SQLite 的本地数据库（Schema v3），支持媒体源、目录索引、作品与季集、多版本关联、TMDB 标识、元数据缓存及同步状态，保留既有数据升级路径。

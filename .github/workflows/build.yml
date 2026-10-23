@@ -345,10 +345,68 @@ jobs:
             exit 1
           }
           Write-Host "成功生成 Windows 产物: $destZip (大小: $((Get-Item $destZip).Length) 字节)"
+      - name: 构建 Windows 安装包
+        if: needs.metadata.outputs.mode == 'release'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = "${{ needs.metadata.outputs.version }}"
+          $numericVersion = ($version -split '-', 2)[0]
+
+          $bundleDir = (Resolve-Path "build/windows/x64/runner/Release").Path
+          if (-not (Test-Path "$bundleDir/reelva.exe")) {
+            Write-Error "Release 目录缺少可执行文件: $bundleDir/reelva.exe"
+            exit 1
+          }
+
+          $destDir = "dist/windows"
+          if (-not (Test-Path $destDir)) {
+            New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+          }
+          $outputDir = (Resolve-Path $destDir).Path
+
+          $iscc = if (Get-Command iscc.exe -ErrorAction SilentlyContinue) {
+            "iscc.exe"
+          } elseif (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe") {
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          } elseif (Test-Path "${env:ProgramFiles}\Inno Setup 6\ISCC.exe") {
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+          } else {
+            Write-Error "未找到 Inno Setup 编译器 (iscc.exe)"
+            exit 1
+          }
+
+          Write-Host "使用 Inno Setup 编译器: $iscc"
+          Write-Host "AppVersion: $version, NumericVersion: $numericVersion"
+          Write-Host "BundleDir: $bundleDir"
+          Write-Host "OutputDir: $outputDir"
+
+          $isccArgs = @(
+            "/DAppVersion=$version",
+            "/DNumericVersion=$numericVersion",
+            "/DBundleDir=$bundleDir",
+            "/DOutputDir=$outputDir",
+            "windows/installer.iss"
+          )
+
+          & $iscc @isccArgs
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Inno Setup 编译失败，退出码: $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
+
+          $installerExe = Join-Path $outputDir "Reelva-$version-windows-x64-installer.exe"
+          if (-not (Test-Path $installerExe) -or ((Get-Item $installerExe).Length -le 0)) {
+            Write-Error "安装程序生成失败或为空: $installerExe"
+            exit 1
+          }
+
+          Write-Host "成功生成 Windows 安装程序: $installerExe (大小: $((Get-Item $installerExe).Length) 字节)"
       - name: 上传 Windows 产物
         uses: actions/upload-artifact@v7
         with:
           name: windows-x64
-          path: dist/windows/*.zip
+          path: |
+            dist/windows/*.zip
+            dist/windows/*.exe
           if-no-files-found: error
           retention-days: 7

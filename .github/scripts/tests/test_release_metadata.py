@@ -58,6 +58,7 @@ class TestReleaseMetadata(unittest.TestCase):
             "- https://github.com/miludeshiji/Reelva/releases/download/v0.1.0/Reelva-0.1.0-android-armeabi-v7a.apk\n"
             "- https://github.com/miludeshiji/Reelva/releases/download/v0.1.0/Reelva-0.1.0-android-x86_64.apk\n"
             "- https://github.com/miludeshiji/Reelva/releases/download/v0.1.0/Reelva-0.1.0-windows-x64.zip\n"
+            "- https://github.com/miludeshiji/Reelva/releases/download/v0.1.0/Reelva-0.1.0-windows-x64-installer.exe\n"
         )
         self._create_files("0.1.0+1", changelog, readme)
 
@@ -162,21 +163,60 @@ class TestReleaseMetadata(unittest.TestCase):
 
     def test_formal_readme_link_missing_or_wrong(self):
         changelog = "## v0.1.0\n\n- 正式发布日志\n"
-        # README missing windows zip link
+        # README missing windows zip link (other 4 links present)
         readme_incomplete = (
             "# Reelva\n\n"
             "- https://github.com/miludeshiji/Reelva/releases/download/v0.1.0/Reelva-0.1.0-android-arm64-v8a.apk\n"
             "- https://github.com/miludeshiji/Reelva/releases/download/v0.1.0/Reelva-0.1.0-android-armeabi-v7a.apk\n"
             "- https://github.com/miludeshiji/Reelva/releases/download/v0.1.0/Reelva-0.1.0-android-x86_64.apk\n"
+            "- https://github.com/miludeshiji/Reelva/releases/download/v0.1.0/Reelva-0.1.0-windows-x64-installer.exe\n"
         )
         self._create_files("0.1.0+1", changelog, readme_incomplete)
 
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ValueError) as ctx:
             release_metadata.validate_release(
                 root=self.root,
                 tag="v0.1.0",
                 repository="miludeshiji/Reelva",
             )
+        self.assertIn("Reelva-0.1.0-windows-x64.zip", str(ctx.exception))
+
+    def test_formal_release_missing_or_outdated_installer_link_fails(self):
+        changelog = "## v0.1.0\n\n- 正式发布日志\n"
+        # 1. Other 4 links present, installer link missing
+        readme_missing_installer = (
+            "# Reelva\n\n"
+            "- https://github.com/miludeshiji/Reelva/releases/download/v0.1.0/Reelva-0.1.0-android-arm64-v8a.apk\n"
+            "- https://github.com/miludeshiji/Reelva/releases/download/v0.1.0/Reelva-0.1.0-android-armeabi-v7a.apk\n"
+            "- https://github.com/miludeshiji/Reelva/releases/download/v0.1.0/Reelva-0.1.0-android-x86_64.apk\n"
+            "- https://github.com/miludeshiji/Reelva/releases/download/v0.1.0/Reelva-0.1.0-windows-x64.zip\n"
+        )
+        self._create_files("0.1.0+1", changelog, readme_missing_installer)
+        with self.assertRaises(ValueError) as ctx:
+            release_metadata.validate_release(
+                root=self.root,
+                tag="v0.1.0",
+                repository="miludeshiji/Reelva",
+            )
+        self.assertIn("Reelva-0.1.0-windows-x64-installer.exe", str(ctx.exception))
+
+        # 2. Other 4 links present, installer link points to an old tag
+        readme_outdated_installer = (
+            "# Reelva\n\n"
+            "- https://github.com/miludeshiji/Reelva/releases/download/v0.1.0/Reelva-0.1.0-android-arm64-v8a.apk\n"
+            "- https://github.com/miludeshiji/Reelva/releases/download/v0.1.0/Reelva-0.1.0-android-armeabi-v7a.apk\n"
+            "- https://github.com/miludeshiji/Reelva/releases/download/v0.1.0/Reelva-0.1.0-android-x86_64.apk\n"
+            "- https://github.com/miludeshiji/Reelva/releases/download/v0.1.0/Reelva-0.1.0-windows-x64.zip\n"
+            "- https://github.com/miludeshiji/Reelva/releases/download/v0.0.9/Reelva-0.1.0-windows-x64-installer.exe\n"
+        )
+        self._create_files("0.1.0+1", changelog, readme_outdated_installer)
+        with self.assertRaises(ValueError) as ctx:
+            release_metadata.validate_release(
+                root=self.root,
+                tag="v0.1.0",
+                repository="miludeshiji/Reelva",
+            )
+        self.assertIn("Reelva-0.1.0-windows-x64-installer.exe", str(ctx.exception))
 
     def test_formal_release_with_beta_warning_fails(self):
         changelog = (
@@ -190,6 +230,7 @@ class TestReleaseMetadata(unittest.TestCase):
             "- https://github.com/miludeshiji/Reelva/releases/download/v0.1.0/Reelva-0.1.0-android-armeabi-v7a.apk\n"
             "- https://github.com/miludeshiji/Reelva/releases/download/v0.1.0/Reelva-0.1.0-android-x86_64.apk\n"
             "- https://github.com/miludeshiji/Reelva/releases/download/v0.1.0/Reelva-0.1.0-windows-x64.zip\n"
+            "- https://github.com/miludeshiji/Reelva/releases/download/v0.1.0/Reelva-0.1.0-windows-x64-installer.exe\n"
         )
         self._create_files("0.1.0+1", changelog, readme)
 
