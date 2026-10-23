@@ -88,7 +88,11 @@ class MetadataService {
   /// 1. 获取目标影视完整详情（含别名）
   /// 2. 若为电视剧，并发查询本地现存季号的完整分集列表
   /// 3. 事务应用元数据并打上手工锁，返回合并后的规范 ID
-  Future<int> matchManually(int workId, TmdbWork candidate) async {
+  Future<int> matchManually(
+    int workId,
+    TmdbWork candidate, {
+    TmdbEpisode? episode,
+  }) async {
     if (_activeLocks.contains(workId)) {
       throw const MetadataException(
         '当前影视正在处理中，请勿重复操作',
@@ -98,55 +102,105 @@ class MetadataService {
     _activeLocks.add(workId);
 
     try {
+      final localWork = await mediaLibraryRepository.getWorkDetails(workId);
+      if (localWork == null) {
+        throw const MetadataException('未找到对应作品', code: 'work_not_found');
+      }
+
       final isMovie = candidate.type == 'movie';
       final TmdbWork details;
       final List<TmdbEpisode> episodes = [];
 
       if (isMovie) {
-        details = await tmdbClient.getMovieDetails(candidate.id);
-      } else {
-        details = await tmdbClient.getTvDetails(candidate.id);
-
-        // 获取本地作品详情以提取已有季号
-        final localWork = await mediaLibraryRepository.getWorkDetails(workId);
-        final seasons =
-            localWork?.versions
-                .map((v) => v.seasonNumber)
-                .whereType<int>()
-                .where((s) => s >= 0)
-                .toSet() ??
-            {1};
-
-        if (seasons.isEmpty) {
-          seasons.add(1);
-        }
-
-        // 按季获取分集信息；若获取失败显式抛出异常，绝不静默吞掉伪装成完全成功
-        for (final seasonNum in seasons) {
-          final eps = await tmdbClient.getTvSeasonEpisodes(
-            candidate.id,
-            seasonNum,
+        if (localWork.work.type == 'series' ||
+            localWork.versions.any((v) => v.seasonNumber != null)) {
+          throw const MetadataException(
+            '无法将剧集作品变更为电影',
+            code: 'incompatible_type',
           );
-          episodes.addAll(eps);
         }
-      }
+        details = await tmdbClient.getMovieDetails(candidate.id);
 
-      // 写入仓储并上锁
-      final canonicalId = await mediaLibraryRepository.applyMetadata(
-        workId,
-        details,
-        manual: true,
-      );
-
-      if (episodes.isNotEmpty) {
-        await mediaLibraryRepository.applyEpisodeMetadata(
-          canonicalId,
-          episodes,
+        final canonicalId = await mediaLibraryRepository.applyMetadata(
+          workId,
+          details,
           manual: true,
         );
-      }
+        return canonicalId;
+      } else {
+        if (localWork.work.type != 'series' && episode == null) {
+          throw const MetadataException('未指定分集信息', code: 'episode_required');
+        }
 
-      return canonicalId;
+        if (await mediaLibraryRepository.hasMultiEpisodeFiles(workId)) {
+          throw const MetadataException(
+            '当前文件包含多集内容，暂不支持单集手动绑定',
+            code: 'multi_episode_unsupported',
+          );
+        }
+
+        details = await tmdbClient.getTvDetails(candidate.id);
+
+        TmdbEpisode? targetEpisode;
+        if (episode != null) {
+          // 明确 episode 后只请求其实际 seasonNumber，检查 episodeNumber 确在 TMDB 返回列表
+          final seasonEps = await tmdbClient.getTvSeasonEpisodes(
+            candidate.id,
+            episode.seasonNumber,
+          );
+          for (final ep in seasonEps) {
+            if (ep.episodeNumber == episode.episodeNumber) {
+              targetEpisode = ep;
+              break;
+            }
+          }
+          if (targetEpisode == null) {
+            throw const MetadataException(
+              '未在 TMDB 找到指定的季集',
+              code: 'episode_not_found',
+            );
+          }
+          episodes.addAll(seasonEps);
+        } else {
+          // 原有已确定 series 按已有季号获取，勿改为全量抓季
+          final seasons = localWork.versions
+              .map((v) => v.seasonNumber)
+              .whereType<int>()
+              .where((s) => s >= 0)
+              .toSet();
+
+          if (seasons.isEmpty) {
+            seasons.add(1);
+          }
+
+          // 按季获取分集信息；若获取失败显式抛出异常，绝不静默吞掉伪装成完全成功
+          for (final seasonNum in seasons) {
+            final eps = await tmdbClient.getTvSeasonEpisodes(
+              candidate.id,
+              seasonNum,
+            );
+            episodes.addAll(eps);
+          }
+        }
+
+        // 写入仓储并上锁
+        final canonicalId = await mediaLibraryRepository.applyMetadata(
+          workId,
+          details,
+          manual: true,
+          episode: targetEpisode,
+        );
+
+        if (episodes.isNotEmpty) {
+          await mediaLibraryRepository.applyEpisodeMetadata(
+            canonicalId,
+            episodes,
+            manual: true,
+          );
+        }
+
+        return canonicalId;
+      }
     } finally {
       _activeLocks.remove(workId);
     }

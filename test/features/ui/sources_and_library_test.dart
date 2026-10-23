@@ -52,6 +52,9 @@ class FakeTmdbClient extends TmdbClient {
 
   List<TmdbWork> movieSearchResults = [];
   Map<int, TmdbWork> movieDetailsMap = {};
+  List<TmdbWork> tvSearchResults = [];
+  Map<int, TmdbWork> tvDetailsMap = {};
+  Map<String, List<TmdbEpisode>> tvSeasonEpisodesMap = {};
 
   @override
   Future<List<TmdbWork>> searchMovie(
@@ -73,6 +76,38 @@ class FakeTmdbClient extends TmdbClient {
           year: 2014,
           posterPath: null,
         );
+  }
+
+  @override
+  Future<List<TmdbWork>> searchTv(
+    String query, {
+    int? year,
+    int page = 1,
+    String language = 'zh-CN',
+  }) async {
+    return tvSearchResults;
+  }
+
+  @override
+  Future<TmdbWork> getTvDetails(int id, {String language = 'zh-CN'}) async {
+    return tvDetailsMap[id] ??
+        const TmdbWork(
+          id: 1399,
+          type: 'series',
+          title: '权力的游戏',
+          year: 2011,
+          posterPath: null,
+        );
+  }
+
+  @override
+  Future<List<TmdbEpisode>> getTvSeasonEpisodes(
+    int tvId,
+    int seasonNumber, {
+    String language = 'zh-CN',
+  }) async {
+    final key = '$tvId:$seasonNumber';
+    return tvSeasonEpisodesMap[key] ?? const [];
   }
 }
 
@@ -625,6 +660,211 @@ void main() {
           );
           expect(afterAutoWork!.work.title, '星际穿越');
           expect(afterAutoWork.work.metadataLocked, isTrue);
+        } finally {
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump(Duration.zero);
+        }
+      },
+    );
+
+    testWidgets(
+      'Manual match unresolved file to TV prompts episode confirmation and locks canonical work',
+      (tester) async {
+        // 1. 初始化无季集影视文件 Show.mkv
+        final source = await repository.upsertSource(
+          kind: 'local',
+          rootLocator: 'C:/shows',
+          name: '剧集源',
+        );
+        final scanId = await repository.beginScan(source.id);
+        await repository.applyScanBatch(source.id, scanId, const [
+          MediaEntry(
+            externalId: 'Show.mkv',
+            locator: 'Show.mkv',
+            name: 'Show.mkv',
+            isDirectory: false,
+            size: 20480000,
+          ),
+        ]);
+        await repository.finishScan(source.id, scanId);
+
+        final initialWorks =
+            await tester.runAsync(() => repository.watchWorks().first) ?? [];
+        expect(initialWorks.length, 1);
+        final initialWork = initialWorks.first;
+        expect(initialWork.type, isNull);
+        expect(initialWork.metadataLocked, isFalse);
+
+        // 2. 注入受控的 FakeTmdbClient，提供 TV 搜索、详情与分集数据
+        const tmdbSeries = TmdbWork(
+          id: 115036,
+          type: 'series',
+          title: 'Show',
+          year: 2022,
+          overview: '关于 Show 的剧集介绍...',
+          posterPath: null,
+        );
+
+        const season2Episode3 = TmdbEpisode(
+          seasonNumber: 2,
+          episodeNumber: 3,
+          title: '第三集测试',
+          overview: '第三集剧情介绍',
+        );
+
+        final fakeTmdbClient = FakeTmdbClient()
+          ..tvSearchResults = [tmdbSeries]
+          ..tvDetailsMap[115036] = tmdbSeries
+          ..tvSeasonEpisodesMap['115036:2'] = [
+            const TmdbEpisode(seasonNumber: 2, episodeNumber: 1, title: '第一集'),
+            const TmdbEpisode(seasonNumber: 2, episodeNumber: 2, title: '第二集'),
+            season2Episode3,
+          ];
+
+        // 3. 进入未解决候选条目的详情页
+        final testRouter = createRouter(
+          initialLocation: '/library/work/${initialWork.id}',
+        );
+        addTearDown(testRouter.dispose);
+
+        try {
+          await tester.pumpWidget(
+            ProviderScope(
+              overrides: [
+                appDatabaseProvider.overrideWithValue(memoryDb),
+                mediaLibraryRepositoryProvider.overrideWithValue(repository),
+                tmdbTokenStoreProvider.overrideWithValue(fakeTokenStore),
+                tmdbClientProvider.overrideWithValue(fakeTmdbClient),
+                platformOverrideProvider.overrideWithValue(
+                  TargetPlatform.windows,
+                ),
+                routerProvider.overrideWithValue(testRouter),
+              ],
+              child: MaterialApp.router(routerConfig: testRouter),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(find.byType(WorkDetailsPage), findsOneWidget);
+          final matchButton = find.byKey(const Key('work_manual_match_button'));
+          expect(matchButton, findsOneWidget);
+          await tester.tap(matchButton);
+          await tester.pumpAndSettle();
+
+          expect(find.byType(ManualMatchDialog), findsOneWidget);
+
+          // 4. 切换为剧集类型并搜索 Show
+          await tester.tap(find.text('剧集'));
+          await tester.pumpAndSettle();
+
+          final queryInput = find.byKey(const Key('manual_match_query_input'));
+          await tester.enterText(queryInput, 'Show');
+          final searchButton = find.byKey(
+            const Key('manual_match_search_button'),
+          );
+          await tester.tap(searchButton);
+          await tester.pumpAndSettle();
+
+          expect(
+            find.byKey(const Key('manual_match_results_list')),
+            findsOneWidget,
+          );
+          final selectButton = find.byKey(
+            const Key('manual_match_select_button_115036'),
+          );
+          expect(selectButton, findsOneWidget);
+
+          // 5. 点击选定匹配，由于未确立剧集身份，触发私有分集确认框
+          await tester.tap(selectButton);
+          await tester.pumpAndSettle();
+
+          expect(
+            find.byKey(const Key('manual_match_season_input')),
+            findsOneWidget,
+          );
+          expect(
+            find.byKey(const Key('manual_match_episode_input')),
+            findsOneWidget,
+          );
+
+          // 先取消并证明数据库无锁定或身份修改
+          final cancelButton = find.byKey(
+            const Key('manual_match_episode_cancel_button'),
+          );
+          await tester.tap(cancelButton);
+          await tester.pumpAndSettle();
+
+          expect(
+            find.byKey(const Key('manual_match_season_input')),
+            findsNothing,
+          );
+          expect(find.byType(ManualMatchDialog), findsOneWidget);
+
+          final workAfterCancel = await tester.runAsync(
+            () => repository.getWorkDetails(initialWork.id),
+          );
+          expect(workAfterCancel, isNotNull);
+          expect(workAfterCancel!.work.type, isNull);
+          expect(workAfterCancel.work.metadataLocked, isFalse);
+
+          // 6. 再次选择、填写真实 API fixture 中的季/集 (2/3)
+          await tester.tap(selectButton);
+          await tester.pumpAndSettle();
+
+          expect(
+            find.byKey(const Key('manual_match_season_input')),
+            findsOneWidget,
+          );
+          await tester.enterText(
+            find.byKey(const Key('manual_match_season_input')),
+            '2',
+          );
+          await tester.enterText(
+            find.byKey(const Key('manual_match_episode_input')),
+            '3',
+          );
+
+          final confirmButton = find.byKey(
+            const Key('manual_match_episode_confirm_button'),
+          );
+          await tester.tap(confirmButton);
+          await tester.pumpAndSettle();
+
+          // 7. 观测对话框关闭并展示 canonical 详情、分集、锁定与版本
+          expect(find.byType(ManualMatchDialog), findsNothing);
+          expect(find.byType(WorkDetailsPage), findsOneWidget);
+          expect(find.byKey(const Key('work_locked_badge')), findsOneWidget);
+
+          final canonicalWorks =
+              await tester.runAsync(() => repository.watchWorks().first) ?? [];
+          expect(canonicalWorks.length, 1);
+          final canonicalId = canonicalWorks.first.id;
+
+          final canonicalDetails = await tester.runAsync(
+            () => repository.getWorkDetails(canonicalId),
+          );
+          expect(canonicalDetails, isNotNull);
+          expect(canonicalDetails!.work.type, 'series');
+          expect(canonicalDetails.work.metadataLocked, isTrue);
+          expect(canonicalDetails.versions.length, 1);
+
+          final version = canonicalDetails.versions.first;
+          expect(version.fileName, 'Show.mkv');
+          expect(version.seasonNumber, 2);
+          expect(version.episodeNumber, 3);
+          expect(version.episodeTitle, '第三集测试');
+
+          final versionItemFinder = find.byKey(
+            Key('work_version_item_${version.fileId}'),
+          );
+          expect(versionItemFinder, findsOneWidget);
+          expect(
+            find.descendant(
+              of: versionItemFinder,
+              matching: find.textContaining('S02E03'),
+            ),
+            findsOneWidget,
+          );
         } finally {
           await tester.pumpWidget(const SizedBox.shrink());
           await tester.pump(Duration.zero);

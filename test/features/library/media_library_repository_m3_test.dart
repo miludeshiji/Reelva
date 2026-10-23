@@ -882,5 +882,278 @@ void main() {
       final files = await db.select(db.mediaFiles).get();
       expect(files.any((f) => f.parseState == 'needs_review'), isTrue);
     });
+
+    test('manual matching unresolved file to series binds episode and marks file parsed', () async {
+      final source = await repo.upsertSource(
+        kind: 'local',
+        rootLocator: 'C:/TV',
+        name: 'TV',
+      );
+
+      final now = DateTime.now();
+      final entries = [
+        MediaEntry(
+          externalId: 'entry-show-1',
+          locator: 'Show.mkv',
+          name: 'Show.mkv',
+          isDirectory: false,
+          size: 500000000,
+          modifiedAt: now,
+        ),
+      ];
+
+      final scanId = await repo.beginScan(source.id);
+      await repo.applyScanBatch(source.id, scanId, entries);
+      await repo.finishScan(source.id, scanId);
+
+      final works = await repo.watchWorks().first;
+      expect(works, hasLength(1));
+      final unassignedWork = works.first;
+      expect(unassignedWork.type, isNull);
+
+      final canonicalId = await repo.applyMetadata(
+        unassignedWork.id,
+        const TmdbWork(id: 115036, type: 'series', title: 'Show'),
+        manual: true,
+        episode: const TmdbEpisode(
+          seasonNumber: 1,
+          episodeNumber: 1,
+          title: 'Pilot',
+        ),
+      );
+
+      final details = await repo.getWorkDetails(canonicalId);
+      expect(details, isNotNull);
+      expect(details!.work.type, 'series');
+      expect(details.work.metadataLocked, isTrue);
+      expect(details.versions, hasLength(1));
+      expect(details.versions.first.fileName, 'Show.mkv');
+      expect(details.versions.first.seasonNumber, 1);
+      expect(details.versions.first.episodeNumber, 1);
+      expect(details.versions.first.episodeTitle, 'Pilot');
+
+      final file = await (db.select(
+        db.mediaFiles,
+      )..where((f) => f.id.equals(details.versions.first.fileId))).getSingle();
+      expect(file.parseState, 'parsed');
+
+      final oldWork = await (db.select(
+        db.works,
+      )..where((w) => w.id.equals(unassignedWork.id))).getSingleOrNull();
+      expect(oldWork, isNull);
+    });
+
+    test('manual matching merges into existing canonical series preserving versions, progress, and lock', () async {
+      final source = await repo.upsertSource(
+        kind: 'local',
+        rootLocator: 'C:/TV',
+        name: 'TV',
+      );
+
+      final now = DateTime.now();
+      final entries1 = [
+        MediaEntry(
+          externalId: 'entry-ep1',
+          locator: 'Severance.S01E01.mkv',
+          name: 'Severance.S01E01.mkv',
+          isDirectory: false,
+          size: 1000,
+          modifiedAt: now,
+        ),
+      ];
+
+      final scan1 = await repo.beginScan(source.id);
+      await repo.applyScanBatch(source.id, scan1, entries1);
+      await repo.finishScan(source.id, scan1);
+
+      final work1 = (await repo.watchWorks().first).first;
+      final canonicalSeriesId = await repo.applyMetadata(
+        work1.id,
+        const TmdbWork(id: 115036, type: 'series', title: 'Severance'),
+        manual: true,
+      );
+
+      final entries2 = [
+        MediaEntry(
+          externalId: 'entry-ep2',
+          locator: 'Show.mkv',
+          name: 'Show.mkv',
+          isDirectory: false,
+          size: 2000,
+          modifiedAt: now,
+        ),
+      ];
+
+      final scan2 = await repo.beginScan(source.id);
+      await repo.applyScanBatch(source.id, scan2, entries2);
+      await repo.finishScan(source.id, scan2);
+
+      final allWorks = await repo.watchWorks().first;
+      final unassignedWork = allWorks.firstWhere(
+        (w) => w.id != canonicalSeriesId,
+      );
+
+      await db
+          .into(db.playbackProgresses)
+          .insert(
+            PlaybackProgressesCompanion.insert(
+              targetType: 'work',
+              targetId: unassignedWork.id,
+              workId: Value(unassignedWork.id),
+              positionMs: const Value(50000),
+              durationMs: const Value(100000),
+              updatedAt: Value(now),
+            ),
+          );
+
+      final mergedId = await repo.applyMetadata(
+        unassignedWork.id,
+        const TmdbWork(id: 115036, type: 'series', title: 'Severance'),
+        manual: true,
+        episode: const TmdbEpisode(
+          seasonNumber: 1,
+          episodeNumber: 2,
+          title: 'Half Loop',
+        ),
+      );
+
+      expect(mergedId, equals(canonicalSeriesId));
+
+      final details = await repo.getWorkDetails(canonicalSeriesId);
+      expect(details, isNotNull);
+      expect(details!.work.metadataLocked, isTrue);
+      expect(details.versions, hasLength(2));
+      final fileNames = details.versions.map((v) => v.fileName).toList();
+      expect(fileNames, contains('Severance.S01E01.mkv'));
+      expect(fileNames, contains('Show.mkv'));
+
+      final ep2 =
+          await (db.select(db.episodes).join([
+                innerJoin(
+                  db.seasons,
+                  db.seasons.id.equalsExp(db.episodes.seasonId),
+                ),
+              ])..where(
+                db.seasons.seriesId.equals(canonicalSeriesId) &
+                    db.episodes.episodeNumber.equals(2),
+              ))
+              .getSingle();
+      final ep2Id = ep2.readTable(db.episodes).id;
+
+      final progress =
+          await (db.select(db.playbackProgresses)..where(
+                (p) =>
+                    p.targetType.equals('episode') & p.targetId.equals(ep2Id),
+              ))
+              .getSingleOrNull();
+      expect(progress, isNotNull);
+      expect(progress!.positionMs, 50000);
+
+      final oldWork = await (db.select(
+        db.works,
+      )..where((w) => w.id.equals(unassignedWork.id))).getSingleOrNull();
+      expect(oldWork, isNull);
+    });
+
+    test('applyMetadata without episode on non-series work throws ArgumentError and preserves database unchanged', () async {
+      final source = await repo.upsertSource(
+        kind: 'local',
+        rootLocator: 'C:/TV',
+        name: 'TV',
+      );
+
+      final now = DateTime.now();
+      final entries = [
+        MediaEntry(
+          externalId: 'entry-show-1',
+          locator: 'Show.mkv',
+          name: 'Show.mkv',
+          isDirectory: false,
+          size: 500000000,
+          modifiedAt: now,
+        ),
+      ];
+
+      final scanId = await repo.beginScan(source.id);
+      await repo.applyScanBatch(source.id, scanId, entries);
+      await repo.finishScan(source.id, scanId);
+
+      final works = await repo.watchWorks().first;
+      expect(works, hasLength(1));
+      final unassignedWork = works.first;
+      expect(unassignedWork.type, isNull);
+
+      final initialAssignments = await db.select(db.mediaAssignments).get();
+      final initialWorks = await db.select(db.works).get();
+
+      expect(
+        () => repo.applyMetadata(
+          unassignedWork.id,
+          const TmdbWork(id: 115036, type: 'series', title: 'Show'),
+          manual: true,
+          episode: null,
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+
+      final finalWorks = await db.select(db.works).get();
+      final finalAssignments = await db.select(db.mediaAssignments).get();
+      expect(finalWorks.length, equals(initialWorks.length));
+      expect(finalWorks.first.type, isNull);
+      expect(finalWorks.first.metadataLocked, isFalse);
+      expect(finalAssignments.length, equals(initialAssignments.length));
+      expect(finalAssignments.first.workId, equals(unassignedWork.id));
+      expect(finalAssignments.first.episodeId, isNull);
+    });
+
+    test('applyMetadata on multi-episode file throws multi_episode_unsupported and preserves database', () async {
+      final source = await repo.upsertSource(
+        kind: 'local',
+        rootLocator: 'C:/TV',
+        name: 'TV',
+      );
+
+      final now = DateTime.now();
+      final entries = [
+        MediaEntry(
+          externalId: 'entry-multi-1',
+          locator: 'Show.S01E01-E02.mkv',
+          name: 'Show.S01E01-E02.mkv',
+          isDirectory: false,
+          size: 500000000,
+          modifiedAt: now,
+        ),
+      ];
+
+      final scanId = await repo.beginScan(source.id);
+      await repo.applyScanBatch(source.id, scanId, entries);
+      await repo.finishScan(source.id, scanId);
+
+      final works = await repo.watchWorks().first;
+      expect(works, hasLength(1));
+      final multiWork = works.first;
+
+      final initialFiles = await db.select(db.mediaFiles).get();
+      expect(initialFiles.first.candidateDetails, startsWith('multi_episode'));
+
+      expect(
+        () => repo.applyMetadata(
+          multiWork.id,
+          const TmdbWork(id: 115036, type: 'series', title: 'Show'),
+          manual: true,
+          episode: const TmdbEpisode(seasonNumber: 1, episodeNumber: 1),
+        ),
+        throwsA(
+          isA<MetadataException>().having(
+            (e) => e.code,
+            'code',
+            'multi_episode_unsupported',
+          ),
+        ),
+      );
+
+      final finalFiles = await db.select(db.mediaFiles).get();
+      expect(finalFiles.first.parseState, 'needs_review');
+    });
   });
 }

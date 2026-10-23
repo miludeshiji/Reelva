@@ -957,6 +957,38 @@ class MediaLibraryRepository {
     return rows.map(_workFromRow).toList();
   }
 
+  /// 检查指定作品关联的文件是否包含多集文件。
+  Future<bool> hasMultiEpisodeFiles(int workId) async {
+    final directAssignments = await (db.select(
+      db.mediaAssignments,
+    )..where((a) => a.workId.equals(workId))).get();
+    final List<int> fileIds = directAssignments.map((a) => a.fileId).toList();
+
+    final epAssignments = await db
+        .customSelect(
+          '''
+      SELECT ma.file_id 
+      FROM media_assignments ma
+      JOIN episodes ep ON ep.id = ma.episode_id
+      JOIN seasons s ON s.id = ep.season_id
+      WHERE s.series_id = ?
+      ''',
+          variables: [Variable.withInt(workId)],
+        )
+        .get();
+    fileIds.addAll(epAssignments.map((r) => r.read<int>('file_id')));
+
+    if (fileIds.isEmpty) return false;
+
+    final files = await (db.select(
+      db.mediaFiles,
+    )..where((f) => f.id.isIn(fileIds))).get();
+
+    return files.any(
+      (f) => f.candidateDetails?.startsWith('multi_episode') == true,
+    );
+  }
+
   /// 应用作品元数据，自动归并相同 TMDB ID 的作品并正确保留季集与播放进度。
   ///
   /// 返回最终的规范作品 ID。
@@ -964,6 +996,7 @@ class MediaLibraryRepository {
     int workId,
     TmdbWork metadata, {
     bool manual = false,
+    TmdbEpisode? episode,
   }) async {
     return await db.transaction(() async {
       final currentWork = await (db.select(
@@ -986,6 +1019,153 @@ class MediaLibraryRepository {
         throw ArgumentError(
           'Incompatible media type: cannot match series work to movie',
         );
+      }
+
+      // 支持 manual 的 null/movie 候选 + episode -> series
+      if (metadata.type == 'series' && currentWork.type != 'series') {
+        if (episode == null) {
+          throw ArgumentError(
+            'Episode is required when matching non-series work to series',
+          );
+        }
+        if (!manual) {
+          throw ArgumentError(
+            'Manual matching is required when matching non-series work to series',
+          );
+        }
+
+        final directAssignments = await (db.select(
+          db.mediaAssignments,
+        )..where((a) => a.workId.equals(workId))).get();
+        if (directAssignments.isNotEmpty) {
+          final fileIds = directAssignments.map((a) => a.fileId).toList();
+          final files = await (db.select(
+            db.mediaFiles,
+          )..where((f) => f.id.isIn(fileIds))).get();
+          if (files.any(
+            (f) => f.candidateDetails?.startsWith('multi_episode') == true,
+          )) {
+            throw const MetadataException(
+              '当前包含多集文件，暂不支持单集手动绑定',
+              code: 'multi_episode_unsupported',
+            );
+          }
+        }
+
+        // 1. 先根据 tmdb series 身份复用 canonical，否则创建合法 series 作品
+        final providerEntityId = '${metadata.type}:${metadata.id}';
+        final existingCanonicalId = await _getWorkIdByExternalId(
+          'tmdb',
+          providerEntityId,
+        );
+
+        final int targetSeriesId;
+        if (existingCanonicalId != null) {
+          targetSeriesId = existingCanonicalId;
+        } else {
+          targetSeriesId = await db
+              .into(db.works)
+              .insert(
+                WorksCompanion.insert(
+                  type: const Value('series'),
+                  title: metadata.title,
+                ),
+              );
+        }
+
+        // 2. 复用/创建其真实 season 与 episode
+        SeasonData? season =
+            await (db.select(db.seasons)..where(
+                  (s) =>
+                      s.seriesId.equals(targetSeriesId) &
+                      s.seasonNumber.equals(episode.seasonNumber),
+                ))
+                .getSingleOrNull();
+
+        final int seasonId;
+        if (season == null) {
+          seasonId = await db
+              .into(db.seasons)
+              .insert(
+                SeasonsCompanion.insert(
+                  seriesId: targetSeriesId,
+                  seasonNumber: episode.seasonNumber,
+                  title: Value('Season ${episode.seasonNumber}'),
+                ),
+              );
+        } else {
+          seasonId = season.id;
+        }
+
+        EpisodeData? epRow =
+            await (db.select(db.episodes)..where(
+                  (e) =>
+                      e.seasonId.equals(seasonId) &
+                      e.episodeNumber.equals(episode.episodeNumber),
+                ))
+                .getSingleOrNull();
+
+        final int episodeId;
+        if (epRow == null) {
+          episodeId = await db
+              .into(db.episodes)
+              .insert(
+                EpisodesCompanion.insert(
+                  seasonId: seasonId,
+                  episodeNumber: episode.episodeNumber,
+                  title: Value(episode.title),
+                  overview: Value(episode.overview),
+                  airDate: Value(episode.airDate),
+                ),
+              );
+        } else {
+          episodeId = epRow.id;
+          if (episode.title != null ||
+              episode.overview != null ||
+              episode.airDate != null) {
+            await (db.update(
+              db.episodes,
+            )..where((e) => e.id.equals(episodeId))).write(
+              EpisodesCompanion(
+                title: Value(episode.title ?? epRow.title),
+                overview: Value(episode.overview ?? epRow.overview),
+                airDate: Value(episode.airDate ?? epRow.airDate),
+              ),
+            );
+          }
+        }
+
+        // 3. 将当前 work_id 文件关联一次性改为 episode_id 并清空 work_id，保留 assignment 其他字段
+        final fileIds = directAssignments.map((a) => a.fileId).toList();
+        await (db.update(
+          db.mediaAssignments,
+        )..where((a) => a.workId.equals(workId))).write(
+          MediaAssignmentsCompanion(
+            workId: const Value(null),
+            episodeId: Value(episodeId),
+          ),
+        );
+
+        // 4. 用已有 _migrateWorkProgressToEpisode 迁移进度，再清理孤儿旧作品
+        await _migrateWorkProgressToEpisode(
+          fromWorkId: workId,
+          toEpisodeId: episodeId,
+        );
+        await db.customStatement('DELETE FROM external_ids WHERE work_id = ?', [
+          workId,
+        ]);
+        if (workId != targetSeriesId) {
+          await _deleteWorkIfOrphan(workId);
+        }
+
+        // 5. 将对应文件 parse_state 设 parsed
+        if (fileIds.isNotEmpty) {
+          await (db.update(db.mediaFiles)..where((f) => f.id.isIn(fileIds)))
+              .write(const MediaFilesCompanion(parseState: Value('parsed')));
+        }
+
+        // 6. 之后复用既有 applyMetadata 应用元数据、manual 锁和外部 ID（可递归对 targetSeriesId 调用，仍在外层事务）
+        return await applyMetadata(targetSeriesId, metadata, manual: true);
       }
 
       if (currentWork.type != null && currentWork.type != metadata.type) {

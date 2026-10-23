@@ -135,6 +135,17 @@ class _ManualMatchDialogState extends ConsumerState<ManualMatchDialog> {
   }
 
   Future<void> _handleSelectCandidate(TmdbWork candidate) async {
+    TmdbEpisode? episode;
+    if (candidate.type == 'series' && widget.currentType != 'series') {
+      episode = await showDialog<TmdbEpisode>(
+        context: context,
+        builder: (ctx) => const _ManualMatchEpisodeDialog(),
+      );
+      if (episode == null) {
+        return;
+      }
+    }
+
     setState(() {
       _matchingCandidateId = candidate.id;
       _errorMessage = null;
@@ -145,6 +156,7 @@ class _ManualMatchDialogState extends ConsumerState<ManualMatchDialog> {
       final canonicalWorkId = await service.matchManually(
         widget.workId,
         candidate,
+        episode: episode,
       );
 
       if (!mounted) return;
@@ -519,6 +531,131 @@ class _ManualMatchDialogState extends ConsumerState<ManualMatchDialog> {
           ),
         );
       },
+    );
+  }
+}
+
+/// 私有季集确认对话框
+///
+/// 当候选条目为剧集且原作品尚未确立剧集身份时，由用户输入该文件对应的季号与集号。
+class _ManualMatchEpisodeDialog extends StatefulWidget {
+  const _ManualMatchEpisodeDialog();
+
+  @override
+  State<_ManualMatchEpisodeDialog> createState() =>
+      _ManualMatchEpisodeDialogState();
+}
+
+class _ManualMatchEpisodeDialogState extends State<_ManualMatchEpisodeDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _seasonController;
+  late final TextEditingController _episodeController;
+
+  @override
+  void initState() {
+    super.initState();
+    _seasonController = TextEditingController();
+    _episodeController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _seasonController.dispose();
+    _episodeController.dispose();
+    super.dispose();
+  }
+
+  void _handleConfirm() {
+    if (!_formKey.currentState!.validate()) return;
+    final season = int.parse(_seasonController.text.trim());
+    final episode = int.parse(_episodeController.text.trim());
+    Navigator.of(context)
+        .pop(TmdbEpisode(seasonNumber: season, episodeNumber: episode));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return AlertDialog(
+      title: const Row(
+        children: [Icon(Icons.tv_outlined), SizedBox(width: 8), Text('确认分集信息')],
+      ),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: SingleChildScrollView(
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '选定的作品为剧集，请指定该媒体文件对应的季号与集号。',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  key: const Key('manual_match_season_input'),
+                  controller: _seasonController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: '季号 (Season) *',
+                    hintText: '如 1（特别篇为 0）',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (val) {
+                    if (val == null || val.trim().isEmpty) {
+                      return '季号不能为空';
+                    }
+                    final n = int.tryParse(val.trim());
+                    if (n == null || n < 0) {
+                      return '请输入 0 或正整数';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  key: const Key('manual_match_episode_input'),
+                  controller: _episodeController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: '集号 (Episode) *',
+                    hintText: '如 1',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (val) {
+                    if (val == null || val.trim().isEmpty) {
+                      return '集号不能为空';
+                    }
+                    final n = int.tryParse(val.trim());
+                    if (n == null || n < 0) {
+                      return '请输入 0 或正整数';
+                    }
+                    return null;
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          key: const Key('manual_match_episode_cancel_button'),
+          onPressed: () => Navigator.of(context).pop(null),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          key: const Key('manual_match_episode_confirm_button'),
+          onPressed: _handleConfirm,
+          child: const Text('确认'),
+        ),
+      ],
     );
   }
 }

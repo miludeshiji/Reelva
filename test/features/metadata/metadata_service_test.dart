@@ -137,14 +137,21 @@ class FakeMediaLibraryRepository implements MediaLibraryRepository {
     int workId,
     TmdbWork metadata, {
     bool manual = false,
+    TmdbEpisode? episode,
   }) async {
     appliedMetadata.add({
       'workId': workId,
       'metadata': metadata,
       'manual': manual,
+      'episode': episode,
     });
     return workId;
   }
+
+  bool multiEpisode = false;
+
+  @override
+  Future<bool> hasMultiEpisodeFiles(int workId) async => multiEpisode;
 
   @override
   Future<void> applyEpisodeMetadata(
@@ -390,6 +397,10 @@ void main() {
     );
 
     test('matchManually throws on concurrent call for same workId', () async {
+      fakeRepo.detailsMap[1] = const WorkDetails(
+        work: LibraryWork(id: 1, title: 'Test', type: 'movie'),
+        versions: [],
+      );
       final completer = Completer<TmdbWork>();
       fakeClient.getMovieDetailsHandler = (id) => completer.future;
 
@@ -456,6 +467,144 @@ void main() {
 
         expect(fakeRepo.appliedMetadata, isEmpty);
         expect(fakeRepo.appliedEpisodes, isEmpty);
+      },
+    );
+
+    test('matchManually throws episode_not_found and does not write when episode does not exist', () async {
+      fakeRepo.detailsMap[60] = const WorkDetails(
+        work: LibraryWork(id: 60, title: 'Show'),
+        versions: [
+          LibraryVersion(
+            fileId: 1,
+            fileName: 'Show.mkv',
+            sourceName: 'Local',
+            available: true,
+          ),
+        ],
+      );
+
+      fakeClient.getTvDetailsHandler = (id) =>
+          const TmdbWork(id: 100, type: 'series', title: 'Show');
+
+      fakeClient.getTvSeasonEpisodesHandler = (id, season) => [
+        const TmdbEpisode(seasonNumber: 1, episodeNumber: 1, title: 'Ep 1'),
+      ];
+
+      expect(
+        () => service.matchManually(
+          60,
+          const TmdbWork(id: 100, type: 'series', title: 'Show'),
+          episode: const TmdbEpisode(seasonNumber: 1, episodeNumber: 99),
+        ),
+        throwsA(
+          isA<MetadataException>().having(
+            (e) => e.code,
+            'code',
+            'episode_not_found',
+          ),
+        ),
+      );
+
+      expect(fakeRepo.appliedMetadata, isEmpty);
+      expect(fakeRepo.appliedEpisodes, isEmpty);
+    });
+
+    test(
+      'matchManually requires episode when matching unassigned work to series',
+      () async {
+        fakeRepo.detailsMap[61] = const WorkDetails(
+          work: LibraryWork(id: 61, title: 'Show'),
+          versions: [],
+        );
+
+        expect(
+          () => service.matchManually(
+            61,
+            const TmdbWork(id: 100, type: 'series', title: 'Show'),
+          ),
+          throwsA(
+            isA<MetadataException>().having(
+              (e) => e.code,
+              'code',
+              'episode_required',
+            ),
+          ),
+        );
+
+        expect(fakeRepo.appliedMetadata, isEmpty);
+      },
+    );
+
+    test(
+      'matchManually rejects series to movie match with incompatible_type',
+      () async {
+        fakeRepo.detailsMap[62] = const WorkDetails(
+          work: LibraryWork(id: 62, title: 'Series Show', type: 'series'),
+          versions: [],
+        );
+
+        expect(
+          () => service.matchManually(
+            62,
+            const TmdbWork(id: 200, type: 'movie', title: 'Movie Title'),
+          ),
+          throwsA(
+            isA<MetadataException>().having(
+              (e) => e.code,
+              'code',
+              'incompatible_type',
+            ),
+          ),
+        );
+
+        expect(fakeRepo.appliedMetadata, isEmpty);
+      },
+    );
+
+    test(
+      'matchManually rejects non-existent work with work_not_found',
+      () async {
+        expect(
+          () => service.matchManually(
+            9999,
+            const TmdbWork(id: 100, type: 'series', title: 'Show'),
+          ),
+          throwsA(
+            isA<MetadataException>().having(
+              (e) => e.code,
+              'code',
+              'work_not_found',
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'matchManually rejects multi-episode file with multi_episode_unsupported',
+      () async {
+        fakeRepo.detailsMap[63] = const WorkDetails(
+          work: LibraryWork(id: 63, title: 'Multi Show'),
+          versions: [],
+        );
+        fakeRepo.multiEpisode = true;
+
+        expect(
+          () => service.matchManually(
+            63,
+            const TmdbWork(id: 100, type: 'series', title: 'Multi Show'),
+            episode: const TmdbEpisode(seasonNumber: 1, episodeNumber: 1),
+          ),
+          throwsA(
+            isA<MetadataException>().having(
+              (e) => e.code,
+              'code',
+              'multi_episode_unsupported',
+            ),
+          ),
+        );
+
+        expect(fakeRepo.appliedMetadata, isEmpty);
       },
     );
 
