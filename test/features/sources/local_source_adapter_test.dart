@@ -103,12 +103,15 @@ void main() {
         final dirEntry = entries.firstWhere((e) => e.name == 'Sci-Fi');
         expect(dirEntry.isDirectory, isTrue);
         expect(dirEntry.locator, 'Sci-Fi');
-        expect(dirEntry.externalId, 'sci-fi');
+        expect(dirEntry.externalId, Platform.isWindows ? 'sci-fi' : 'Sci-Fi');
 
         final fileEntry = entries.firstWhere((e) => e.name == 'Inception.mp4');
         expect(fileEntry.isDirectory, isFalse);
         expect(fileEntry.locator, 'Inception.mp4');
-        expect(fileEntry.externalId, 'inception.mp4');
+        expect(
+          fileEntry.externalId,
+          Platform.isWindows ? 'inception.mp4' : 'Inception.mp4',
+        );
         expect(fileEntry.size, greaterThan(0));
         expect(fileEntry.modifiedAt, isNotNull);
       });
@@ -121,15 +124,38 @@ void main() {
           final epFile = File(p.join(subDir.path, 'Episode1.mkv'));
           await epFile.writeAsString('video');
 
+          final rootEntries = await adapter
+              .listEntries(source, source.rootLocator)
+              .toList();
+          final seriesEntry = rootEntries.singleWhere(
+            (e) => e.name == 'Series',
+          );
+
+          final seasonEntries = await adapter
+              .listEntries(source, seriesEntry.externalId)
+              .toList();
+          final seasonEntry = seasonEntries.singleWhere(
+            (e) => e.name == 'Season1',
+          );
+
           final entries = await adapter
-              .listEntries(source, 'series/season1')
+              .listEntries(source, seasonEntry.externalId)
               .toList();
 
           expect(entries.length, 1);
           final epEntry = entries.first;
           expect(epEntry.name, 'Episode1.mkv');
-          expect(epEntry.externalId, 'series/season1/episode1.mkv');
-          expect(epEntry.locator.toLowerCase(), 'series/season1/episode1.mkv');
+          expect(
+            epEntry.externalId,
+            Platform.isWindows
+                ? 'series/season1/episode1.mkv'
+                : 'Series/Season1/Episode1.mkv',
+          );
+          final resource = await adapter.resolvePlayback(
+            source,
+            epEntry.locator,
+          );
+          expect(await File.fromUri(resource.uri).readAsString(), 'video');
         },
       );
 
@@ -215,9 +241,10 @@ void main() {
         final testFile = File(p.join(tempDir.path, 'Matrix.mkv'));
         await testFile.writeAsString('matrix video');
 
-        final resource = await adapter.resolvePlayback(source, 'matrix.mkv');
+        final resource = await adapter.resolvePlayback(source, 'Matrix.mkv');
         expect(resource.uri.scheme, 'file');
-        expect(File.fromUri(resource.uri).existsSync(), isTrue);
+        expect(resource.displayName, 'Matrix.mkv');
+        expect(await File.fromUri(resource.uri).readAsString(), 'matrix video');
       });
 
       test('throws MediaSourceException when file not found', () async {

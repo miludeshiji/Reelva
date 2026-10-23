@@ -17,7 +17,7 @@ fvm flutter analyze --no-pub
 fvm flutter test --no-pub
 ```
 
-需要应用格式化修改时，运行 `fvm dart format lib test`。静态检查使用 `flutter_lints`，并启用严格类型转换、类型推断和泛型检查。应用依赖版本由 `pubspec.lock` 锁定。
+需要应用格式化修改时，运行 `fvm dart format lib test`。静态检查使用 `flutter_lints`，并启用严格类型转换、类型推断和泛型检查。应用依赖版本由 `pubspec.lock` 锁定。CI 在 Ubuntu 24.04 上运行；本地文件系统测试使用实际大小写路径，externalId 仅 Windows 转小写，其他平台保留大小写。
 
 ### 本地启动
 
