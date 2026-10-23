@@ -169,6 +169,9 @@ class AboutPage extends StatelessWidget {
                           '应用底层通过 media_kit 调度 libmpv 与 FFmpeg 原生共享库进行音频与视频解码。'
                           '由于 libmpv 与 FFmpeg 的原生二进制分发许可证取决于实际的编译开关、编解码器配置及动态链接方式（通常受 LGPL v2.1+ 或 GPL 许可证约束），'
                           '因此在构建并正式发布分发包前，必须根据最终打包环境核对并明确各原生组件的适用许可证，并按相应许可证履行资质声明及对应源码提供义务。\n\n'
+                          'SMB 局域网协议说明：\n'
+                          '应用通过 dart_smb2 (BSD-3-Clause) 调用 libsmb2 (LGPL-2.1+) 原生动态库以实现 SMB2/3 协议安全访问，'
+                          '原生库基于构建钩子校验使用固定版本 libsmb2-r9，源码开放于 https://github.com/sahlberg/libsmb2 。\n\n'
                           'Dart 与 Flutter 第三方依赖包的开源许可证详情可通过下方入口查看。',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: colorScheme.onSurfaceVariant,
@@ -195,7 +198,8 @@ class AboutPage extends StatelessWidget {
                       applicationLegalese:
                           '© 2026 Reelva Contributors.\n'
                           '$tmdbRequiredNotice\n'
-                          'Native playback engines incorporate FFmpeg and libmpv under LGPL/GPL licenses.',
+                          'Native playback engines incorporate FFmpeg and libmpv under LGPL/GPL licenses.\n'
+                          'SMB functionality incorporates dart_smb2 (BSD-3-Clause) and libsmb2 (LGPL-2.1+, https://github.com/sahlberg/libsmb2).',
                     );
                   },
                   icon: const Icon(Icons.description_outlined, size: 18),

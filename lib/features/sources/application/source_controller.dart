@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import '../../../core/logging/app_logger.dart';
 import '../../player/domain/playback_resource.dart';
 import '../domain/source_models.dart';
+import '../infrastructure/remote_credentials_store.dart';
 import 'source_providers.dart';
 import '../../metadata/application/metadata_providers.dart';
 
@@ -81,6 +82,132 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
     await refreshSource(source.id);
   }
 
+  /// 添加或更新远程媒体源（WebDAV / OpenList / SMB）
+  ///
+  /// - 校验并清洗根目录定位符（移除嵌入的凭据与 query 参数）；
+  /// - 重复添加相同类型的相同根目录时，更新凭据与配置，不产生孤儿凭据；
+  /// - 若当前媒体源正在扫描，先取消并等待其优雅退出，再更新凭据；
+  /// - 添加或更新完成后触发初次扫描。
+  Future<MediaSourceConfig> addRemoteSource({
+    required String kind,
+    required String rootUrl,
+    String? name,
+    RemoteCredentials credentials = const RemoteCredentials(),
+    String? openListRootPath,
+    List<String> extensions = defaultVideoExtensions,
+    List<String> excludedDirectories = defaultExcludedDirectories,
+  }) async {
+    final sanitizedRoot = sanitizeAndValidateRootLocator(
+      kind: kind,
+      rawInput: rootUrl,
+      openListRootPath: openListRootPath,
+    );
+
+    final displayName = name != null && name.trim().isNotEmpty
+        ? name.trim()
+        : _defaultNameForLocator(kind, sanitizedRoot);
+
+    final repo = ref.read(mediaLibraryRepositoryProvider);
+    final credStore = ref.read(remoteCredentialsStoreProvider);
+
+    final existing = await repo.findSourceByRoot(kind, sanitizedRoot);
+    if (existing != null) {
+      cancelScan(existing.id);
+      final inFlight = _activeScans[existing.id];
+      if (inFlight != null) {
+        try {
+          await inFlight;
+        } catch (_) {}
+      }
+
+      String? credRef = existing.credentialRef;
+      if (!credentials.isAnonymous) {
+        credRef ??= RemoteCredentialsStore.generateReference(kind);
+        await credStore.write(credRef, credentials);
+      } else if (credRef != null) {
+        await credStore.delete(credRef);
+        credRef = null;
+      }
+
+      final updated = await repo.upsertSource(
+        kind: kind,
+        rootLocator: sanitizedRoot,
+        name: displayName,
+        credentialRef: credRef,
+        clearCredentialRef: credRef == null,
+        extensions: extensions,
+        excludedDirectories: excludedDirectories,
+      );
+
+      await refreshSource(updated.id);
+      return updated;
+    } else {
+      String? credRef;
+      bool createdInStore = false;
+      if (!credentials.isAnonymous) {
+        credRef = RemoteCredentialsStore.generateReference(kind);
+        await credStore.write(credRef, credentials);
+        createdInStore = true;
+      }
+
+      try {
+        final created = await repo.upsertSource(
+          kind: kind,
+          rootLocator: sanitizedRoot,
+          name: displayName,
+          credentialRef: credRef,
+          extensions: extensions,
+          excludedDirectories: excludedDirectories,
+        );
+
+        await refreshSource(created.id);
+        return created;
+      } catch (e) {
+        if (createdInStore && credRef != null) {
+          try {
+            await credStore.delete(credRef);
+          } catch (_) {}
+        }
+        rethrow;
+      }
+    }
+  }
+
+  /// 更新已有媒体源的安全凭据
+  ///
+  /// - 保持原有根目录不变；
+  /// - 若当前正在扫描，先取消并等待其优雅退出；
+  /// - 密码与 Token 等机密更新至安全存储，失败时抛出安全异常；
+  /// - 匿名凭据将清理已有的安全存储项，避免孤儿引用。
+  Future<void> updateCredentials(int id, RemoteCredentials credentials) async {
+    cancelScan(id);
+    final inFlight = _activeScans[id];
+    if (inFlight != null) {
+      try {
+        await inFlight;
+      } catch (_) {}
+    }
+
+    final repo = ref.read(mediaLibraryRepositoryProvider);
+    final credStore = ref.read(remoteCredentialsStoreProvider);
+    final source = await repo.getSource(id);
+
+    if (credentials.isAnonymous) {
+      if (source.credentialRef != null) {
+        await credStore.delete(source.credentialRef!);
+        await repo.updateSourceCredentials(id, null);
+      }
+    } else {
+      final credRef =
+          source.credentialRef ??
+          RemoteCredentialsStore.generateReference(source.kind);
+      await credStore.write(credRef, credentials);
+      if (source.credentialRef != credRef) {
+        await repo.updateSourceCredentials(id, credRef);
+      }
+    }
+  }
+
   /// 触发指定媒体源的增量刷新/重新扫描
   ///
   /// - 单飞机制：同一媒体源并发刷新直接复用正在进行的扫描；
@@ -136,6 +263,15 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
     }
 
     final repo = ref.read(mediaLibraryRepositoryProvider);
+    final credStore = ref.read(remoteCredentialsStoreProvider);
+    final source = await repo.getSource(id);
+
+    // 先删除安全存储中的凭据；若存储删除失败直接抛出异常，绝不声明删除成功导致机密残留
+    if (source.credentialRef != null) {
+      await credStore.delete(source.credentialRef!);
+      await repo.updateSourceCredentials(id, null);
+    }
+
     await repo.disableSource(id);
     _safeSetState(
       (s) => {
@@ -224,11 +360,9 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
       final displayName = video.fileName.isNotEmpty
           ? video.fileName
           : resource.displayName;
-      return PlaybackResource(
-        uri: resource.uri,
+      return resource.copyWith(
         displayName: displayName,
-        httpHeaders: resource.httpHeaders,
-        libraryFileId: fileId,
+        libraryFileId: () => fileId,
       );
     } on MediaSourceException {
       rethrow;
@@ -460,6 +594,49 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
       final normNew = p.normalize(newRoot).replaceAll(r'\', '/').toLowerCase();
       return normOriginal == normNew;
     }
-    return originalRoot.trim() == newRoot.trim();
+    try {
+      final origSanitized = sanitizeAndValidateRootLocator(
+        kind: kind,
+        rawInput: originalRoot,
+      );
+      final newSanitized = sanitizeAndValidateRootLocator(
+        kind: kind,
+        rawInput: newRoot,
+      );
+      return origSanitized == newSanitized;
+    } catch (_) {
+      return originalRoot.trim() == newRoot.trim();
+    }
+  }
+
+  String _defaultNameForLocator(String kind, String locator) {
+    switch (kind) {
+      case 'webdav':
+        final uri = Uri.tryParse(locator);
+        if (uri != null && uri.host.isNotEmpty) {
+          final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+          if (segments.isNotEmpty) {
+            return '${uri.host}/${segments.last}';
+          }
+          return uri.host;
+        }
+        return 'WebDAV 源';
+      case 'openlist':
+        final uri = Uri.tryParse(locator);
+        if (uri != null && uri.host.isNotEmpty) {
+          return uri.fragment.isNotEmpty
+              ? '${uri.host}${uri.fragment}'
+              : uri.host;
+        }
+        return 'OpenList 源';
+      case 'smb':
+        final uri = Uri.tryParse(locator);
+        if (uri != null && uri.host.isNotEmpty) {
+          return '${uri.host}${uri.path}';
+        }
+        return 'SMB 源';
+      default:
+        return '远程媒体源';
+    }
   }
 }

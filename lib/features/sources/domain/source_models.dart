@@ -23,6 +23,7 @@ class MediaSourceConfig {
     required this.kind,
     required this.name,
     required this.rootLocator,
+    this.credentialRef,
     this.enabled = true,
     this.extensions = defaultVideoExtensions,
     this.excludedDirectories = defaultExcludedDirectories,
@@ -35,6 +36,7 @@ class MediaSourceConfig {
   final String kind;
   final String name;
   final String rootLocator;
+  final String? credentialRef;
   final bool enabled;
   final List<String> extensions;
   final List<String> excludedDirectories;
@@ -47,6 +49,8 @@ class MediaSourceConfig {
     String? kind,
     String? name,
     String? rootLocator,
+    String? credentialRef,
+    bool clearCredentialRef = false,
     bool? enabled,
     List<String>? extensions,
     List<String>? excludedDirectories,
@@ -60,6 +64,9 @@ class MediaSourceConfig {
       kind: kind ?? this.kind,
       name: name ?? this.name,
       rootLocator: rootLocator ?? this.rootLocator,
+      credentialRef: clearCredentialRef
+          ? null
+          : (credentialRef ?? this.credentialRef),
       enabled: enabled ?? this.enabled,
       extensions: extensions ?? this.extensions,
       excludedDirectories: excludedDirectories ?? this.excludedDirectories,
@@ -80,6 +87,7 @@ class MediaSourceConfig {
           kind == other.kind &&
           name == other.name &&
           rootLocator == other.rootLocator &&
+          credentialRef == other.credentialRef &&
           enabled == other.enabled &&
           listEquals(extensions, other.extensions) &&
           listEquals(excludedDirectories, other.excludedDirectories) &&
@@ -93,6 +101,7 @@ class MediaSourceConfig {
     kind,
     name,
     rootLocator,
+    credentialRef,
     enabled,
     Object.hashAll(extensions),
     Object.hashAll(excludedDirectories),
@@ -103,7 +112,7 @@ class MediaSourceConfig {
 
   @override
   String toString() =>
-      'MediaSourceConfig(id: $id, kind: $kind, name: $name, rootLocator: $rootLocator, enabled: $enabled, scanRevision: $scanRevision, lastScanAt: $lastScanAt, errorMessage: $errorMessage)';
+      'MediaSourceConfig(id: $id, kind: $kind, name: $name, rootLocator: $rootLocator, credentialRef: $credentialRef, enabled: $enabled, scanRevision: $scanRevision, lastScanAt: $lastScanAt, errorMessage: $errorMessage)';
 }
 
 @immutable
@@ -276,4 +285,310 @@ class MediaSourceException implements Exception {
   String toString() => code == null
       ? 'MediaSourceException: $message'
       : 'MediaSourceException($code): $message';
+}
+
+void _checkRawDotSegments(String raw, String contextName) {
+  var pathPart = raw.trim();
+  final schemeEnd = pathPart.indexOf('://');
+  if (schemeEnd != -1) {
+    pathPart = pathPart.substring(schemeEnd + 3);
+    final firstSlash = pathPart.indexOf('/');
+    if (firstSlash != -1) {
+      pathPart = pathPart.substring(firstSlash);
+    } else {
+      pathPart = '';
+    }
+  } else if (pathPart.startsWith(r'\\') || pathPart.startsWith('//')) {
+    pathPart = pathPart.substring(2);
+    final firstSlash = pathPart.indexOf(RegExp(r'[/\\]'));
+    if (firstSlash != -1) {
+      pathPart = pathPart.substring(firstSlash);
+    } else {
+      pathPart = '';
+    }
+  }
+
+  final queryIndex = pathPart.indexOf('?');
+  if (queryIndex != -1) {
+    pathPart = pathPart.substring(0, queryIndex);
+  }
+  final hashIndex = pathPart.indexOf('#');
+  if (hashIndex != -1) {
+    pathPart = pathPart.substring(0, hashIndex);
+  }
+
+  final segments = pathPart.split(RegExp(r'[/\\]'));
+  for (final rawSegment in segments) {
+    final normalized = rawSegment.replaceAll(
+      RegExp(r'%2e', caseSensitive: false),
+      '.',
+    );
+    if (normalized == '.' || normalized == '..') {
+      throw MediaSourceException(
+        '$contextName不能包含相对路径或点段 (.)/(..)',
+        code: 'invalid_path_segments',
+      );
+    }
+  }
+}
+
+/// 校验并规范化各类媒体源的根目录定位符
+///
+/// 严格拒绝携带用户名、密码、Query 参数或非预期 Fragment 的 URL；
+/// 拒绝编码分隔符 (%2F/%5C) 与点段相对路径 (./..)；规范化重复斜杠；
+/// 允许 SMB host:port，正确保留端口与 Unicode 路径。
+String sanitizeAndValidateRootLocator({
+  required String kind,
+  required String rawInput,
+  String? openListRootPath,
+}) {
+  final trimmed = rawInput.trim();
+  if (trimmed.isEmpty) {
+    throw const MediaSourceException('根目录地址不能为空', code: 'invalid_url');
+  }
+
+  if (trimmed.contains('%2f') ||
+      trimmed.contains('%2F') ||
+      trimmed.contains('%5c') ||
+      trimmed.contains('%5C')) {
+    throw const MediaSourceException(
+      '根目录路径不能包含编码的目录分隔符 (%2F / %5C)',
+      code: 'invalid_path_separators',
+    );
+  }
+
+  if (kind != 'local' && kind != 'androidSaf') {
+    _checkRawDotSegments(trimmed, '根目录路径');
+  }
+
+  switch (kind) {
+    case 'local':
+    case 'androidSaf':
+      return trimmed;
+
+    case 'webdav':
+      final uri = Uri.tryParse(trimmed);
+      if (uri == null || (!uri.isScheme('http') && !uri.isScheme('https'))) {
+        throw const MediaSourceException(
+          'WebDAV 地址必须是以 http:// 或 https:// 开头的有效网址',
+          code: 'invalid_url',
+        );
+      }
+      if (uri.host.isEmpty) {
+        throw const MediaSourceException(
+          'WebDAV 地址主机名不能为空',
+          code: 'invalid_url',
+        );
+      }
+      if (uri.userInfo.isNotEmpty) {
+        throw const MediaSourceException(
+          'WebDAV 根目录 URL 中包含用户名或密码，请移除并在下方凭据输入框中填写',
+          code: 'credentials_in_url',
+        );
+      }
+      if (uri.hasQuery) {
+        throw const MediaSourceException(
+          'WebDAV 根目录 URL 不支持携带 Query 参数，请移除',
+          code: 'query_in_url',
+        );
+      }
+      if (uri.hasFragment) {
+        throw const MediaSourceException(
+          'WebDAV 根目录地址不支持携带 # 片段参数，请移除',
+          code: 'fragment_not_allowed',
+        );
+      }
+      for (final segment in uri.pathSegments) {
+        if (segment == '.' || segment == '..') {
+          throw const MediaSourceException(
+            '根目录路径不能包含相对路径或点段 (.)/(..)',
+            code: 'invalid_path_segments',
+          );
+        }
+        if (segment.contains(r'\')) {
+          throw const MediaSourceException(
+            'HTTP 协议路径不能包含反斜杠',
+            code: 'invalid_path_separators',
+          );
+        }
+      }
+
+      final cleanSegments = uri.pathSegments
+          .where((s) => s.isNotEmpty)
+          .toList();
+      final cleanUri = Uri(
+        scheme: uri.scheme.toLowerCase(),
+        host: uri.host.toLowerCase(),
+        port: uri.hasPort ? uri.port : null,
+        pathSegments: [...cleanSegments, ''],
+      );
+      return cleanUri.toString();
+
+    case 'openlist':
+      final uri = Uri.tryParse(trimmed);
+      if (uri == null || (!uri.isScheme('http') && !uri.isScheme('https'))) {
+        throw const MediaSourceException(
+          'OpenList 地址必须是以 http:// 或 https:// 开头的有效网址',
+          code: 'invalid_url',
+        );
+      }
+      if (uri.host.isEmpty) {
+        throw const MediaSourceException(
+          'OpenList 地址主机名不能为空',
+          code: 'invalid_url',
+        );
+      }
+      if (uri.userInfo.isNotEmpty) {
+        throw const MediaSourceException(
+          'OpenList 根目录 URL 中包含用户名或密码，请移除并在下方凭据输入框中填写',
+          code: 'credentials_in_url',
+        );
+      }
+      if (uri.hasQuery) {
+        throw const MediaSourceException(
+          'OpenList 根目录 URL 不支持携带 Query 参数，请移除',
+          code: 'query_in_url',
+        );
+      }
+      for (final segment in uri.pathSegments) {
+        if (segment == '.' || segment == '..') {
+          throw const MediaSourceException(
+            '根目录路径不能包含相对路径或点段 (.)/(..)',
+            code: 'invalid_path_segments',
+          );
+        }
+        if (segment.contains(r'\')) {
+          throw const MediaSourceException(
+            'HTTP 协议路径不能包含反斜杠',
+            code: 'invalid_path_separators',
+          );
+        }
+      }
+
+      final baseSegments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+
+      String cleanRootPath;
+      if (openListRootPath != null && openListRootPath.trim().isNotEmpty) {
+        final rawRoot = openListRootPath.trim();
+        _checkRawDotSegments(rawRoot, 'OpenList 根路径');
+        if (rawRoot.contains('%2f') ||
+            rawRoot.contains('%2F') ||
+            rawRoot.contains('%5c') ||
+            rawRoot.contains('%5C')) {
+          throw const MediaSourceException(
+            'OpenList 根路径不能包含编码的目录分隔符 (%2F / %5C)',
+            code: 'invalid_path_separators',
+          );
+        }
+        final segments = rawRoot
+            .replaceAll(r'\', '/')
+            .split('/')
+            .where((s) => s.isNotEmpty)
+            .toList();
+        final encodedSegments = segments
+            .map((s) => Uri.encodeComponent(s))
+            .toList();
+        cleanRootPath = encodedSegments.isEmpty
+            ? '/'
+            : '/${encodedSegments.join('/')}';
+      } else {
+        final hashIndex = trimmed.indexOf('#');
+        final rawFragment = hashIndex != -1
+            ? trimmed.substring(hashIndex + 1).trim()
+            : '';
+
+        if (rawFragment.isNotEmpty) {
+          _checkRawDotSegments(rawFragment, 'OpenList 根路径');
+          if (rawFragment.contains('%2f') ||
+              rawFragment.contains('%2F') ||
+              rawFragment.contains('%5c') ||
+              rawFragment.contains('%5C')) {
+            throw const MediaSourceException(
+              'OpenList 根路径不能包含编码的目录分隔符 (%2F / %5C)',
+              code: 'invalid_path_separators',
+            );
+          }
+          final segments = rawFragment
+              .replaceAll(r'\', '/')
+              .split('/')
+              .where((s) => s.isNotEmpty)
+              .toList();
+          cleanRootPath = segments.isEmpty ? '/' : '/${segments.join('/')}';
+        } else {
+          cleanRootPath = '/';
+        }
+      }
+
+      final cleanUri = Uri(
+        scheme: uri.scheme.toLowerCase(),
+        host: uri.host.toLowerCase(),
+        port: uri.hasPort ? uri.port : null,
+        pathSegments: baseSegments.isEmpty ? const [] : baseSegments,
+        fragment: cleanRootPath,
+      );
+      return cleanUri.toString();
+    case 'smb':
+      var normalized = trimmed.replaceAll(r'\', '/');
+      if (normalized.startsWith('//')) {
+        normalized = normalized.substring(2);
+      }
+      if (!normalized.toLowerCase().startsWith('smb://')) {
+        normalized = 'smb://$normalized';
+      }
+
+      final uri = Uri.tryParse(normalized);
+      if (uri == null || uri.host.isEmpty) {
+        throw const MediaSourceException(
+          'SMB 路径格式不正确，主机名不能为空',
+          code: 'invalid_smb_path',
+        );
+      }
+      if (uri.userInfo.isNotEmpty) {
+        throw const MediaSourceException(
+          'SMB 路径中包含用户名或密码，请移除并在下方凭据输入框中填写',
+          code: 'credentials_in_url',
+        );
+      }
+      if (uri.hasQuery) {
+        throw const MediaSourceException(
+          'SMB 路径不支持携带 Query 参数，请移除',
+          code: 'query_in_url',
+        );
+      }
+      if (uri.hasFragment) {
+        throw const MediaSourceException(
+          'SMB 路径不支持携带 # 片段参数，请移除',
+          code: 'fragment_not_allowed',
+        );
+      }
+      for (final segment in uri.pathSegments) {
+        if (segment == '.' || segment == '..') {
+          throw const MediaSourceException(
+            'SMB 路径不能包含相对路径或点段 (.)/(..)',
+            code: 'invalid_path_segments',
+          );
+        }
+      }
+
+      final cleanSegments = uri.pathSegments
+          .where((s) => s.isNotEmpty)
+          .toList();
+      if (cleanSegments.isEmpty) {
+        throw const MediaSourceException(
+          'SMB 路径必须指定共享名 (Share)，例如 smb://server/share',
+          code: 'invalid_smb_path',
+        );
+      }
+
+      final cleanUri = Uri(
+        scheme: 'smb',
+        host: uri.host.toLowerCase(),
+        port: uri.hasPort ? uri.port : null,
+        pathSegments: cleanSegments,
+      );
+      return cleanUri.toString();
+
+    default:
+      throw MediaSourceException('不支持的媒体源类型: $kind', code: 'unsupported_kind');
+  }
 }

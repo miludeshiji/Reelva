@@ -11,6 +11,9 @@ class PlaybackResource {
     required this.displayName,
     this.httpHeaders = const {},
     this.libraryFileId,
+    this.prepare,
+    this.release,
+    this.errors,
   });
 
   final Uri uri;
@@ -18,11 +21,25 @@ class PlaybackResource {
   final Map<String, String> httpHeaders;
   final int? libraryFileId;
 
+  /// 延迟准备具体播放资源租约的回调
+  ///
+  /// 允许媒体源适配器返回轻量级逻辑描述符，在引擎真正起播/重试时按需分配底层中继或服务。
+  final Future<PlaybackResource> Function()? prepare;
+
+  /// 释放具体播放资源租约的回调
+  final Future<void> Function()? release;
+
+  /// 播放期间底层的错误通知流（使用安全的展示文本）
+  final Stream<String>? errors;
+
   PlaybackResource copyWith({
     Uri? uri,
     String? displayName,
     Map<String, String>? httpHeaders,
     int? Function()? libraryFileId,
+    Future<PlaybackResource> Function()? prepare,
+    Future<void> Function()? release,
+    Stream<String>? errors,
   }) {
     return PlaybackResource(
       uri: uri ?? this.uri,
@@ -31,6 +48,9 @@ class PlaybackResource {
       libraryFileId: libraryFileId != null
           ? libraryFileId()
           : this.libraryFileId,
+      prepare: prepare ?? this.prepare,
+      release: release ?? this.release,
+      errors: errors ?? this.errors,
     );
   }
 
@@ -47,6 +67,9 @@ class PlaybackResource {
           uri == other.uri &&
           displayName == other.displayName &&
           libraryFileId == other.libraryFileId &&
+          prepare == other.prepare &&
+          release == other.release &&
+          errors == other.errors &&
           mapEquals(httpHeaders, other.httpHeaders);
 
   @override
@@ -54,6 +77,36 @@ class PlaybackResource {
     uri,
     displayName,
     libraryFileId,
+    prepare,
+    release,
+    errors,
     Object.hashAll(httpHeaders.entries.map((e) => Object.hash(e.key, e.value))),
   );
+}
+
+/// 播放资源领域异常
+///
+/// 用于在资源准备、流媒体解析或连接中断时向播放器引擎暴露安全的错误信息。
+@immutable
+class PlaybackResourceException implements Exception {
+  const PlaybackResourceException(this.message, {this.code});
+
+  final String message;
+  final String? code;
+
+  @override
+  String toString() => code == null
+      ? 'PlaybackResourceException: $message'
+      : 'PlaybackResourceException($code): $message';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PlaybackResourceException &&
+          runtimeType == other.runtimeType &&
+          message == other.message &&
+          code == other.code;
+
+  @override
+  int get hashCode => Object.hash(message, code);
 }

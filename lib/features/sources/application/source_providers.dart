@@ -8,6 +8,12 @@ import '../domain/media_source_adapter.dart';
 import '../domain/source_models.dart';
 import '../infrastructure/android_saf_source_adapter.dart';
 import '../infrastructure/local_source_adapter.dart';
+import '../infrastructure/remote_credentials_store.dart';
+import '../infrastructure/remote_http_client.dart';
+import '../infrastructure/remote_playback_bridge.dart';
+import '../infrastructure/webdav_source_adapter.dart';
+import '../infrastructure/openlist_source_adapter.dart';
+import '../infrastructure/smb_source_adapter.dart';
 import 'scan_progress.dart';
 import 'source_controller.dart';
 
@@ -38,13 +44,48 @@ final mediaLibraryRepositoryProvider = Provider<MediaLibraryRepository>((ref) {
   return MediaLibraryRepository(db);
 });
 
+/// 远程媒体源安全凭据存储 Provider
+final remoteCredentialsStoreProvider = Provider<RemoteCredentialsStore>((ref) {
+  return RemoteCredentialsStore();
+});
+
+/// 远程媒体源 HTTP 客户端 Provider，遵循 M5 有界重定向与跨域认证剥离规范
+final remoteHttpClientProvider = Provider<RemoteHttpClient>((ref) {
+  final client = RemoteHttpClient();
+  ref.onDispose(() {
+    client.close();
+  });
+  return client;
+});
+
+/// 远程媒体播放桥接器 Provider
+final remotePlaybackBridgeProvider = Provider<RemotePlaybackBridge>((ref) {
+  final http = ref.watch(remoteHttpClientProvider);
+  return RemotePlaybackBridge(http: http);
+});
+
 /// 媒体源适配器注册表 Provider
 ///
 /// 包含 LocalSourceAdapter 与 AndroidSafSourceAdapter；构造器中不执行任何插件调用。
 final sourceAdaptersProvider = Provider<Map<String, MediaSourceAdapter>>((ref) {
-  return const {
-    'local': LocalSourceAdapter(),
-    'androidSaf': AndroidSafSourceAdapter(),
+  final credentials = ref.watch(remoteCredentialsStoreProvider);
+  final http = ref.watch(remoteHttpClientProvider);
+  final playback = ref.watch(remotePlaybackBridgeProvider);
+
+  return {
+    'local': const LocalSourceAdapter(),
+    'androidSaf': const AndroidSafSourceAdapter(),
+    'webdav': WebDavSourceAdapter(
+      credentials: credentials,
+      http: http,
+      playback: playback,
+    ),
+    'openlist': OpenListSourceAdapter(
+      credentials: credentials,
+      http: http,
+      playback: playback,
+    ),
+    'smb': SmbSourceAdapter(credentials: credentials, playback: playback),
   };
 });
 

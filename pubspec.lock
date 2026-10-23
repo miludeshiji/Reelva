@@ -209,6 +209,14 @@ packages:
       url: "https://mirrors.cloud.tencent.com/dart-pub/"
     source: hosted
     version: "1.0.2"
+  dart_smb2:
+    dependency: "direct main"
+    description:
+      name: dart_smb2
+      sha256: da6393b629259625041cac96941b6929e6e5e36d82f7944a0bb10c4e9f79663e
+      url: "https://mirrors.cloud.tencent.com/dart-pub/"
+    source: hosted
+    version: "0.2.3"
   dart_style:
     dependency: transitive
     description:
@@ -1307,7 +1315,7 @@ packages:
     source: hosted
     version: "1.1.0"
   xml:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: xml
       sha256: "67f0aff7be013d107995e9b75bf4e7f2c3ef2dfdb2c8e68024bba0a7fd5756a4"

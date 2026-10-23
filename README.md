@@ -2,7 +2,7 @@
 
 Reelva 是一个客户端优先的跨平台影视库与播放器项目，首批目标平台为 Windows 和 Android。
 
-M0 工程基线与 M1 播放器最小闭环已由用户验收。当前实现止于 M4：在既有媒体源、SQLite/Drift 索引、影视识别与海报墙之上，加入观看进度保存与恢复、首页继续观看和最近添加、字幕音轨选择及基础快捷键。Windows / Android 的本轮实机验收尚未完成，因此尚不标记为首个可用 MVP；M4 成果等待用户审查，未经审查不进入 M5。
+M0 工程基线与 M1 播放器最小闭环已由用户验收。本轮实施范围为 M5：在既有本地/SAF 媒体源、SQLite/Drift 索引、影视识别、海报墙和观看进度之上，接入 WebDAV、OpenList 与 SMB 网络媒体源。Windows / Android 原生应用验收限制继续保留；M5 成果等待用户审查，审查前不进入 M6。
 
 ## 开发环境与检查
 
@@ -42,7 +42,7 @@ Windows 需要 Visual Studio 的桌面 C++ 工具链；新增的 `flutter_secure
 | `lib/app/` | 根应用、路由和自适应导航 |
 | `lib/core/database/` | SQLite / Drift 数据库结构定义与迁移管理（Schema v2，保留 v1 数据） |
 | `lib/core/errors/`、`lib/core/logging/` | 错误处理与日志脱敏 |
-| `lib/features/sources/` | 媒体源管理、扫描调度、进度状态与跨平台适配器（Windows 本地文件系统 / Android SAF 目录授权） |
+| `lib/features/sources/` | 本地/SAF、WebDAV、OpenList、SMB 媒体源管理与扫描，安全凭据、远程播放解析及按需读取桥接 |
 | `lib/features/library/` | 作品分页海报墙、电影/季集详情、多版本选择与解析播放 |
 | `lib/features/metadata/` | 文件名解析、TMDB 请求与缓存、匹配评分、自动/手动匹配及安全凭据 |
 | `lib/features/player/` | 播放器领域、应用、基础设施与播放界面分层 |
@@ -52,9 +52,11 @@ Windows 需要 Visual Studio 的桌面 C++ 工具链；新增的 `flutter_secure
 | `test/` | 导航、数据库迁移、文件名识别、匹配与锁定、缓存/限流、扫描及播放流程测试 |
 | `android/`、`windows/` | 原生平台工程 |
 
-UI 界面通过 `SourceController` 驱动媒体源操作与扫描调度，通过 `MediaSourceAdapter` 跨平台统一抽象访问本地文件系统与 SAF 树状授权目录，通过 `MediaLibraryRepository` 读写 SQLite 数据库，并统一将条目解析为播放资源后跳转 `/player`。播放器边界保持独立，通过 `PlayerEngine` 及 `PlaybackSession` 管理播放生命周期。
+UI 通过 `SourceController` 驱动媒体源操作与扫描，通过 `MediaSourceAdapter` 访问本地文件系统、SAF 或网络协议，通过 `MediaLibraryRepository` 持久化索引和作品关联。播放使用 `PlaybackResource`：网络源在真正打开或重试时准备播放租约，退出、停止或切换时释放。播放器通过 `PlayerEngine` 和 `PlaybackSession` 管理生命周期，不依赖具体网络源协议。
 
 数据库沿用 Drift Schema v2，在原有 8 张表上增加的 `external_ids` 与 `metadata_cache` 及 v1 增表、增列迁移保持不变。M4 直接使用已有 `playback_progress` 表，按电影作品或具体剧集保存进度及最近播放文件 ID；同一目标切换文件版本时共享进度。保存事务会重新确认文件当前关联，以兼容后台元数据合并；移除媒体源仍保留观看历史。
+
+M5 复用已有 `media_sources.credential_ref`，只在 SQLite 保存安全存储引用及稳定目录/文件身份，不保存密码、API Token 或临时签名直链；本轮不变更 Schema、不重建数据库。
 
 | 核心依赖 | 锁定版本 |
 | --- | --- |
@@ -68,6 +70,8 @@ UI 界面通过 `SourceController` 驱动媒体源操作与扫描调度，通过
 | `window_manager` | 0.5.2 |
 | `flutter_secure_storage` | 11.2.0 |
 | `cached_network_image` / `flutter_cache_manager` | 3.4.1 / 3.4.5 |
+| `xml` | 7.0.1 |
+| `dart_smb2` | 0.2.3 |
 
 ## 平台兼容性与验证边界
 
@@ -79,8 +83,21 @@ UI 界面通过 `SourceController` 驱动媒体源操作与扫描调度，通过
 
 Android 工程使用 Flutter 3.47.7 模板的 AGP 9.1.0、Gradle 9.3.1 和 Kotlin 2.4.0，Java 目标版本为 17；应用 ID 为 `dev.reelva.reelva`。Windows 工程使用 CMake 3.14+ 和 C++17。应用内标识、Windows 多尺寸 ICO 与 Android 普通及自适应启动图标均以既有 `assets/Reelva.svg` 为唯一图形来源，SVG 原稿未改动。
 
-依赖解析与 Widget 测试不能证明原生插件集成或设备播放可用。M4 仅运行获准的静态分析、单元/Widget 测试及测试环境运行时验证，没有执行 `flutter build`、`flutter run`、签名、推送或发布。Android 备份规则仅排除安全存储使用的 SharedPreferences，保留普通数据库备份规则；平台实际备份恢复行为仍需设备验收。
+依赖解析、协议 smoke 和 Widget 测试不能证明 Windows / Android 原生播放界面及设备生命周期可用。本轮没有执行 `flutter build`、`flutter run`、签名、提交、推送或发布。Android 备份规则仅排除安全存储使用的 SharedPreferences，保留普通数据库备份规则；平台实际备份恢复行为仍需设备验收。
 本机依赖解析沿用了既有腾讯云 Pub 镜像配置，下载源及校验摘要记录于 `pubspec.lock`。未修改全局 SDK、下载镜像、Android 许可证或 adb 配置。
+
+`dart_smb2` 使用 worker isolate 和 libsmb2 原生共享库；首次执行对应平台的测试/构建时，其 hook 从固定的 `libsmb2-r9` 下载原生库并核对 SHA-256，Android 最低 API 24 与项目设置一致。原生库采用 LGPL-2.1+，关于页及第三方许可证入口已登记完整许可文本与[上游源码](https://github.com/sahlberg/libsmb2)、[对应二进制构建来源](https://github.com/ales-drnz/dart_smb2/releases/tag/libsmb2-r9)。未经授权仍不得构建应用。
+
+## M5 网络媒体源使用
+
+1. **添加来源**：在「媒体源」点击「添加媒体源」，选择 WebDAV、OpenList 或 SMB；保留原有本地目录、扩展名白名单与排除目录设置。名称可选，添加后沿用既有扫描、文件名识别、作品/季集关联与多版本详情页。
+2. **WebDAV**：填写实际目录 URL，例如 `https://nas.example/dav/Movies/`，按需填写用户名和密码。使用单层 `PROPFIND` 流式枚举和文件属性查询；拒绝访问、响应损坏或目录离线会显示失败，不将失败扫描当作空目录清除旧库。
+3. **OpenList**：填写实例 URL（可包含反向代理子路径）和独立根目录，例如 `https://files.example/base` 与 `/Movies`；也支持 URL 片段形式 `https://files.example/base#/Movies`。令牌按实例 API 要求直接用于 `Authorization`，目录密码单独填写。只有显式填写的 User-Agent / Referer 会用于播放；API Token 不传给媒体直链。接口按[官方目录列表](https://fox.oplist.org/364155732e0)及[详情接口](https://fox.oplist.org/364155733e0)适配，使用服务器返回的直链或已配置代理，不保证所有网盘后端的兼容性。
+4. **SMB**：填写 `smb://nas.example/Movies` 或带端口及子目录的共享路径，按需填写帐号、密码与域；支持匿名以及 SMB2/3 的 NTLM 认证，不使用 SMB1，也不将 `smb://` 当作本地文件路径。随机读通过 libsmb2 在 worker isolate 中执行，读取分片最大 256 KiB，避免预先复制整部视频。
+5. **凭据与管理**：密码、令牌和播放请求头保存在系统安全存储，输入框不回显旧秘密。卡片菜单可「修改凭据」，根目录保持稳定；重复添加同一来源更新已有配置。移除来源会删除安全凭据并软停用来源，保留作品、元数据修正和观看历史；安全存储失败会明确提示。
+6. **播放与恢复**：选择详情页文件版本后，播放桥接仅监听随机端口的 IPv4 回环地址，按播放器请求转发字节。HTTP 起播先探测 `Range: bytes=0-0`，校验 `206`、`Content-Range` 与长度；仅返回 `200` 的服务器可顺序起播，不能据此承诺随机定位。过期或 401/403 会重新解析并有限重试，仍失败时给出安全提示；手动重试会准备新租约并沿用观看进度。
+
+根目录 URL 不允许嵌入帐号密码、查询参数或相对跳转段，请使用相应凭据字段。TLS 证书校验保持启用；服务端必须具有可信证书。重定向不会跨来源传播认证头或请求体。实际协议验证、全部变更文件和设备验收限制见 [M5 验收记录](docs/M5-Acceptance.md)。
 
 ## M4 观看进度与首页使用
 
@@ -118,7 +135,7 @@ Android 工程使用 Flutter 3.47.7 模板的 AGP 9.1.0、Gradle 9.3.1 和 Kotli
 
 ## 验证现状说明
 
-M4 本轮静态分析、单元/Widget 测试、真实本地文件与磁盘 SQLite 恢复验证的最终结果见 [M4 验收记录](docs/M4-Acceptance.md)。此前 M3 首次交付为 198 项测试通过，后续手动匹配回归及 Loopback HTTP / Dio / SQLite 链路亦有通过记录。各阶段测试替身和 Widget 渲染均不等同于 Windows / Android 真机验收。
+本轮 M5 的静态分析、单元/Widget 测试及真实协议 smoke 结果见 [M5 验收记录](docs/M5-Acceptance.md)。M4 的进度与本地文件/磁盘 SQLite 验证记录保留于 [M4 验收记录](docs/M4-Acceptance.md)。此前 M3 首次交付为 198 项测试通过，后续有手动匹配回归记录；各阶段测试替身和 Widget 渲染均不等同于 Windows / Android 真机验收。
 
 重新生成启动图标时，在安装 `resvg-py` 与 `Pillow` 后执行 `python tool/generate_icons.py`；应用运行不依赖 Python。Android 自适应图标使用黑色背景和带安全边距的前景。
 
@@ -126,4 +143,4 @@ M4 本轮静态分析、单元/Widget 测试、真实本地文件与磁盘 SQLit
 
 Flutter 框架错误和未处理的平台异步错误统一进入脱敏日志。构建错误显示通用中文提示，未知路由不显示原始请求路径。
 
-日志在输出消息、异常和堆栈前过滤常见认证头、Cookie、令牌、密码及 API 密钥字段，并隐藏网络 URL。TMDB 凭据仅存于系统安全存储；数据库缓存键不包含凭据，请求不跟随重定向，界面仅显示安全错误。不要记录原始请求载荷、无字段标识的秘密或私密文件内容。
+日志在输出消息、异常和堆栈前过滤常见认证头、Cookie、令牌、密码及 API 密钥字段，并隐藏网络 URL。TMDB 与网络源凭据仅存于系统安全存储；数据库不保存临时签名直链，网络源错误不会回显服务端原始消息。TMDB 请求不跟随重定向；网络源对重定向执行来源与认证边界检查。不要记录原始请求载荷、无字段标识的秘密或私密文件内容。

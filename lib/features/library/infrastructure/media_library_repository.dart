@@ -41,6 +41,8 @@ class MediaLibraryRepository {
     required String kind,
     required String rootLocator,
     required String name,
+    String? credentialRef,
+    bool clearCredentialRef = false,
     List<String> extensions = defaultVideoExtensions,
     List<String> excludedDirectories = defaultExcludedDirectories,
   }) async {
@@ -52,12 +54,16 @@ class MediaLibraryRepository {
               .getSingleOrNull();
 
       if (existing != null) {
+        final nextCredRef = clearCredentialRef
+            ? null
+            : (credentialRef ?? existing.credentialRef);
         await (db.update(
           db.mediaSources,
         )..where((s) => s.id.equals(existing.id))).write(
           MediaSourcesCompanion(
             name: Value(name),
             enabled: const Value(true),
+            credentialRef: Value(nextCredRef),
             extensions: Value(jsonEncode(extensions)),
             excludedDirectories: Value(jsonEncode(excludedDirectories)),
             errorMessage: const Value(null),
@@ -75,6 +81,7 @@ class MediaLibraryRepository {
                 kind: kind,
                 name: name,
                 rootLocator: rootLocator,
+                credentialRef: Value(credentialRef),
                 extensions: Value(jsonEncode(extensions)),
                 excludedDirectories: Value(jsonEncode(excludedDirectories)),
               ),
@@ -85,6 +92,25 @@ class MediaLibraryRepository {
         return _toSourceConfig(inserted);
       }
     });
+  }
+
+  Future<MediaSourceConfig?> findSourceByRoot(
+    String kind,
+    String rootLocator,
+  ) async {
+    final row =
+        await (db.select(db.mediaSources)..where(
+              (s) => s.kind.equals(kind) & s.rootLocator.equals(rootLocator),
+            ))
+            .getSingleOrNull();
+    if (row == null) return null;
+    return _toSourceConfig(row);
+  }
+
+  Future<void> updateSourceCredentials(int id, String? credentialRef) async {
+    await (db.update(db.mediaSources)..where((s) => s.id.equals(id))).write(
+      MediaSourcesCompanion(credentialRef: Value(credentialRef)),
+    );
   }
 
   Future<void> renameSource(int id, String name) async {
@@ -394,6 +420,7 @@ class MediaLibraryRepository {
       kind: row.kind,
       name: row.name,
       rootLocator: row.rootLocator,
+      credentialRef: row.credentialRef,
       enabled: row.enabled,
       extensions: _parseStringList(row.extensions, defaultVideoExtensions),
       excludedDirectories: _parseStringList(

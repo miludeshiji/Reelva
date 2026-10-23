@@ -57,6 +57,8 @@ class MediaKitPlayerEngine implements PlayerEngine {
   final List<StreamSubscription<dynamic>> _subscriptions = [];
 
   int? _activeDescriptor;
+  Future<void> Function()? _activeRelease;
+  StreamSubscription<String>? _resourceErrorSub;
   int _openEpoch = 0;
   bool _disposed = false;
   bool _isOpening = false;
@@ -285,6 +287,33 @@ class MediaKitPlayerEngine implements PlayerEngine {
     }
   }
 
+  Future<void> _releaseActiveLease() async {
+    final sub = _resourceErrorSub;
+    _resourceErrorSub = null;
+    await sub?.cancel();
+
+    final release = _activeRelease;
+    _activeRelease = null;
+    if (release != null) {
+      try {
+        await release();
+      } catch (e, st) {
+        AppLogger.instance.error('释放播放资源失败', error: e, stackTrace: st);
+      }
+    }
+  }
+
+  Future<void> _releaseLease(PlaybackResource lease) async {
+    final release = lease.release;
+    if (release != null) {
+      try {
+        await release();
+      } catch (e, st) {
+        AppLogger.instance.error('释放未激活播放资源失败', error: e, stackTrace: st);
+      }
+    }
+  }
+
   @override
   Future<void> open(PlaybackResource resource, {Duration? resumeAt}) {
     if (_disposed) return Future.value();
@@ -292,12 +321,13 @@ class MediaKitPlayerEngine implements PlayerEngine {
     _isOpening = true;
     _pendingResumeAt = resumeAt;
 
+    final isResolving =
+        resource.uri.isScheme('content') || resource.prepare != null;
+
     // 新 open 立即重置 UI 状态避免旧画面残留
     _updateSnapshot(
       _snapshot.copyWith(
-        status: resource.uri.isScheme('content')
-            ? PlaybackStatus.resolving
-            : PlaybackStatus.opening,
+        status: isResolving ? PlaybackStatus.resolving : PlaybackStatus.opening,
         position: resumeAt ?? Duration.zero,
         duration: Duration.zero,
         buffered: Duration.zero,
@@ -315,26 +345,53 @@ class MediaKitPlayerEngine implements PlayerEngine {
         return;
       }
 
-      // 切换前先停止前代播放，再安全关闭旧描述符（保证底层已停用 FD）
+      // 切换前先停止前代播放，再安全关闭旧描述符与旧资源租约
       try {
         await _player.stop();
       } catch (e, st) {
         AppLogger.instance.error('停止旧媒体失败', error: e, stackTrace: st);
       }
       await _closeActiveDescriptor();
+      await _releaseActiveLease();
 
       if (_disposed || epoch != _openEpoch) {
         _isOpening = false;
         return;
       }
 
-      int? openedFd;
-      String mediaTarget;
-      if (resource.uri.isScheme('content')) {
+      PlaybackResource effectiveResource = resource;
+      if (resource.prepare != null) {
         try {
-          openedFd = await _documents.openRead(resource.uri);
+          effectiveResource = await resource.prepare!();
         } catch (e, st) {
           _isOpening = false;
+          if (_disposed || epoch != _openEpoch) return;
+          AppLogger.instance.error('准备播放资源失败', error: e, stackTrace: st);
+          _updateSnapshot(
+            _snapshot.copyWith(
+              status: PlaybackStatus.error,
+              errorMessage: () => _safeErrorMessage(e),
+            ),
+          );
+          return;
+        }
+      }
+
+      // 检查在 prepare 期间是否已被后续 open 或 stop 取代
+      if (_disposed || epoch != _openEpoch) {
+        _isOpening = false;
+        await _releaseLease(effectiveResource);
+        return;
+      }
+
+      int? openedFd;
+      String mediaTarget;
+      if (effectiveResource.uri.isScheme('content')) {
+        try {
+          openedFd = await _documents.openRead(effectiveResource.uri);
+        } catch (e, st) {
+          _isOpening = false;
+          await _releaseLease(effectiveResource);
           if (_disposed || epoch != _openEpoch) return;
           AppLogger.instance.error('打开媒体描述符失败', error: e, stackTrace: st);
           _updateSnapshot(
@@ -349,16 +406,18 @@ class MediaKitPlayerEngine implements PlayerEngine {
         if (_disposed || epoch != _openEpoch) {
           _isOpening = false;
           await _closeDescriptor(openedFd);
+          await _releaseLease(effectiveResource);
           return;
         }
         mediaTarget = 'fd://$openedFd';
       } else {
-        mediaTarget = resource.uri.toString();
+        mediaTarget = effectiveResource.uri.toString();
       }
 
       if (_disposed || epoch != _openEpoch) {
         _isOpening = false;
         if (openedFd != null) await _closeDescriptor(openedFd);
+        await _releaseLease(effectiveResource);
         return;
       }
 
@@ -371,8 +430,8 @@ class MediaKitPlayerEngine implements PlayerEngine {
 
       final media = Media(
         mediaTarget,
-        httpHeaders: resource.httpHeaders.isNotEmpty
-            ? resource.httpHeaders
+        httpHeaders: effectiveResource.httpHeaders.isNotEmpty
+            ? effectiveResource.httpHeaders
             : null,
         start: resumeAt,
       );
@@ -382,10 +441,6 @@ class MediaKitPlayerEngine implements PlayerEngine {
         await _player.open(media, play: false);
       } catch (e, st) {
         _isOpening = false;
-        if (_disposed || epoch != _openEpoch) {
-          if (openedFd != null) await _closeDescriptor(openedFd);
-          return;
-        }
         AppLogger.instance.error('打开底层媒体失败', error: e, stackTrace: st);
         try {
           await _player.stop();
@@ -397,6 +452,10 @@ class MediaKitPlayerEngine implements PlayerEngine {
           );
         }
         if (openedFd != null) await _closeDescriptor(openedFd);
+        await _releaseLease(effectiveResource);
+        if (_disposed || epoch != _openEpoch) {
+          return;
+        }
         _updateSnapshot(
           _snapshot.copyWith(
             status: PlaybackStatus.error,
@@ -418,15 +477,39 @@ class MediaKitPlayerEngine implements PlayerEngine {
           );
         }
         if (openedFd != null) await _closeDescriptor(openedFd);
+        await _releaseLease(effectiveResource);
         return;
       }
 
       _activeDescriptor = openedFd;
+      _activeRelease = effectiveResource.release;
+      if (effectiveResource.errors != null) {
+        _resourceErrorSub = effectiveResource.errors!.listen((err) {
+          AppLogger.instance.error('播放资源错误流通知: $err');
+          _updateSnapshot(
+            _snapshot.copyWith(
+              status: PlaybackStatus.error,
+              errorMessage: () => err.isNotEmpty ? err : '媒体流传输异常',
+            ),
+          );
+        });
+      }
       _isOpening = false;
       try {
         await _player.play();
       } catch (e, st) {
         AppLogger.instance.error('底层起播异常', error: e, stackTrace: st);
+        try {
+          await _player.stop();
+        } catch (stopErr, stopSt) {
+          AppLogger.instance.error(
+            '起播异常后停止播放器失败',
+            error: stopErr,
+            stackTrace: stopSt,
+          );
+        }
+        await _closeActiveDescriptor();
+        await _releaseActiveLease();
         _updateSnapshot(
           _snapshot.copyWith(
             status: PlaybackStatus.error,
@@ -623,6 +706,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
         AppLogger.instance.error('底层停止播放异常', error: e, stackTrace: st);
       }
       await _closeActiveDescriptor();
+      await _releaseActiveLease();
     });
   }
 
@@ -649,6 +733,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
       }
 
       await _closeActiveDescriptor();
+      await _releaseActiveLease();
 
       if (!_snapshotController.isClosed) {
         await _snapshotController.close();
@@ -660,6 +745,10 @@ class MediaKitPlayerEngine implements PlayerEngine {
 
   static String _safeErrorMessage(Object? error) {
     if (error == null) return '播放发生未知异常';
+
+    if (error is PlaybackResourceException) {
+      return error.message;
+    }
 
     if (error is MediaDocumentException) {
       switch (error.code) {
