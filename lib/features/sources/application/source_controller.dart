@@ -9,6 +9,7 @@ import '../../../core/logging/app_logger.dart';
 import '../../player/domain/playback_resource.dart';
 import '../domain/source_models.dart';
 import 'source_providers.dart';
+import '../../metadata/application/metadata_providers.dart';
 
 /// 媒体源应用层控制器
 ///
@@ -423,6 +424,10 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
           ),
         },
       );
+      // 扫描成功完成且状态更新后，在后台异步触发元数据识别与刷新
+      if (ref.mounted) {
+        unawaited(ref.read(metadataControllerProvider.notifier).refresh());
+      }
     } catch (e, st) {
       AppLogger.instance.error('扫描媒体源失败: $id', error: e, stackTrace: st);
       final safeMessage = e is MediaSourceException

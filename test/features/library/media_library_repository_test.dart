@@ -498,51 +498,66 @@ void main() {
           // Close unused in-memory fixture from setUp so multiple AppDatabases aren't open concurrently
           await db.close();
 
+          late int fileId;
+          late String persistedTitle;
+
           // Run Phase 1 with repo1
           final db1 = AppDatabase(executor: NativeDatabase(dbFile));
-          final repo1 = MediaLibraryRepository(db1);
-          final src = await repo1.upsertSource(
-            kind: 'local',
-            rootLocator: 'D:/Films',
-            name: 'Films',
-          );
-          final scan = await repo1.beginScan(src.id);
-          await repo1.applyScanBatch(src.id, scan, [
-            const MediaEntry(
-              externalId: 'f-1',
-              locator: 'Gladiator.1080p.mkv',
-              name: 'Gladiator.1080p.mkv',
-              isDirectory: false,
-              size: 4000000,
-            ),
-          ]);
-          await repo1.finishScan(src.id, scan);
+          try {
+            final repo1 = MediaLibraryRepository(db1);
+            final src = await repo1.upsertSource(
+              kind: 'local',
+              rootLocator: 'D:/Films',
+              name: 'Films',
+            );
+            final scan = await repo1.beginScan(src.id);
+            await repo1.applyScanBatch(src.id, scan, [
+              const MediaEntry(
+                externalId: 'f-1',
+                locator: 'Gladiator.1080p.mkv',
+                name: 'Gladiator.1080p.mkv',
+                isDirectory: false,
+                size: 4000000,
+              ),
+            ]);
+            await repo1.finishScan(src.id, scan);
 
-          final v1 = (await repo1.watchLibrary().first).first;
-          final fileId = v1.fileId;
-          expect(v1.title, 'Gladiator.1080p');
-
-          await db1.close();
+            final v1 = (await repo1.watchLibrary().first).first;
+            fileId = v1.fileId;
+            persistedTitle = v1.title;
+            expect(persistedTitle, isNotEmpty);
+            expect(v1.fileName, 'Gladiator.1080p.mkv');
+            expect(v1.locator, 'Gladiator.1080p.mkv');
+            expect(v1.sourceName, 'Films');
+          } finally {
+            await db1.close();
+          }
 
           // Run Phase 2 with reopened repo2
           final db2 = AppDatabase(executor: NativeDatabase(dbFile));
-          final repo2 = MediaLibraryRepository(db2);
+          try {
+            final repo2 = MediaLibraryRepository(db2);
 
-          final sources = await repo2.watchSources().first;
-          expect(sources, hasLength(1));
-          expect(sources.first.name, 'Films');
+            final sources = await repo2.watchSources().first;
+            expect(sources, hasLength(1));
+            expect(sources.first.name, 'Films');
 
-          final library = await repo2.watchLibrary().first;
-          expect(library, hasLength(1));
-          expect(library.first.fileId, fileId);
-          expect(library.first.title, 'Gladiator.1080p');
+            final library = await repo2.watchLibrary().first;
+            expect(library, hasLength(1));
+            expect(library.first.fileId, fileId);
+            expect(library.first.title, persistedTitle);
+            expect(library.first.fileName, 'Gladiator.1080p.mkv');
+            expect(library.first.locator, 'Gladiator.1080p.mkv');
+            expect(library.first.sourceName, 'Films');
 
-          final lookedUp = await repo2.getVideo(fileId);
-          expect(lookedUp, isNotNull);
-          expect(lookedUp!.fileName, 'Gladiator.1080p.mkv');
-          expect(lookedUp.available, isTrue);
-
-          await db2.close();
+            final lookedUp = await repo2.getVideo(fileId);
+            expect(lookedUp, isNotNull);
+            expect(lookedUp!.fileName, 'Gladiator.1080p.mkv');
+            expect(lookedUp.title, persistedTitle);
+            expect(lookedUp.available, isTrue);
+          } finally {
+            await db2.close();
+          }
         } finally {
           if (tempDir.existsSync()) {
             tempDir.deleteSync(recursive: true);

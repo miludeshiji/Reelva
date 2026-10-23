@@ -3,7 +3,10 @@ import 'dart:convert';
 import 'package:drift/drift.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../metadata/domain/media_filename_parser.dart';
+import '../../metadata/domain/tmdb_models.dart';
 import '../../sources/domain/source_models.dart';
+import '../domain/library_work.dart';
 
 class MediaLibraryRepository {
   MediaLibraryRepository(this.db);
@@ -230,6 +233,7 @@ class MediaLibraryRepository {
         ),
       );
     });
+    await recognizePendingFiles();
   }
 
   Future<void> failScan(int sourceId, String message) async {
@@ -252,8 +256,14 @@ class MediaLibraryRepository {
         db.mediaAssignments.fileId.equalsExp(db.mediaFiles.id),
       ),
       leftOuterJoin(
+        db.episodes,
+        db.episodes.id.equalsExp(db.mediaAssignments.episodeId),
+      ),
+      leftOuterJoin(db.seasons, db.seasons.id.equalsExp(db.episodes.seasonId)),
+      leftOuterJoin(
         db.works,
-        db.works.id.equalsExp(db.mediaAssignments.workId),
+        db.works.id.equalsExp(db.mediaAssignments.workId) |
+            db.works.id.equalsExp(db.seasons.seriesId),
       ),
     ]);
 
@@ -304,8 +314,14 @@ class MediaLibraryRepository {
         db.mediaAssignments.fileId.equalsExp(db.mediaFiles.id),
       ),
       leftOuterJoin(
+        db.episodes,
+        db.episodes.id.equalsExp(db.mediaAssignments.episodeId),
+      ),
+      leftOuterJoin(db.seasons, db.seasons.id.equalsExp(db.episodes.seasonId)),
+      leftOuterJoin(
         db.works,
-        db.works.id.equalsExp(db.mediaAssignments.workId),
+        db.works.id.equalsExp(db.mediaAssignments.workId) |
+            db.works.id.equalsExp(db.seasons.seriesId),
       ),
     ]);
 
@@ -410,5 +426,992 @@ class MediaLibraryRepository {
     final dot = fileName.lastIndexOf('.');
     if (dot <= 0) return fileName;
     return fileName.substring(0, dot);
+  }
+  // =========================================================================
+  // M3 扩展：自动识别、作品分页列表、多版本与元数据管理
+  // =========================================================================
+
+  /// 扫描或导入后保守识别待处理的媒体文件。
+  ///
+  /// 保留用户已锁定或非本地来源的既有匹配；对于高置信度的电影自动归并版本，
+  /// 对于高置信度的剧集建立季集层级；对于多集、未知集号或结构模糊的文件显式保留待审查状态。
+  Future<void> recognizePendingFiles() async {
+    final pendingFiles = await (db.select(db.mediaFiles).join([
+      innerJoin(
+        db.mediaEntries,
+        db.mediaEntries.id.equalsExp(db.mediaFiles.entryId),
+      ),
+      innerJoin(
+        db.mediaAssignments,
+        db.mediaAssignments.fileId.equalsExp(db.mediaFiles.id),
+      ),
+      leftOuterJoin(
+        db.works,
+        db.works.id.equalsExp(db.mediaAssignments.workId),
+      ),
+    ])..where(db.mediaFiles.parseState.equals('pending'))).get();
+
+    if (pendingFiles.isEmpty) return;
+
+    await db.transaction(() async {
+      for (final row in pendingFiles) {
+        final file = row.readTable(db.mediaFiles);
+        final entry = row.readTable(db.mediaEntries);
+        final currentWork = row.readTableOrNull(db.works);
+
+        // 如果用户已经锁定或者已有非本地来源匹配，则绝不自动覆盖
+        if (currentWork != null &&
+            (currentWork.metadataLocked ||
+                currentWork.metadataSource != 'local')) {
+          await (db.update(db.mediaFiles)..where((f) => f.id.equals(file.id)))
+              .write(const MediaFilesCompanion(parseState: Value('parsed')));
+          continue;
+        }
+
+        final parsed = MediaFilenameParser.parse(entry.name);
+        // 情况 1: 具备明确季号与单集号的剧集（即便缺少年份，也必须完整建立剧集/季/集层级；缺年份仅影响向 TMDB 自动匹配置信度，不影响本地层级结构）
+        if (parsed.type == 'series' &&
+            parsed.seasonNumber != null &&
+            parsed.episodeNumber != null &&
+            !parsed.isMultiEpisode) {
+          final candidateSeries =
+              await (db.select(db.works)..where(
+                    (w) =>
+                        w.type.equals('series') & w.title.equals(parsed.title),
+                  ))
+                  .get();
+
+          WorkData? seriesWork;
+          if (parsed.year != null) {
+            final matched = candidateSeries
+                .where((w) => w.year == parsed.year)
+                .toList();
+            if (matched.length == 1) {
+              seriesWork = matched.first;
+            } else if (matched.isEmpty) {
+              final nullYearMatched = candidateSeries
+                  .where((w) => w.year == null)
+                  .toList();
+              if (nullYearMatched.length == 1 && candidateSeries.length == 1) {
+                seriesWork = nullYearMatched.first;
+                // 仅在 target 未锁定且为 local 时补写年份
+                if (!seriesWork.metadataLocked &&
+                    seriesWork.metadataSource == 'local') {
+                  await (db.update(db.works)
+                        ..where((w) => w.id.equals(seriesWork!.id)))
+                      .write(WorksCompanion(year: Value(parsed.year)));
+                }
+              }
+            }
+          } else {
+            final nullYearMatched = candidateSeries
+                .where((w) => w.year == null)
+                .toList();
+            if (nullYearMatched.length == 1 && candidateSeries.length == 1) {
+              seriesWork = nullYearMatched.first;
+            }
+          }
+
+          int seriesId;
+          if (seriesWork != null) {
+            seriesId = seriesWork.id;
+          } else {
+            seriesId = await db
+                .into(db.works)
+                .insert(
+                  WorksCompanion.insert(
+                    title: parsed.title,
+                    type: const Value('series'),
+                    year: Value(parsed.year),
+                    metadataSource: const Value('local'),
+                    metadataLocked: const Value(false),
+                  ),
+                );
+          }
+
+          final seasonRow =
+              await (db.select(db.seasons)..where(
+                    (s) =>
+                        s.seriesId.equals(seriesId) &
+                        s.seasonNumber.equals(parsed.seasonNumber!),
+                  ))
+                  .getSingleOrNull();
+
+          int seasonId;
+          if (seasonRow != null) {
+            seasonId = seasonRow.id;
+          } else {
+            seasonId = await db
+                .into(db.seasons)
+                .insert(
+                  SeasonsCompanion.insert(
+                    seriesId: seriesId,
+                    seasonNumber: parsed.seasonNumber!,
+                  ),
+                );
+          }
+
+          final episodeRow =
+              await (db.select(db.episodes)..where(
+                    (e) =>
+                        e.seasonId.equals(seasonId) &
+                        e.episodeNumber.equals(parsed.episodeNumber!),
+                  ))
+                  .getSingleOrNull();
+
+          int episodeId;
+          if (episodeRow != null) {
+            episodeId = episodeRow.id;
+            if (parsed.episodeTitle != null && episodeRow.title == null) {
+              await (db.update(db.episodes)
+                    ..where((e) => e.id.equals(episodeId)))
+                  .write(EpisodesCompanion(title: Value(parsed.episodeTitle)));
+            }
+          } else {
+            episodeId = await db
+                .into(db.episodes)
+                .insert(
+                  EpisodesCompanion.insert(
+                    seasonId: seasonId,
+                    episodeNumber: parsed.episodeNumber!,
+                    title: Value(parsed.episodeTitle),
+                  ),
+                );
+          }
+
+          await (db.update(
+            db.mediaAssignments,
+          )..where((a) => a.fileId.equals(file.id))).write(
+            MediaAssignmentsCompanion(
+              workId: const Value(null),
+              episodeId: Value(episodeId),
+              editionLabel: Value(parsed.editionLabel),
+            ),
+          );
+
+          if (currentWork != null && currentWork.id != seriesId) {
+            await _migrateWorkProgressToEpisode(
+              fromWorkId: currentWork.id,
+              toEpisodeId: episodeId,
+            );
+            await _deleteWorkIfOrphan(currentWork.id);
+          }
+
+          await (db.update(db.mediaFiles)..where((f) => f.id.equals(file.id)))
+              .write(const MediaFilesCompanion(parseState: Value('parsed')));
+          continue;
+        }
+
+        // 情况 2: 高置信度电影（type == 'movie' 且年份明确）
+        if (parsed.type == 'movie' && parsed.year != null) {
+          final existingMovies =
+              await (db.select(db.works)..where(
+                    (w) =>
+                        w.type.equals('movie') &
+                        w.title.equals(parsed.title) &
+                        w.year.equals(parsed.year!),
+                  ))
+                  .get();
+
+          // 仅在存在唯一同名同年作品时自动归并多版本
+          if (existingMovies.length == 1) {
+            final existingMovie = existingMovies.first;
+            if (currentWork == null || existingMovie.id != currentWork.id) {
+              await (db.update(
+                db.mediaAssignments,
+              )..where((a) => a.fileId.equals(file.id))).write(
+                MediaAssignmentsCompanion(
+                  workId: Value(existingMovie.id),
+                  episodeId: const Value(null),
+                  editionLabel: Value(parsed.editionLabel),
+                ),
+              );
+
+              if (currentWork != null) {
+                await _migrateWorkProgress(
+                  fromWorkId: currentWork.id,
+                  toWorkId: existingMovie.id,
+                );
+                await _deleteWorkIfOrphan(currentWork.id);
+              }
+            }
+            await (db.update(db.mediaFiles)..where((f) => f.id.equals(file.id)))
+                .write(const MediaFilesCompanion(parseState: Value('parsed')));
+            continue;
+          } else if (existingMovies.isEmpty && currentWork != null) {
+            await (db.update(
+              db.works,
+            )..where((w) => w.id.equals(currentWork.id))).write(
+              WorksCompanion(
+                type: const Value('movie'),
+                title: Value(parsed.title),
+                year: Value(parsed.year),
+                metadataSource: const Value('local'),
+              ),
+            );
+            if (parsed.editionLabel != null) {
+              await (db.update(
+                db.mediaAssignments,
+              )..where((a) => a.fileId.equals(file.id))).write(
+                MediaAssignmentsCompanion(
+                  editionLabel: Value(parsed.editionLabel),
+                ),
+              );
+            }
+            await (db.update(db.mediaFiles)..where((f) => f.id.equals(file.id)))
+                .write(const MediaFilesCompanion(parseState: Value('parsed')));
+            continue;
+          }
+          // 若存在多个同名同年候选（如不同TMDB身份或冲突候选），保留本地独立候选不自动合并，亦不抛出异常，留给人工匹配
+        }
+
+        // 情况 3: 多集文件、未知集号特辑、无年份电影候选或模糊文件
+        // 严禁伪造集号为 0/1，严禁直接给 series 作品挂 work_id，显式标记 needs_review
+        await (db.update(
+          db.mediaFiles,
+        )..where((f) => f.id.equals(file.id))).write(
+          MediaFilesCompanion(
+            parseState: const Value('needs_review'),
+            candidateType: Value(parsed.type),
+            candidateSeasonNumber: Value(parsed.seasonNumber),
+            candidateEpisodeNumber: Value(parsed.episodeNumber),
+            candidateDetails: Value(
+              parsed.isMultiEpisode
+                  ? 'multi_episode:${parsed.episodeNumbers.join(",")}'
+                  : (parsed.isSpecialOrOva ? 'special_or_ova' : null),
+            ),
+          ),
+        );
+
+        if (currentWork != null &&
+            !currentWork.metadataLocked &&
+            parsed.title.isNotEmpty &&
+            currentWork.title != parsed.title) {
+          await (db.update(
+            db.works,
+          )..where((w) => w.id.equals(currentWork.id))).write(
+            WorksCompanion(
+              title: Value(parsed.title),
+              year: Value(parsed.year ?? currentWork.year),
+            ),
+          );
+        }
+
+        continue;
+      }
+    });
+  }
+
+  /// 监视媒体作品列表，DB 层级分页。
+  ///
+  /// 首次发射前触发识别，包含启用源的不可用文件，排除全源停用的作品。
+  Stream<List<LibraryWork>> watchWorks({int limit = 100}) async* {
+    await recognizePendingFiles();
+    yield* _watchWorksInternal(limit);
+  }
+
+  static const _workBaseSelectSql = '''
+    SELECT 
+      w.id,
+      w.type,
+      w.title,
+      w.original_title,
+      w.year,
+      w.overview,
+      w.poster_path,
+      w.backdrop_path,
+      w.metadata_source,
+      w.metadata_locked,
+      (
+        SELECT COUNT(DISTINCT ma.file_id)
+        FROM media_assignments ma
+        JOIN media_files mf ON mf.id = ma.file_id
+        JOIN media_entries me ON me.id = mf.entry_id
+        JOIN media_sources ms ON ms.id = me.source_id
+        WHERE ms.enabled = 1 AND me.is_directory = 0 AND (
+          ma.work_id = w.id OR
+          ma.episode_id IN (
+            SELECT e2.id FROM episodes e2
+            JOIN seasons s2 ON s2.id = e2.season_id
+            WHERE s2.series_id = w.id
+          )
+        )
+      ) as version_count,
+      (
+        SELECT MAX(CASE WHEN me.available = 1 AND ms.enabled = 1 AND me.is_directory = 0 THEN 1 ELSE 0 END)
+        FROM media_assignments ma
+        JOIN media_files mf ON mf.id = ma.file_id
+        JOIN media_entries me ON me.id = mf.entry_id
+        JOIN media_sources ms ON ms.id = me.source_id
+        WHERE ms.enabled = 1 AND me.is_directory = 0 AND (
+          ma.work_id = w.id OR
+          ma.episode_id IN (
+            SELECT e2.id FROM episodes e2
+            JOIN seasons s2 ON s2.id = e2.season_id
+            WHERE s2.series_id = w.id
+          )
+        )
+      ) as is_available
+    FROM works w
+  ''';
+
+  static LibraryWork _workFromRow(QueryRow row) {
+    final availableVal = row.readNullable<int>('is_available') ?? 0;
+    return LibraryWork(
+      id: row.read<int>('id'),
+      type: row.readNullable<String>('type'),
+      title: row.read<String>('title'),
+      originalTitle: row.readNullable<String>('original_title'),
+      year: row.readNullable<int>('year'),
+      overview: row.readNullable<String>('overview'),
+      posterPath: row.readNullable<String>('poster_path'),
+      backdropPath: row.readNullable<String>('backdrop_path'),
+      metadataSource: row.read<String>('metadata_source'),
+      metadataLocked: (row.read<int>('metadata_locked')) == 1,
+      versionCount: row.read<int>('version_count'),
+      available: availableVal == 1,
+    );
+  }
+
+  Stream<List<LibraryWork>> _watchWorksInternal(int limit) {
+    const queryStr =
+        '''
+      $_workBaseSelectSql
+      WHERE EXISTS (
+        SELECT 1 FROM media_assignments ma
+        JOIN media_files mf ON mf.id = ma.file_id
+        JOIN media_entries me ON me.id = mf.entry_id
+        JOIN media_sources ms ON ms.id = me.source_id
+        WHERE ms.enabled = 1 AND me.is_directory = 0 AND (
+          ma.work_id = w.id OR
+          ma.episode_id IN (
+            SELECT e2.id FROM episodes e2
+            JOIN seasons s2 ON s2.id = e2.season_id
+            WHERE s2.series_id = w.id
+          )
+        )
+      )
+      ORDER BY w.title COLLATE NOCASE ASC, w.id ASC
+      LIMIT ?
+    ''';
+
+    return db
+        .customSelect(
+          queryStr,
+          variables: [Variable.withInt(limit)],
+          readsFrom: <TableInfo<Table, dynamic>>{
+            db.works,
+            db.mediaAssignments,
+            db.mediaFiles,
+            db.mediaEntries,
+            db.mediaSources,
+            db.seasons,
+            db.episodes,
+          },
+        )
+        .watch()
+        .map((rows) => rows.map(_workFromRow).toList());
+  }
+
+  /// 监视指定作品的详情与版本列表。
+  Stream<WorkDetails?> watchWorkDetails(int workId) async* {
+    await recognizePendingFiles();
+    yield* _watchWorkDetailsInternal(workId);
+  }
+
+  Stream<WorkDetails?> _watchWorkDetailsInternal(int workId) {
+    const workQueryStr =
+        '''
+      $_workBaseSelectSql
+      WHERE w.id = ?
+    ''';
+
+    const versionsQueryStr = '''
+      SELECT 
+        mf.id as file_id,
+        me.name as file_name,
+        ms.name as source_name,
+        (CASE WHEN me.available = 1 AND ms.enabled = 1 AND me.is_directory = 0 THEN 1 ELSE 0 END) as is_available,
+        ma.edition_label,
+        (CASE 
+          WHEN ms.enabled = 0 THEN COALESCE(ms.error_message, 'Source is disabled')
+          WHEN me.is_directory = 1 THEN 'Entry is a directory'
+          ELSE ms.error_message 
+        END) as source_error,
+        ep.title as episode_title,
+        s.season_number,
+        ep.episode_number
+      FROM media_assignments ma
+      JOIN media_files mf ON mf.id = ma.file_id
+      JOIN media_entries me ON me.id = mf.entry_id
+      JOIN media_sources ms ON ms.id = me.source_id
+      LEFT JOIN episodes ep ON ep.id = ma.episode_id
+      LEFT JOIN seasons s ON s.id = ep.season_id
+      WHERE ms.enabled = 1 AND me.is_directory = 0 AND (
+        ma.work_id = ? OR
+        s.series_id = ?
+      )
+      ORDER BY 
+        COALESCE(s.season_number, 0) ASC,
+        COALESCE(ep.episode_number, 0) ASC,
+        ma.preferred DESC,
+        me.name ASC,
+        mf.id ASC
+    ''';
+
+    final reads = <TableInfo<Table, dynamic>>{
+      db.works,
+      db.mediaAssignments,
+      db.mediaFiles,
+      db.mediaEntries,
+      db.mediaSources,
+      db.seasons,
+      db.episodes,
+    };
+
+    return db
+        .customSelect(
+          workQueryStr,
+          variables: [Variable.withInt(workId)],
+          readsFrom: reads,
+        )
+        .watchSingleOrNull()
+        .asyncMap((workRow) async {
+          if (workRow == null) return null;
+
+          final work = _workFromRow(workRow);
+
+          final versionRows = await db
+              .customSelect(
+                versionsQueryStr,
+                variables: [Variable.withInt(workId), Variable.withInt(workId)],
+                readsFrom: reads,
+              )
+              .get();
+
+          final versions = versionRows.map((v) {
+            final isAvail = (v.readNullable<int>('is_available') ?? 0) == 1;
+            return LibraryVersion(
+              fileId: v.read<int>('file_id'),
+              fileName: v.read<String>('file_name'),
+              sourceName: v.read<String>('source_name'),
+              available: isAvail,
+              editionLabel: v.readNullable<String>('edition_label'),
+              sourceError: v.readNullable<String>('source_error'),
+              episodeTitle: v.readNullable<String>('episode_title'),
+              seasonNumber: v.readNullable<int>('season_number'),
+              episodeNumber: v.readNullable<int>('episode_number'),
+            );
+          }).toList();
+
+          return WorkDetails(work: work, versions: versions);
+        });
+  }
+
+  /// 一次性获取指定作品的详情。
+  Future<WorkDetails?> getWorkDetails(int workId) async {
+    await recognizePendingFiles();
+    return _watchWorkDetailsInternal(workId).first;
+  }
+
+  /// 获取未匹配的本地作品（无元数据锁且源为 local）。
+  Future<List<LibraryWork>> unmatchedWorks() async {
+    await recognizePendingFiles();
+    const queryStr =
+        '''
+      $_workBaseSelectSql
+      WHERE w.metadata_locked = 0 
+        AND w.metadata_source = 'local'
+        AND EXISTS (
+          SELECT 1 FROM media_assignments ma
+          JOIN media_files mf ON mf.id = ma.file_id
+          JOIN media_entries me ON me.id = mf.entry_id
+          JOIN media_sources ms ON ms.id = me.source_id
+          WHERE ms.enabled = 1 AND me.is_directory = 0 AND (
+            ma.work_id = w.id OR
+            ma.episode_id IN (
+              SELECT e2.id FROM episodes e2
+              JOIN seasons s2 ON s2.id = e2.season_id
+              WHERE s2.series_id = w.id
+            )
+          )
+        )
+      ORDER BY w.title COLLATE NOCASE ASC, w.id ASC
+    ''';
+
+    final rows = await db
+        .customSelect(
+          queryStr,
+          readsFrom: <TableInfo<Table, dynamic>>{
+            db.works,
+            db.mediaAssignments,
+            db.mediaFiles,
+            db.mediaEntries,
+            db.mediaSources,
+            db.seasons,
+            db.episodes,
+          },
+        )
+        .get();
+
+    return rows.map(_workFromRow).toList();
+  }
+
+  /// 应用作品元数据，自动归并相同 TMDB ID 的作品并正确保留季集与播放进度。
+  ///
+  /// 返回最终的规范作品 ID。
+  Future<int> applyMetadata(
+    int workId,
+    TmdbWork metadata, {
+    bool manual = false,
+  }) async {
+    return await db.transaction(() async {
+      final currentWork = await (db.select(
+        db.works,
+      )..where((w) => w.id.equals(workId))).getSingleOrNull();
+      if (currentWork == null) {
+        throw ArgumentError('Work with id $workId not found');
+      }
+
+      // 锁定状态下的自动调用（含异步迟到结果）绝不覆盖
+      if (currentWork.metadataLocked && !manual) {
+        return currentWork.id;
+      }
+
+      // 检查类型兼容性：电影 vs 剧集不兼容
+      final existingSeasons = await (db.select(
+        db.seasons,
+      )..where((s) => s.seriesId.equals(workId))).get();
+      if (existingSeasons.isNotEmpty && metadata.type == 'movie') {
+        throw ArgumentError(
+          'Incompatible media type: cannot match series work to movie',
+        );
+      }
+
+      if (currentWork.type != null && currentWork.type != metadata.type) {
+        throw ArgumentError(
+          'Incompatible media type: work is ${currentWork.type}, cannot match to ${metadata.type}',
+        );
+      }
+
+      final providerEntityId = '${metadata.type}:${metadata.id}';
+      final existingCanonicalId = await _getWorkIdByExternalId(
+        'tmdb',
+        providerEntityId,
+      );
+
+      int targetWorkId = workId;
+
+      if (existingCanonicalId != null && existingCanonicalId != workId) {
+        targetWorkId = existingCanonicalId;
+
+        // A) 检查目标规范作品当前的真实锁定状态
+        final canonicalWork = await (db.select(
+          db.works,
+        )..where((w) => w.id.equals(targetWorkId))).getSingleOrNull();
+        final isCanonicalLocked = canonicalWork?.metadataLocked ?? false;
+
+        // 将当前作品文件版本归并入 canonicalWork
+        if (metadata.type == 'movie') {
+          await db.customStatement(
+            'UPDATE media_assignments SET work_id = ? WHERE work_id = ?',
+            [targetWorkId, workId],
+          );
+        } else {
+          for (final season in existingSeasons) {
+            final canonicalSeason =
+                await (db.select(db.seasons)..where(
+                      (s) =>
+                          s.seriesId.equals(targetWorkId) &
+                          s.seasonNumber.equals(season.seasonNumber),
+                    ))
+                    .getSingleOrNull();
+
+            if (canonicalSeason == null) {
+              await (db.update(db.seasons)
+                    ..where((s) => s.id.equals(season.id)))
+                  .write(SeasonsCompanion(seriesId: Value(targetWorkId)));
+            } else {
+              final seasonEps = await (db.select(
+                db.episodes,
+              )..where((e) => e.seasonId.equals(season.id))).get();
+              for (final ep in seasonEps) {
+                final canonicalEp =
+                    await (db.select(db.episodes)..where(
+                          (e) =>
+                              e.seasonId.equals(canonicalSeason.id) &
+                              e.episodeNumber.equals(ep.episodeNumber),
+                        ))
+                        .getSingleOrNull();
+
+                if (canonicalEp == null) {
+                  await (db.update(
+                    db.episodes,
+                  )..where((e) => e.id.equals(ep.id))).write(
+                    EpisodesCompanion(seasonId: Value(canonicalSeason.id)),
+                  );
+                } else {
+                  await db.customStatement(
+                    'UPDATE media_assignments SET episode_id = ? WHERE episode_id = ?',
+                    [canonicalEp.id, ep.id],
+                  );
+                  await _migrateEpisodeProgress(
+                    fromEpId: ep.id,
+                    toEpId: canonicalEp.id,
+                  );
+                  await (db.delete(
+                    db.episodes,
+                  )..where((e) => e.id.equals(ep.id))).go();
+                }
+              }
+              await (db.delete(
+                db.seasons,
+              )..where((s) => s.id.equals(season.id))).go();
+            }
+          }
+        }
+
+        await _migrateWorkProgress(fromWorkId: workId, toWorkId: targetWorkId);
+
+        // B) 清理被归并作品的旧 TMDB 外部绑定，绝不把可能错误的旧 ID 挂到规范作品上
+        await db.customStatement('DELETE FROM external_ids WHERE work_id = ?', [
+          workId,
+        ]);
+        await (db.delete(db.works)..where((w) => w.id.equals(workId))).go();
+
+        // A) 自动把 local work 并入已加锁规范作品时，严禁覆盖 target 元数据或改变其锁定状态
+        if (isCanonicalLocked && !manual) {
+          return targetWorkId;
+        }
+
+        final lockValue = manual ? true : isCanonicalLocked;
+        await (db.update(
+          db.works,
+        )..where((w) => w.id.equals(targetWorkId))).write(
+          WorksCompanion(
+            type: Value(metadata.type),
+            title: Value(metadata.title),
+            originalTitle: Value(metadata.originalTitle),
+            year: Value(metadata.year),
+            overview: Value(metadata.overview),
+            posterPath: Value(metadata.posterPath),
+            backdropPath: Value(metadata.backdropPath),
+            metadataSource: const Value('tmdb'),
+            metadataLocked: Value(lockValue),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
+      } else {
+        // B) 手动重绑：若该作品先前已绑定旧 TMDB ID，先清理旧绑定，只保留新绑定
+        await db.customStatement(
+          'DELETE FROM external_ids WHERE work_id = ? AND provider = ?',
+          [targetWorkId, 'tmdb'],
+        );
+        await _linkWorkExternalId(targetWorkId, 'tmdb', providerEntityId);
+
+        final lockValue = manual ? true : currentWork.metadataLocked;
+        await (db.update(
+          db.works,
+        )..where((w) => w.id.equals(targetWorkId))).write(
+          WorksCompanion(
+            type: Value(metadata.type),
+            title: Value(metadata.title),
+            originalTitle: Value(metadata.originalTitle),
+            year: Value(metadata.year),
+            overview: Value(metadata.overview),
+            posterPath: Value(metadata.posterPath),
+            backdropPath: Value(metadata.backdropPath),
+            metadataSource: const Value('tmdb'),
+            metadataLocked: Value(lockValue),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
+      }
+      return targetWorkId;
+    });
+  }
+
+  /// 手动编辑本地元数据并显式加锁。
+  Future<void> editMetadata(
+    int workId, {
+    required String title,
+    int? year,
+    String? overview,
+    String? posterPath,
+  }) async {
+    final cleanTitle = title.trim();
+    if (cleanTitle.isEmpty) {
+      throw ArgumentError('Title cannot be empty');
+    }
+
+    if (year != null && (year < 1888 || year > 2100)) {
+      throw ArgumentError('Year must be between 1888 and 2100');
+    }
+
+    final currentWork = await (db.select(
+      db.works,
+    )..where((w) => w.id.equals(workId))).getSingleOrNull();
+    if (currentWork == null) {
+      throw ArgumentError('Work with id $workId not found');
+    }
+
+    await (db.update(db.works)..where((w) => w.id.equals(workId))).write(
+      WorksCompanion(
+        title: Value(cleanTitle),
+        year: Value(year),
+        overview: Value(overview),
+        posterPath: Value(posterPath),
+        metadataSource: const Value('local'),
+        metadataLocked: const Value(true),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  /// 应用剧集分集元数据，仅更新本地已存在的季集行。
+  Future<void> applyEpisodeMetadata(
+    int workId,
+    List<TmdbEpisode> episodes, {
+    bool manual = false,
+  }) async {
+    await db.transaction(() async {
+      final work = await (db.select(
+        db.works,
+      )..where((w) => w.id.equals(workId))).getSingleOrNull();
+      if (work == null) return;
+      if (work.metadataLocked && !manual) return;
+
+      final existingEpisodes = await (db.select(db.episodes).join([
+        innerJoin(db.seasons, db.seasons.id.equalsExp(db.episodes.seasonId)),
+      ])..where(db.seasons.seriesId.equals(workId))).get();
+
+      final localEpMap = <String, int>{};
+      for (final row in existingEpisodes) {
+        final season = row.readTable(db.seasons);
+        final ep = row.readTable(db.episodes);
+        localEpMap['${season.seasonNumber}:${ep.episodeNumber}'] = ep.id;
+      }
+
+      for (final tmdbEp in episodes) {
+        final key = '${tmdbEp.seasonNumber}:${tmdbEp.episodeNumber}';
+        final epId = localEpMap[key];
+        if (epId != null) {
+          await (db.update(db.episodes)..where((e) => e.id.equals(epId))).write(
+            EpisodesCompanion(
+              title: Value(tmdbEp.title),
+              overview: Value(tmdbEp.overview),
+              airDate: Value(tmdbEp.airDate),
+            ),
+          );
+        }
+      }
+    });
+  }
+
+  // --- 内部迁移辅助方法 ---
+
+  Future<void> _migrateWorkProgress({
+    required int fromWorkId,
+    required int toWorkId,
+  }) async {
+    final existingTo =
+        await (db.select(db.playbackProgresses)..where(
+              (p) => p.targetType.equals('work') & p.targetId.equals(toWorkId),
+            ))
+            .getSingleOrNull();
+
+    final existingFrom =
+        await (db.select(db.playbackProgresses)..where(
+              (p) =>
+                  p.targetType.equals('work') & p.targetId.equals(fromWorkId),
+            ))
+            .getSingleOrNull();
+
+    if (existingFrom != null) {
+      if (existingTo == null) {
+        await (db.update(
+          db.playbackProgresses,
+        )..where((p) => p.id.equals(existingFrom.id))).write(
+          PlaybackProgressesCompanion(
+            targetId: Value(toWorkId),
+            workId: Value(toWorkId),
+          ),
+        );
+      } else {
+        if (existingFrom.updatedAt.isAfter(existingTo.updatedAt)) {
+          await (db.delete(
+            db.playbackProgresses,
+          )..where((p) => p.id.equals(existingTo.id))).go();
+          await (db.update(
+            db.playbackProgresses,
+          )..where((p) => p.id.equals(existingFrom.id))).write(
+            PlaybackProgressesCompanion(
+              targetId: Value(toWorkId),
+              workId: Value(toWorkId),
+            ),
+          );
+        } else {
+          await (db.delete(
+            db.playbackProgresses,
+          )..where((p) => p.id.equals(existingFrom.id))).go();
+        }
+      }
+    }
+  }
+
+  Future<void> _migrateWorkProgressToEpisode({
+    required int fromWorkId,
+    required int toEpisodeId,
+  }) async {
+    final fromProgress =
+        await (db.select(db.playbackProgresses)..where(
+              (p) =>
+                  p.targetType.equals('work') & p.targetId.equals(fromWorkId),
+            ))
+            .getSingleOrNull();
+
+    if (fromProgress != null) {
+      final toProgress =
+          await (db.select(db.playbackProgresses)..where(
+                (p) =>
+                    p.targetType.equals('episode') &
+                    p.targetId.equals(toEpisodeId),
+              ))
+              .getSingleOrNull();
+      if (toProgress == null) {
+        await (db.update(
+          db.playbackProgresses,
+        )..where((p) => p.id.equals(fromProgress.id))).write(
+          PlaybackProgressesCompanion(
+            targetType: const Value('episode'),
+            targetId: Value(toEpisodeId),
+            workId: const Value(null),
+            episodeId: Value(toEpisodeId),
+          ),
+        );
+      } else {
+        // E) 冲突时保留较新 updatedAt 记录，不丢弃来源历史
+        if (fromProgress.updatedAt.isAfter(toProgress.updatedAt)) {
+          await (db.delete(
+            db.playbackProgresses,
+          )..where((p) => p.id.equals(toProgress.id))).go();
+          await (db.update(
+            db.playbackProgresses,
+          )..where((p) => p.id.equals(fromProgress.id))).write(
+            PlaybackProgressesCompanion(
+              targetType: const Value('episode'),
+              targetId: Value(toEpisodeId),
+              workId: const Value(null),
+              episodeId: Value(toEpisodeId),
+            ),
+          );
+        } else {
+          await (db.delete(
+            db.playbackProgresses,
+          )..where((p) => p.id.equals(fromProgress.id))).go();
+        }
+      }
+    }
+  }
+
+  Future<void> _migrateEpisodeProgress({
+    required int fromEpId,
+    required int toEpId,
+  }) async {
+    final fromProg =
+        await (db.select(db.playbackProgresses)..where(
+              (p) =>
+                  p.targetType.equals('episode') & p.targetId.equals(fromEpId),
+            ))
+            .getSingleOrNull();
+
+    if (fromProg != null) {
+      final toProg =
+          await (db.select(db.playbackProgresses)..where(
+                (p) =>
+                    p.targetType.equals('episode') & p.targetId.equals(toEpId),
+              ))
+              .getSingleOrNull();
+
+      if (toProg == null) {
+        await (db.update(
+          db.playbackProgresses,
+        )..where((p) => p.id.equals(fromProg.id))).write(
+          PlaybackProgressesCompanion(
+            targetId: Value(toEpId),
+            episodeId: Value(toEpId),
+          ),
+        );
+      } else {
+        if (fromProg.updatedAt.isAfter(toProg.updatedAt)) {
+          await (db.delete(
+            db.playbackProgresses,
+          )..where((p) => p.id.equals(toProg.id))).go();
+          await (db.update(
+            db.playbackProgresses,
+          )..where((p) => p.id.equals(fromProg.id))).write(
+            PlaybackProgressesCompanion(
+              targetId: Value(toEpId),
+              episodeId: Value(toEpId),
+            ),
+          );
+        } else {
+          await (db.delete(
+            db.playbackProgresses,
+          )..where((p) => p.id.equals(fromProg.id))).go();
+        }
+      }
+    }
+  }
+
+  Future<void> _deleteWorkIfOrphan(int workId) async {
+    final hasAssignments = await (db.select(
+      db.mediaAssignments,
+    )..where((a) => a.workId.equals(workId))).get();
+    if (hasAssignments.isNotEmpty) return;
+
+    final hasSeasons = await (db.select(
+      db.seasons,
+    )..where((s) => s.seriesId.equals(workId))).get();
+    if (hasSeasons.isNotEmpty) return;
+
+    await (db.delete(
+      db.playbackProgresses,
+    )..where((p) => p.workId.equals(workId))).go();
+    await (db.delete(db.works)..where((w) => w.id.equals(workId))).go();
+  }
+
+  Future<int?> _getWorkIdByExternalId(
+    String provider,
+    String providerEntityId,
+  ) async {
+    final row = await db
+        .customSelect(
+          'SELECT work_id FROM external_ids WHERE provider = ? AND provider_entity_id = ? AND work_id IS NOT NULL',
+          variables: [
+            Variable.withString(provider),
+            Variable.withString(providerEntityId),
+          ],
+        )
+        .getSingleOrNull();
+    return row?.readNullable<int>('work_id');
+  }
+
+  Future<void> _linkWorkExternalId(
+    int workId,
+    String provider,
+    String providerEntityId,
+  ) async {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    await db.customStatement(
+      '''
+      INSERT INTO external_ids (work_id, provider, provider_entity_id, created_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(provider, provider_entity_id) DO UPDATE SET
+        work_id = excluded.work_id,
+        created_at = excluded.created_at
+      ''',
+      [workId, provider, providerEntityId, nowMs],
+    );
   }
 }

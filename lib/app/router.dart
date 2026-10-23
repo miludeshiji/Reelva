@@ -4,11 +4,13 @@ import 'package:go_router/go_router.dart';
 import 'package:reelva/app/shell_page.dart';
 import 'package:reelva/features/home/home_page.dart';
 import 'package:reelva/features/library/library_page.dart';
+import 'package:reelva/features/library/presentation/work_details_page.dart';
+import 'package:reelva/features/player/domain/playback_resource.dart';
+import 'package:reelva/features/player/presentation/player_page.dart';
+import 'package:reelva/features/settings/about_page.dart';
 import 'package:reelva/features/settings/settings_page.dart';
 import 'package:reelva/features/sources/sources_page.dart';
 import 'package:reelva/shared/widgets/empty_state_view.dart';
-import 'package:reelva/features/player/domain/playback_resource.dart';
-import 'package:reelva/features/player/presentation/player_page.dart';
 
 GoRouter createRouter({String initialLocation = '/'}) {
   return GoRouter(
@@ -29,6 +31,16 @@ GoRouter createRouter({String initialLocation = '/'}) {
               GoRoute(
                 path: '/library',
                 builder: (context, state) => const LibraryPage(),
+                routes: [
+                  GoRoute(
+                    path: 'work/:id',
+                    builder: (context, state) {
+                      final id =
+                          int.tryParse(state.pathParameters['id'] ?? '') ?? 0;
+                      return WorkDetailsPage(workId: id);
+                    },
+                  ),
+                ],
               ),
             ],
           ),
@@ -45,6 +57,12 @@ GoRouter createRouter({String initialLocation = '/'}) {
               GoRoute(
                 path: '/settings',
                 builder: (context, state) => const SettingsPage(),
+                routes: [
+                  GoRoute(
+                    path: 'about',
+                    builder: (context, state) => const AboutPage(),
+                  ),
+                ],
               ),
             ],
           ),

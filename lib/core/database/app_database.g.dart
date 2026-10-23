@@ -1470,6 +1470,48 @@ class $MediaFilesTable extends MediaFiles
     requiredDuringInsert: false,
     defaultValue: const Constant('pending'),
   );
+  static const VerificationMeta _candidateTypeMeta = const VerificationMeta(
+    'candidateType',
+  );
+  @override
+  late final GeneratedColumn<String> candidateType = GeneratedColumn<String>(
+    'candidate_type',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _candidateSeasonNumberMeta =
+      const VerificationMeta('candidateSeasonNumber');
+  @override
+  late final GeneratedColumn<int> candidateSeasonNumber = GeneratedColumn<int>(
+    'candidate_season_number',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _candidateEpisodeNumberMeta =
+      const VerificationMeta('candidateEpisodeNumber');
+  @override
+  late final GeneratedColumn<int> candidateEpisodeNumber = GeneratedColumn<int>(
+    'candidate_episode_number',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _candidateDetailsMeta = const VerificationMeta(
+    'candidateDetails',
+  );
+  @override
+  late final GeneratedColumn<String> candidateDetails = GeneratedColumn<String>(
+    'candidate_details',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -1481,6 +1523,10 @@ class $MediaFilesTable extends MediaFiles
     videoCodec,
     audioCodec,
     parseState,
+    candidateType,
+    candidateSeasonNumber,
+    candidateEpisodeNumber,
+    candidateDetails,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1553,6 +1599,42 @@ class $MediaFilesTable extends MediaFiles
         parseState.isAcceptableOrUnknown(data['parse_state']!, _parseStateMeta),
       );
     }
+    if (data.containsKey('candidate_type')) {
+      context.handle(
+        _candidateTypeMeta,
+        candidateType.isAcceptableOrUnknown(
+          data['candidate_type']!,
+          _candidateTypeMeta,
+        ),
+      );
+    }
+    if (data.containsKey('candidate_season_number')) {
+      context.handle(
+        _candidateSeasonNumberMeta,
+        candidateSeasonNumber.isAcceptableOrUnknown(
+          data['candidate_season_number']!,
+          _candidateSeasonNumberMeta,
+        ),
+      );
+    }
+    if (data.containsKey('candidate_episode_number')) {
+      context.handle(
+        _candidateEpisodeNumberMeta,
+        candidateEpisodeNumber.isAcceptableOrUnknown(
+          data['candidate_episode_number']!,
+          _candidateEpisodeNumberMeta,
+        ),
+      );
+    }
+    if (data.containsKey('candidate_details')) {
+      context.handle(
+        _candidateDetailsMeta,
+        candidateDetails.isAcceptableOrUnknown(
+          data['candidate_details']!,
+          _candidateDetailsMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -1598,6 +1680,22 @@ class $MediaFilesTable extends MediaFiles
         DriftSqlType.string,
         data['${effectivePrefix}parse_state'],
       )!,
+      candidateType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}candidate_type'],
+      ),
+      candidateSeasonNumber: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}candidate_season_number'],
+      ),
+      candidateEpisodeNumber: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}candidate_episode_number'],
+      ),
+      candidateDetails: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}candidate_details'],
+      ),
     );
   }
 
@@ -1617,6 +1715,10 @@ class MediaFileData extends DataClass implements Insertable<MediaFileData> {
   final String? videoCodec;
   final String? audioCodec;
   final String parseState;
+  final String? candidateType;
+  final int? candidateSeasonNumber;
+  final int? candidateEpisodeNumber;
+  final String? candidateDetails;
   const MediaFileData({
     required this.id,
     required this.entryId,
@@ -1627,6 +1729,10 @@ class MediaFileData extends DataClass implements Insertable<MediaFileData> {
     this.videoCodec,
     this.audioCodec,
     required this.parseState,
+    this.candidateType,
+    this.candidateSeasonNumber,
+    this.candidateEpisodeNumber,
+    this.candidateDetails,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1652,6 +1758,18 @@ class MediaFileData extends DataClass implements Insertable<MediaFileData> {
       map['audio_codec'] = Variable<String>(audioCodec);
     }
     map['parse_state'] = Variable<String>(parseState);
+    if (!nullToAbsent || candidateType != null) {
+      map['candidate_type'] = Variable<String>(candidateType);
+    }
+    if (!nullToAbsent || candidateSeasonNumber != null) {
+      map['candidate_season_number'] = Variable<int>(candidateSeasonNumber);
+    }
+    if (!nullToAbsent || candidateEpisodeNumber != null) {
+      map['candidate_episode_number'] = Variable<int>(candidateEpisodeNumber);
+    }
+    if (!nullToAbsent || candidateDetails != null) {
+      map['candidate_details'] = Variable<String>(candidateDetails);
+    }
     return map;
   }
 
@@ -1678,6 +1796,18 @@ class MediaFileData extends DataClass implements Insertable<MediaFileData> {
           ? const Value.absent()
           : Value(audioCodec),
       parseState: Value(parseState),
+      candidateType: candidateType == null && nullToAbsent
+          ? const Value.absent()
+          : Value(candidateType),
+      candidateSeasonNumber: candidateSeasonNumber == null && nullToAbsent
+          ? const Value.absent()
+          : Value(candidateSeasonNumber),
+      candidateEpisodeNumber: candidateEpisodeNumber == null && nullToAbsent
+          ? const Value.absent()
+          : Value(candidateEpisodeNumber),
+      candidateDetails: candidateDetails == null && nullToAbsent
+          ? const Value.absent()
+          : Value(candidateDetails),
     );
   }
 
@@ -1696,6 +1826,14 @@ class MediaFileData extends DataClass implements Insertable<MediaFileData> {
       videoCodec: serializer.fromJson<String?>(json['videoCodec']),
       audioCodec: serializer.fromJson<String?>(json['audioCodec']),
       parseState: serializer.fromJson<String>(json['parseState']),
+      candidateType: serializer.fromJson<String?>(json['candidateType']),
+      candidateSeasonNumber: serializer.fromJson<int?>(
+        json['candidateSeasonNumber'],
+      ),
+      candidateEpisodeNumber: serializer.fromJson<int?>(
+        json['candidateEpisodeNumber'],
+      ),
+      candidateDetails: serializer.fromJson<String?>(json['candidateDetails']),
     );
   }
   @override
@@ -1711,6 +1849,10 @@ class MediaFileData extends DataClass implements Insertable<MediaFileData> {
       'videoCodec': serializer.toJson<String?>(videoCodec),
       'audioCodec': serializer.toJson<String?>(audioCodec),
       'parseState': serializer.toJson<String>(parseState),
+      'candidateType': serializer.toJson<String?>(candidateType),
+      'candidateSeasonNumber': serializer.toJson<int?>(candidateSeasonNumber),
+      'candidateEpisodeNumber': serializer.toJson<int?>(candidateEpisodeNumber),
+      'candidateDetails': serializer.toJson<String?>(candidateDetails),
     };
   }
 
@@ -1724,6 +1866,10 @@ class MediaFileData extends DataClass implements Insertable<MediaFileData> {
     Value<String?> videoCodec = const Value.absent(),
     Value<String?> audioCodec = const Value.absent(),
     String? parseState,
+    Value<String?> candidateType = const Value.absent(),
+    Value<int?> candidateSeasonNumber = const Value.absent(),
+    Value<int?> candidateEpisodeNumber = const Value.absent(),
+    Value<String?> candidateDetails = const Value.absent(),
   }) => MediaFileData(
     id: id ?? this.id,
     entryId: entryId ?? this.entryId,
@@ -1738,6 +1884,18 @@ class MediaFileData extends DataClass implements Insertable<MediaFileData> {
     videoCodec: videoCodec.present ? videoCodec.value : this.videoCodec,
     audioCodec: audioCodec.present ? audioCodec.value : this.audioCodec,
     parseState: parseState ?? this.parseState,
+    candidateType: candidateType.present
+        ? candidateType.value
+        : this.candidateType,
+    candidateSeasonNumber: candidateSeasonNumber.present
+        ? candidateSeasonNumber.value
+        : this.candidateSeasonNumber,
+    candidateEpisodeNumber: candidateEpisodeNumber.present
+        ? candidateEpisodeNumber.value
+        : this.candidateEpisodeNumber,
+    candidateDetails: candidateDetails.present
+        ? candidateDetails.value
+        : this.candidateDetails,
   );
   MediaFileData copyWithCompanion(MediaFilesCompanion data) {
     return MediaFileData(
@@ -1762,6 +1920,18 @@ class MediaFileData extends DataClass implements Insertable<MediaFileData> {
       parseState: data.parseState.present
           ? data.parseState.value
           : this.parseState,
+      candidateType: data.candidateType.present
+          ? data.candidateType.value
+          : this.candidateType,
+      candidateSeasonNumber: data.candidateSeasonNumber.present
+          ? data.candidateSeasonNumber.value
+          : this.candidateSeasonNumber,
+      candidateEpisodeNumber: data.candidateEpisodeNumber.present
+          ? data.candidateEpisodeNumber.value
+          : this.candidateEpisodeNumber,
+      candidateDetails: data.candidateDetails.present
+          ? data.candidateDetails.value
+          : this.candidateDetails,
     );
   }
 
@@ -1776,7 +1946,11 @@ class MediaFileData extends DataClass implements Insertable<MediaFileData> {
           ..write('resolutionHeight: $resolutionHeight, ')
           ..write('videoCodec: $videoCodec, ')
           ..write('audioCodec: $audioCodec, ')
-          ..write('parseState: $parseState')
+          ..write('parseState: $parseState, ')
+          ..write('candidateType: $candidateType, ')
+          ..write('candidateSeasonNumber: $candidateSeasonNumber, ')
+          ..write('candidateEpisodeNumber: $candidateEpisodeNumber, ')
+          ..write('candidateDetails: $candidateDetails')
           ..write(')'))
         .toString();
   }
@@ -1792,6 +1966,10 @@ class MediaFileData extends DataClass implements Insertable<MediaFileData> {
     videoCodec,
     audioCodec,
     parseState,
+    candidateType,
+    candidateSeasonNumber,
+    candidateEpisodeNumber,
+    candidateDetails,
   );
   @override
   bool operator ==(Object other) =>
@@ -1805,7 +1983,11 @@ class MediaFileData extends DataClass implements Insertable<MediaFileData> {
           other.resolutionHeight == this.resolutionHeight &&
           other.videoCodec == this.videoCodec &&
           other.audioCodec == this.audioCodec &&
-          other.parseState == this.parseState);
+          other.parseState == this.parseState &&
+          other.candidateType == this.candidateType &&
+          other.candidateSeasonNumber == this.candidateSeasonNumber &&
+          other.candidateEpisodeNumber == this.candidateEpisodeNumber &&
+          other.candidateDetails == this.candidateDetails);
 }
 
 class MediaFilesCompanion extends UpdateCompanion<MediaFileData> {
@@ -1818,6 +2000,10 @@ class MediaFilesCompanion extends UpdateCompanion<MediaFileData> {
   final Value<String?> videoCodec;
   final Value<String?> audioCodec;
   final Value<String> parseState;
+  final Value<String?> candidateType;
+  final Value<int?> candidateSeasonNumber;
+  final Value<int?> candidateEpisodeNumber;
+  final Value<String?> candidateDetails;
   const MediaFilesCompanion({
     this.id = const Value.absent(),
     this.entryId = const Value.absent(),
@@ -1828,6 +2014,10 @@ class MediaFilesCompanion extends UpdateCompanion<MediaFileData> {
     this.videoCodec = const Value.absent(),
     this.audioCodec = const Value.absent(),
     this.parseState = const Value.absent(),
+    this.candidateType = const Value.absent(),
+    this.candidateSeasonNumber = const Value.absent(),
+    this.candidateEpisodeNumber = const Value.absent(),
+    this.candidateDetails = const Value.absent(),
   });
   MediaFilesCompanion.insert({
     this.id = const Value.absent(),
@@ -1839,6 +2029,10 @@ class MediaFilesCompanion extends UpdateCompanion<MediaFileData> {
     this.videoCodec = const Value.absent(),
     this.audioCodec = const Value.absent(),
     this.parseState = const Value.absent(),
+    this.candidateType = const Value.absent(),
+    this.candidateSeasonNumber = const Value.absent(),
+    this.candidateEpisodeNumber = const Value.absent(),
+    this.candidateDetails = const Value.absent(),
   }) : entryId = Value(entryId);
   static Insertable<MediaFileData> custom({
     Expression<int>? id,
@@ -1850,6 +2044,10 @@ class MediaFilesCompanion extends UpdateCompanion<MediaFileData> {
     Expression<String>? videoCodec,
     Expression<String>? audioCodec,
     Expression<String>? parseState,
+    Expression<String>? candidateType,
+    Expression<int>? candidateSeasonNumber,
+    Expression<int>? candidateEpisodeNumber,
+    Expression<String>? candidateDetails,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -1861,6 +2059,12 @@ class MediaFilesCompanion extends UpdateCompanion<MediaFileData> {
       if (videoCodec != null) 'video_codec': videoCodec,
       if (audioCodec != null) 'audio_codec': audioCodec,
       if (parseState != null) 'parse_state': parseState,
+      if (candidateType != null) 'candidate_type': candidateType,
+      if (candidateSeasonNumber != null)
+        'candidate_season_number': candidateSeasonNumber,
+      if (candidateEpisodeNumber != null)
+        'candidate_episode_number': candidateEpisodeNumber,
+      if (candidateDetails != null) 'candidate_details': candidateDetails,
     });
   }
 
@@ -1874,6 +2078,10 @@ class MediaFilesCompanion extends UpdateCompanion<MediaFileData> {
     Value<String?>? videoCodec,
     Value<String?>? audioCodec,
     Value<String>? parseState,
+    Value<String?>? candidateType,
+    Value<int?>? candidateSeasonNumber,
+    Value<int?>? candidateEpisodeNumber,
+    Value<String?>? candidateDetails,
   }) {
     return MediaFilesCompanion(
       id: id ?? this.id,
@@ -1885,6 +2093,12 @@ class MediaFilesCompanion extends UpdateCompanion<MediaFileData> {
       videoCodec: videoCodec ?? this.videoCodec,
       audioCodec: audioCodec ?? this.audioCodec,
       parseState: parseState ?? this.parseState,
+      candidateType: candidateType ?? this.candidateType,
+      candidateSeasonNumber:
+          candidateSeasonNumber ?? this.candidateSeasonNumber,
+      candidateEpisodeNumber:
+          candidateEpisodeNumber ?? this.candidateEpisodeNumber,
+      candidateDetails: candidateDetails ?? this.candidateDetails,
     );
   }
 
@@ -1918,6 +2132,22 @@ class MediaFilesCompanion extends UpdateCompanion<MediaFileData> {
     if (parseState.present) {
       map['parse_state'] = Variable<String>(parseState.value);
     }
+    if (candidateType.present) {
+      map['candidate_type'] = Variable<String>(candidateType.value);
+    }
+    if (candidateSeasonNumber.present) {
+      map['candidate_season_number'] = Variable<int>(
+        candidateSeasonNumber.value,
+      );
+    }
+    if (candidateEpisodeNumber.present) {
+      map['candidate_episode_number'] = Variable<int>(
+        candidateEpisodeNumber.value,
+      );
+    }
+    if (candidateDetails.present) {
+      map['candidate_details'] = Variable<String>(candidateDetails.value);
+    }
     return map;
   }
 
@@ -1932,7 +2162,11 @@ class MediaFilesCompanion extends UpdateCompanion<MediaFileData> {
           ..write('resolutionHeight: $resolutionHeight, ')
           ..write('videoCodec: $videoCodec, ')
           ..write('audioCodec: $audioCodec, ')
-          ..write('parseState: $parseState')
+          ..write('parseState: $parseState, ')
+          ..write('candidateType: $candidateType, ')
+          ..write('candidateSeasonNumber: $candidateSeasonNumber, ')
+          ..write('candidateEpisodeNumber: $candidateEpisodeNumber, ')
+          ..write('candidateDetails: $candidateDetails')
           ..write(')'))
         .toString();
   }
@@ -4404,6 +4638,783 @@ class PlaybackProgressesCompanion
   }
 }
 
+class $ExternalIdsTable extends ExternalIds
+    with TableInfo<$ExternalIdsTable, ExternalIdData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ExternalIdsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _workIdMeta = const VerificationMeta('workId');
+  @override
+  late final GeneratedColumn<int> workId = GeneratedColumn<int>(
+    'work_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES works (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _providerMeta = const VerificationMeta(
+    'provider',
+  );
+  @override
+  late final GeneratedColumn<String> provider = GeneratedColumn<String>(
+    'provider',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _providerEntityIdMeta = const VerificationMeta(
+    'providerEntityId',
+  );
+  @override
+  late final GeneratedColumn<String> providerEntityId = GeneratedColumn<String>(
+    'provider_entity_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    workId,
+    provider,
+    providerEntityId,
+    createdAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'external_ids';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ExternalIdData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('work_id')) {
+      context.handle(
+        _workIdMeta,
+        workId.isAcceptableOrUnknown(data['work_id']!, _workIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_workIdMeta);
+    }
+    if (data.containsKey('provider')) {
+      context.handle(
+        _providerMeta,
+        provider.isAcceptableOrUnknown(data['provider']!, _providerMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_providerMeta);
+    }
+    if (data.containsKey('provider_entity_id')) {
+      context.handle(
+        _providerEntityIdMeta,
+        providerEntityId.isAcceptableOrUnknown(
+          data['provider_entity_id']!,
+          _providerEntityIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_providerEntityIdMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+    {provider, providerEntityId},
+  ];
+  @override
+  ExternalIdData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ExternalIdData(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      workId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}work_id'],
+      )!,
+      provider: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}provider'],
+      )!,
+      providerEntityId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}provider_entity_id'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $ExternalIdsTable createAlias(String alias) {
+    return $ExternalIdsTable(attachedDatabase, alias);
+  }
+}
+
+class ExternalIdData extends DataClass implements Insertable<ExternalIdData> {
+  final int id;
+  final int workId;
+  final String provider;
+  final String providerEntityId;
+  final DateTime createdAt;
+  const ExternalIdData({
+    required this.id,
+    required this.workId,
+    required this.provider,
+    required this.providerEntityId,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['work_id'] = Variable<int>(workId);
+    map['provider'] = Variable<String>(provider);
+    map['provider_entity_id'] = Variable<String>(providerEntityId);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    return map;
+  }
+
+  ExternalIdsCompanion toCompanion(bool nullToAbsent) {
+    return ExternalIdsCompanion(
+      id: Value(id),
+      workId: Value(workId),
+      provider: Value(provider),
+      providerEntityId: Value(providerEntityId),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory ExternalIdData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ExternalIdData(
+      id: serializer.fromJson<int>(json['id']),
+      workId: serializer.fromJson<int>(json['workId']),
+      provider: serializer.fromJson<String>(json['provider']),
+      providerEntityId: serializer.fromJson<String>(json['providerEntityId']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'workId': serializer.toJson<int>(workId),
+      'provider': serializer.toJson<String>(provider),
+      'providerEntityId': serializer.toJson<String>(providerEntityId),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  ExternalIdData copyWith({
+    int? id,
+    int? workId,
+    String? provider,
+    String? providerEntityId,
+    DateTime? createdAt,
+  }) => ExternalIdData(
+    id: id ?? this.id,
+    workId: workId ?? this.workId,
+    provider: provider ?? this.provider,
+    providerEntityId: providerEntityId ?? this.providerEntityId,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  ExternalIdData copyWithCompanion(ExternalIdsCompanion data) {
+    return ExternalIdData(
+      id: data.id.present ? data.id.value : this.id,
+      workId: data.workId.present ? data.workId.value : this.workId,
+      provider: data.provider.present ? data.provider.value : this.provider,
+      providerEntityId: data.providerEntityId.present
+          ? data.providerEntityId.value
+          : this.providerEntityId,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ExternalIdData(')
+          ..write('id: $id, ')
+          ..write('workId: $workId, ')
+          ..write('provider: $provider, ')
+          ..write('providerEntityId: $providerEntityId, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, workId, provider, providerEntityId, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ExternalIdData &&
+          other.id == this.id &&
+          other.workId == this.workId &&
+          other.provider == this.provider &&
+          other.providerEntityId == this.providerEntityId &&
+          other.createdAt == this.createdAt);
+}
+
+class ExternalIdsCompanion extends UpdateCompanion<ExternalIdData> {
+  final Value<int> id;
+  final Value<int> workId;
+  final Value<String> provider;
+  final Value<String> providerEntityId;
+  final Value<DateTime> createdAt;
+  const ExternalIdsCompanion({
+    this.id = const Value.absent(),
+    this.workId = const Value.absent(),
+    this.provider = const Value.absent(),
+    this.providerEntityId = const Value.absent(),
+    this.createdAt = const Value.absent(),
+  });
+  ExternalIdsCompanion.insert({
+    this.id = const Value.absent(),
+    required int workId,
+    required String provider,
+    required String providerEntityId,
+    this.createdAt = const Value.absent(),
+  }) : workId = Value(workId),
+       provider = Value(provider),
+       providerEntityId = Value(providerEntityId);
+  static Insertable<ExternalIdData> custom({
+    Expression<int>? id,
+    Expression<int>? workId,
+    Expression<String>? provider,
+    Expression<String>? providerEntityId,
+    Expression<DateTime>? createdAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (workId != null) 'work_id': workId,
+      if (provider != null) 'provider': provider,
+      if (providerEntityId != null) 'provider_entity_id': providerEntityId,
+      if (createdAt != null) 'created_at': createdAt,
+    });
+  }
+
+  ExternalIdsCompanion copyWith({
+    Value<int>? id,
+    Value<int>? workId,
+    Value<String>? provider,
+    Value<String>? providerEntityId,
+    Value<DateTime>? createdAt,
+  }) {
+    return ExternalIdsCompanion(
+      id: id ?? this.id,
+      workId: workId ?? this.workId,
+      provider: provider ?? this.provider,
+      providerEntityId: providerEntityId ?? this.providerEntityId,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (workId.present) {
+      map['work_id'] = Variable<int>(workId.value);
+    }
+    if (provider.present) {
+      map['provider'] = Variable<String>(provider.value);
+    }
+    if (providerEntityId.present) {
+      map['provider_entity_id'] = Variable<String>(providerEntityId.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ExternalIdsCompanion(')
+          ..write('id: $id, ')
+          ..write('workId: $workId, ')
+          ..write('provider: $provider, ')
+          ..write('providerEntityId: $providerEntityId, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MetadataCachesTable extends MetadataCaches
+    with TableInfo<$MetadataCachesTable, MetadataCacheData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MetadataCachesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _cacheKeyMeta = const VerificationMeta(
+    'cacheKey',
+  );
+  @override
+  late final GeneratedColumn<String> cacheKey = GeneratedColumn<String>(
+    'cache_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _providerMeta = const VerificationMeta(
+    'provider',
+  );
+  @override
+  late final GeneratedColumn<String> provider = GeneratedColumn<String>(
+    'provider',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _payloadJsonMeta = const VerificationMeta(
+    'payloadJson',
+  );
+  @override
+  late final GeneratedColumn<String> payloadJson = GeneratedColumn<String>(
+    'payload_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _etagMeta = const VerificationMeta('etag');
+  @override
+  late final GeneratedColumn<String> etag = GeneratedColumn<String>(
+    'etag',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _expiresAtMeta = const VerificationMeta(
+    'expiresAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> expiresAt = GeneratedColumn<DateTime>(
+    'expires_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    cacheKey,
+    provider,
+    payloadJson,
+    etag,
+    expiresAt,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'metadata_cache';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MetadataCacheData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('cache_key')) {
+      context.handle(
+        _cacheKeyMeta,
+        cacheKey.isAcceptableOrUnknown(data['cache_key']!, _cacheKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_cacheKeyMeta);
+    }
+    if (data.containsKey('provider')) {
+      context.handle(
+        _providerMeta,
+        provider.isAcceptableOrUnknown(data['provider']!, _providerMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_providerMeta);
+    }
+    if (data.containsKey('payload_json')) {
+      context.handle(
+        _payloadJsonMeta,
+        payloadJson.isAcceptableOrUnknown(
+          data['payload_json']!,
+          _payloadJsonMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_payloadJsonMeta);
+    }
+    if (data.containsKey('etag')) {
+      context.handle(
+        _etagMeta,
+        etag.isAcceptableOrUnknown(data['etag']!, _etagMeta),
+      );
+    }
+    if (data.containsKey('expires_at')) {
+      context.handle(
+        _expiresAtMeta,
+        expiresAt.isAcceptableOrUnknown(data['expires_at']!, _expiresAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_expiresAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {cacheKey};
+  @override
+  MetadataCacheData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MetadataCacheData(
+      cacheKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cache_key'],
+      )!,
+      provider: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}provider'],
+      )!,
+      payloadJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}payload_json'],
+      )!,
+      etag: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}etag'],
+      ),
+      expiresAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}expires_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $MetadataCachesTable createAlias(String alias) {
+    return $MetadataCachesTable(attachedDatabase, alias);
+  }
+}
+
+class MetadataCacheData extends DataClass
+    implements Insertable<MetadataCacheData> {
+  final String cacheKey;
+  final String provider;
+  final String payloadJson;
+  final String? etag;
+  final DateTime expiresAt;
+  final DateTime updatedAt;
+  const MetadataCacheData({
+    required this.cacheKey,
+    required this.provider,
+    required this.payloadJson,
+    this.etag,
+    required this.expiresAt,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['cache_key'] = Variable<String>(cacheKey);
+    map['provider'] = Variable<String>(provider);
+    map['payload_json'] = Variable<String>(payloadJson);
+    if (!nullToAbsent || etag != null) {
+      map['etag'] = Variable<String>(etag);
+    }
+    map['expires_at'] = Variable<DateTime>(expiresAt);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    return map;
+  }
+
+  MetadataCachesCompanion toCompanion(bool nullToAbsent) {
+    return MetadataCachesCompanion(
+      cacheKey: Value(cacheKey),
+      provider: Value(provider),
+      payloadJson: Value(payloadJson),
+      etag: etag == null && nullToAbsent ? const Value.absent() : Value(etag),
+      expiresAt: Value(expiresAt),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory MetadataCacheData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MetadataCacheData(
+      cacheKey: serializer.fromJson<String>(json['cacheKey']),
+      provider: serializer.fromJson<String>(json['provider']),
+      payloadJson: serializer.fromJson<String>(json['payloadJson']),
+      etag: serializer.fromJson<String?>(json['etag']),
+      expiresAt: serializer.fromJson<DateTime>(json['expiresAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'cacheKey': serializer.toJson<String>(cacheKey),
+      'provider': serializer.toJson<String>(provider),
+      'payloadJson': serializer.toJson<String>(payloadJson),
+      'etag': serializer.toJson<String?>(etag),
+      'expiresAt': serializer.toJson<DateTime>(expiresAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  MetadataCacheData copyWith({
+    String? cacheKey,
+    String? provider,
+    String? payloadJson,
+    Value<String?> etag = const Value.absent(),
+    DateTime? expiresAt,
+    DateTime? updatedAt,
+  }) => MetadataCacheData(
+    cacheKey: cacheKey ?? this.cacheKey,
+    provider: provider ?? this.provider,
+    payloadJson: payloadJson ?? this.payloadJson,
+    etag: etag.present ? etag.value : this.etag,
+    expiresAt: expiresAt ?? this.expiresAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  MetadataCacheData copyWithCompanion(MetadataCachesCompanion data) {
+    return MetadataCacheData(
+      cacheKey: data.cacheKey.present ? data.cacheKey.value : this.cacheKey,
+      provider: data.provider.present ? data.provider.value : this.provider,
+      payloadJson: data.payloadJson.present
+          ? data.payloadJson.value
+          : this.payloadJson,
+      etag: data.etag.present ? data.etag.value : this.etag,
+      expiresAt: data.expiresAt.present ? data.expiresAt.value : this.expiresAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MetadataCacheData(')
+          ..write('cacheKey: $cacheKey, ')
+          ..write('provider: $provider, ')
+          ..write('payloadJson: $payloadJson, ')
+          ..write('etag: $etag, ')
+          ..write('expiresAt: $expiresAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(cacheKey, provider, payloadJson, etag, expiresAt, updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MetadataCacheData &&
+          other.cacheKey == this.cacheKey &&
+          other.provider == this.provider &&
+          other.payloadJson == this.payloadJson &&
+          other.etag == this.etag &&
+          other.expiresAt == this.expiresAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class MetadataCachesCompanion extends UpdateCompanion<MetadataCacheData> {
+  final Value<String> cacheKey;
+  final Value<String> provider;
+  final Value<String> payloadJson;
+  final Value<String?> etag;
+  final Value<DateTime> expiresAt;
+  final Value<DateTime> updatedAt;
+  final Value<int> rowid;
+  const MetadataCachesCompanion({
+    this.cacheKey = const Value.absent(),
+    this.provider = const Value.absent(),
+    this.payloadJson = const Value.absent(),
+    this.etag = const Value.absent(),
+    this.expiresAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MetadataCachesCompanion.insert({
+    required String cacheKey,
+    required String provider,
+    required String payloadJson,
+    this.etag = const Value.absent(),
+    required DateTime expiresAt,
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : cacheKey = Value(cacheKey),
+       provider = Value(provider),
+       payloadJson = Value(payloadJson),
+       expiresAt = Value(expiresAt);
+  static Insertable<MetadataCacheData> custom({
+    Expression<String>? cacheKey,
+    Expression<String>? provider,
+    Expression<String>? payloadJson,
+    Expression<String>? etag,
+    Expression<DateTime>? expiresAt,
+    Expression<DateTime>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (cacheKey != null) 'cache_key': cacheKey,
+      if (provider != null) 'provider': provider,
+      if (payloadJson != null) 'payload_json': payloadJson,
+      if (etag != null) 'etag': etag,
+      if (expiresAt != null) 'expires_at': expiresAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MetadataCachesCompanion copyWith({
+    Value<String>? cacheKey,
+    Value<String>? provider,
+    Value<String>? payloadJson,
+    Value<String?>? etag,
+    Value<DateTime>? expiresAt,
+    Value<DateTime>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return MetadataCachesCompanion(
+      cacheKey: cacheKey ?? this.cacheKey,
+      provider: provider ?? this.provider,
+      payloadJson: payloadJson ?? this.payloadJson,
+      etag: etag ?? this.etag,
+      expiresAt: expiresAt ?? this.expiresAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (cacheKey.present) {
+      map['cache_key'] = Variable<String>(cacheKey.value);
+    }
+    if (provider.present) {
+      map['provider'] = Variable<String>(provider.value);
+    }
+    if (payloadJson.present) {
+      map['payload_json'] = Variable<String>(payloadJson.value);
+    }
+    if (etag.present) {
+      map['etag'] = Variable<String>(etag.value);
+    }
+    if (expiresAt.present) {
+      map['expires_at'] = Variable<DateTime>(expiresAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MetadataCachesCompanion(')
+          ..write('cacheKey: $cacheKey, ')
+          ..write('provider: $provider, ')
+          ..write('payloadJson: $payloadJson, ')
+          ..write('etag: $etag, ')
+          ..write('expiresAt: $expiresAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -4418,6 +5429,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   );
   late final $PlaybackProgressesTable playbackProgresses =
       $PlaybackProgressesTable(this);
+  late final $ExternalIdsTable externalIds = $ExternalIdsTable(this);
+  late final $MetadataCachesTable metadataCaches = $MetadataCachesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -4431,6 +5444,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     episodes,
     mediaAssignments,
     playbackProgresses,
+    externalIds,
+    metadataCaches,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -4503,6 +5518,13 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('playback_progress', kind: UpdateKind.update)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'works',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('external_ids', kind: UpdateKind.delete)],
     ),
   ]);
 }
@@ -5462,6 +6484,10 @@ typedef $$MediaFilesTableCreateCompanionBuilder = MediaFilesCompanion Function({
   Value<String?> videoCodec,
   Value<String?> audioCodec,
   Value<String> parseState,
+  Value<String?> candidateType,
+  Value<int?> candidateSeasonNumber,
+  Value<int?> candidateEpisodeNumber,
+  Value<String?> candidateDetails,
 });
 typedef $$MediaFilesTableUpdateCompanionBuilder = MediaFilesCompanion Function({
   Value<int> id,
@@ -5473,6 +6499,10 @@ typedef $$MediaFilesTableUpdateCompanionBuilder = MediaFilesCompanion Function({
   Value<String?> videoCodec,
   Value<String?> audioCodec,
   Value<String> parseState,
+  Value<String?> candidateType,
+  Value<int?> candidateSeasonNumber,
+  Value<int?> candidateEpisodeNumber,
+  Value<String?> candidateDetails,
 });
 
 final class $$MediaFilesTableReferences
@@ -5587,6 +6617,26 @@ class $$MediaFilesTableFilterComposer
 
   ColumnFilters<String> get parseState => $composableBuilder(
     column: $table.parseState,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get candidateType => $composableBuilder(
+    column: $table.candidateType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get candidateSeasonNumber => $composableBuilder(
+    column: $table.candidateSeasonNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get candidateEpisodeNumber => $composableBuilder(
+    column: $table.candidateEpisodeNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get candidateDetails => $composableBuilder(
+    column: $table.candidateDetails,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -5713,6 +6763,26 @@ class $$MediaFilesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get candidateType => $composableBuilder(
+    column: $table.candidateType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get candidateSeasonNumber => $composableBuilder(
+    column: $table.candidateSeasonNumber,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get candidateEpisodeNumber => $composableBuilder(
+    column: $table.candidateEpisodeNumber,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get candidateDetails => $composableBuilder(
+    column: $table.candidateDetails,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$MediaEntriesTableOrderingComposer get entryId {
     final $$MediaEntriesTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -5779,6 +6849,26 @@ class $$MediaFilesTableAnnotationComposer
 
   GeneratedColumn<String> get parseState => $composableBuilder(
     column: $table.parseState,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get candidateType => $composableBuilder(
+    column: $table.candidateType,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get candidateSeasonNumber => $composableBuilder(
+    column: $table.candidateSeasonNumber,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get candidateEpisodeNumber => $composableBuilder(
+    column: $table.candidateEpisodeNumber,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get candidateDetails => $composableBuilder(
+    column: $table.candidateDetails,
     builder: (column) => column,
   );
 
@@ -5898,6 +6988,10 @@ class $$MediaFilesTableTableManager
                 Value<String?> videoCodec = const Value.absent(),
                 Value<String?> audioCodec = const Value.absent(),
                 Value<String> parseState = const Value.absent(),
+                Value<String?> candidateType = const Value.absent(),
+                Value<int?> candidateSeasonNumber = const Value.absent(),
+                Value<int?> candidateEpisodeNumber = const Value.absent(),
+                Value<String?> candidateDetails = const Value.absent(),
               }) => MediaFilesCompanion(
                 id: id,
                 entryId: entryId,
@@ -5908,6 +7002,10 @@ class $$MediaFilesTableTableManager
                 videoCodec: videoCodec,
                 audioCodec: audioCodec,
                 parseState: parseState,
+                candidateType: candidateType,
+                candidateSeasonNumber: candidateSeasonNumber,
+                candidateEpisodeNumber: candidateEpisodeNumber,
+                candidateDetails: candidateDetails,
               ),
           createCompanionCallback:
               ({
@@ -5920,6 +7018,10 @@ class $$MediaFilesTableTableManager
                 Value<String?> videoCodec = const Value.absent(),
                 Value<String?> audioCodec = const Value.absent(),
                 Value<String> parseState = const Value.absent(),
+                Value<String?> candidateType = const Value.absent(),
+                Value<int?> candidateSeasonNumber = const Value.absent(),
+                Value<int?> candidateEpisodeNumber = const Value.absent(),
+                Value<String?> candidateDetails = const Value.absent(),
               }) => MediaFilesCompanion.insert(
                 id: id,
                 entryId: entryId,
@@ -5930,6 +7032,10 @@ class $$MediaFilesTableTableManager
                 videoCodec: videoCodec,
                 audioCodec: audioCodec,
                 parseState: parseState,
+                candidateType: candidateType,
+                candidateSeasonNumber: candidateSeasonNumber,
+                candidateEpisodeNumber: candidateEpisodeNumber,
+                candidateDetails: candidateDetails,
               ),
           withReferenceMapper: (p0) => p0
               .map(
@@ -6146,6 +7252,24 @@ final class $$WorksTableReferences
       manager.$state.copyWith(prefetchedData: cache),
     );
   }
+
+  static MultiTypedResultKey<$ExternalIdsTable, List<ExternalIdData>>
+  _externalIdsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.externalIds,
+    aliasName: 'works__id__external_ids__work_id',
+  );
+
+  $$ExternalIdsTableProcessedTableManager get externalIdsRefs {
+    final manager = $$ExternalIdsTableTableManager(
+      $_db,
+      $_db.externalIds,
+    ).filter((f) => f.workId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_externalIdsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
 }
 
 class $$WorksTableFilterComposer extends Composer<_$AppDatabase, $WorksTable> {
@@ -6282,6 +7406,31 @@ class $$WorksTableFilterComposer extends Composer<_$AppDatabase, $WorksTable> {
           }) => $$PlaybackProgressesTableFilterComposer(
             $db: $db,
             $table: $db.playbackProgresses,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> externalIdsRefs(
+    Expression<bool> Function($$ExternalIdsTableFilterComposer f) f,
+  ) {
+    final $$ExternalIdsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.externalIds,
+      getReferencedColumn: (t) => t.workId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ExternalIdsTableFilterComposer(
+            $db: $db,
+            $table: $db.externalIds,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -6492,6 +7641,31 @@ class $$WorksTableAnnotationComposer
         );
     return f(composer);
   }
+
+  Expression<T> externalIdsRefs<T extends Object>(
+    Expression<T> Function($$ExternalIdsTableAnnotationComposer a) f,
+  ) {
+    final $$ExternalIdsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.externalIds,
+      getReferencedColumn: (t) => t.workId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ExternalIdsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.externalIds,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$WorksTableTableManager
@@ -6511,6 +7685,7 @@ class $$WorksTableTableManager
             bool seasonsRefs,
             bool mediaAssignmentsRefs,
             bool playbackProgressesRefs,
+            bool externalIdsRefs,
           })
         > {
   $$WorksTableTableManager(_$AppDatabase db, $WorksTable table)
@@ -6593,6 +7768,7 @@ class $$WorksTableTableManager
                 seasonsRefs = false,
                 mediaAssignmentsRefs = false,
                 playbackProgressesRefs = false,
+                externalIdsRefs = false,
               }) {
                 return PrefetchHooks(
                   db: db,
@@ -6600,6 +7776,7 @@ class $$WorksTableTableManager
                     if (seasonsRefs) db.seasons,
                     if (mediaAssignmentsRefs) db.mediaAssignments,
                     if (playbackProgressesRefs) db.playbackProgresses,
+                    if (externalIdsRefs) db.externalIds,
                   ],
                   addJoins: null,
                   getPrefetchedDataCallback: (items) async {
@@ -6663,6 +7840,27 @@ class $$WorksTableTableManager
                               ),
                           typedResults: items,
                         ),
+                      if (externalIdsRefs)
+                        await $_getPrefetchedData<
+                          WorkData,
+                          $WorksTable,
+                          ExternalIdData
+                        >(
+                          currentTable: table,
+                          referencedTable: $$WorksTableReferences
+                              ._externalIdsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$WorksTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).externalIdsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.workId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
                     ];
                   },
                 );
@@ -6687,6 +7885,7 @@ typedef $$WorksTableProcessedTableManager =
         bool seasonsRefs,
         bool mediaAssignmentsRefs,
         bool playbackProgressesRefs,
+        bool externalIdsRefs,
       })
     >;
 typedef $$SeasonsTableCreateCompanionBuilder = SeasonsCompanion Function({
@@ -8705,6 +9904,553 @@ typedef $$PlaybackProgressesTableProcessedTableManager =
       PlaybackProgressData,
       PrefetchHooks Function({bool workId, bool episodeId, bool lastFileId})
     >;
+typedef $$ExternalIdsTableCreateCompanionBuilder =
+    ExternalIdsCompanion Function({
+      Value<int> id,
+      required int workId,
+      required String provider,
+      required String providerEntityId,
+      Value<DateTime> createdAt,
+    });
+typedef $$ExternalIdsTableUpdateCompanionBuilder =
+    ExternalIdsCompanion Function({
+      Value<int> id,
+      Value<int> workId,
+      Value<String> provider,
+      Value<String> providerEntityId,
+      Value<DateTime> createdAt,
+    });
+
+final class $$ExternalIdsTableReferences
+    extends BaseReferences<_$AppDatabase, $ExternalIdsTable, ExternalIdData> {
+  $$ExternalIdsTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $WorksTable _workIdTable(_$AppDatabase db) =>
+      db.works.createAlias('external_ids__work_id__works__id');
+
+  $$WorksTableProcessedTableManager get workId {
+    final $_column = $_itemColumn<int>('work_id')!;
+
+    final manager = $$WorksTableTableManager(
+      $_db,
+      $_db.works,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_workIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$ExternalIdsTableFilterComposer
+    extends Composer<_$AppDatabase, $ExternalIdsTable> {
+  $$ExternalIdsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get provider => $composableBuilder(
+    column: $table.provider,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get providerEntityId => $composableBuilder(
+    column: $table.providerEntityId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$WorksTableFilterComposer get workId {
+    final $$WorksTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.workId,
+      referencedTable: $db.works,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WorksTableFilterComposer(
+            $db: $db,
+            $table: $db.works,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$ExternalIdsTableOrderingComposer
+    extends Composer<_$AppDatabase, $ExternalIdsTable> {
+  $$ExternalIdsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get provider => $composableBuilder(
+    column: $table.provider,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get providerEntityId => $composableBuilder(
+    column: $table.providerEntityId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$WorksTableOrderingComposer get workId {
+    final $$WorksTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.workId,
+      referencedTable: $db.works,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WorksTableOrderingComposer(
+            $db: $db,
+            $table: $db.works,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$ExternalIdsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ExternalIdsTable> {
+  $$ExternalIdsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get provider =>
+      $composableBuilder(column: $table.provider, builder: (column) => column);
+
+  GeneratedColumn<String> get providerEntityId => $composableBuilder(
+    column: $table.providerEntityId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  $$WorksTableAnnotationComposer get workId {
+    final $$WorksTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.workId,
+      referencedTable: $db.works,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WorksTableAnnotationComposer(
+            $db: $db,
+            $table: $db.works,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$ExternalIdsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ExternalIdsTable,
+          ExternalIdData,
+          $$ExternalIdsTableFilterComposer,
+          $$ExternalIdsTableOrderingComposer,
+          $$ExternalIdsTableAnnotationComposer,
+          $$ExternalIdsTableCreateCompanionBuilder,
+          $$ExternalIdsTableUpdateCompanionBuilder,
+          (ExternalIdData, $$ExternalIdsTableReferences),
+          ExternalIdData,
+          PrefetchHooks Function({bool workId})
+        > {
+  $$ExternalIdsTableTableManager(_$AppDatabase db, $ExternalIdsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ExternalIdsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ExternalIdsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ExternalIdsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<int> workId = const Value.absent(),
+                Value<String> provider = const Value.absent(),
+                Value<String> providerEntityId = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+              }) => ExternalIdsCompanion(
+                id: id,
+                workId: workId,
+                provider: provider,
+                providerEntityId: providerEntityId,
+                createdAt: createdAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required int workId,
+                required String provider,
+                required String providerEntityId,
+                Value<DateTime> createdAt = const Value.absent(),
+              }) => ExternalIdsCompanion.insert(
+                id: id,
+                workId: workId,
+                provider: provider,
+                providerEntityId: providerEntityId,
+                createdAt: createdAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$ExternalIdsTable, ExternalIdData>(table),
+                  $$ExternalIdsTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({workId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (workId) {
+                      state = state.withJoin(
+                        currentTable: table,
+                        currentColumn: table.workId,
+                        referencedTable: $$ExternalIdsTableReferences
+                            ._workIdTable(db),
+                        referencedColumn: $$ExternalIdsTableReferences
+                            ._workIdTable(db)
+                            .id,
+                      ) as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$ExternalIdsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ExternalIdsTable,
+      ExternalIdData,
+      $$ExternalIdsTableFilterComposer,
+      $$ExternalIdsTableOrderingComposer,
+      $$ExternalIdsTableAnnotationComposer,
+      $$ExternalIdsTableCreateCompanionBuilder,
+      $$ExternalIdsTableUpdateCompanionBuilder,
+      (ExternalIdData, $$ExternalIdsTableReferences),
+      ExternalIdData,
+      PrefetchHooks Function({bool workId})
+    >;
+typedef $$MetadataCachesTableCreateCompanionBuilder =
+    MetadataCachesCompanion Function({
+      required String cacheKey,
+      required String provider,
+      required String payloadJson,
+      Value<String?> etag,
+      required DateTime expiresAt,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+typedef $$MetadataCachesTableUpdateCompanionBuilder =
+    MetadataCachesCompanion Function({
+      Value<String> cacheKey,
+      Value<String> provider,
+      Value<String> payloadJson,
+      Value<String?> etag,
+      Value<DateTime> expiresAt,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$MetadataCachesTableFilterComposer
+    extends Composer<_$AppDatabase, $MetadataCachesTable> {
+  $$MetadataCachesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get cacheKey => $composableBuilder(
+    column: $table.cacheKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get provider => $composableBuilder(
+    column: $table.provider,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get payloadJson => $composableBuilder(
+    column: $table.payloadJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get etag => $composableBuilder(
+    column: $table.etag,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get expiresAt => $composableBuilder(
+    column: $table.expiresAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MetadataCachesTableOrderingComposer
+    extends Composer<_$AppDatabase, $MetadataCachesTable> {
+  $$MetadataCachesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get cacheKey => $composableBuilder(
+    column: $table.cacheKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get provider => $composableBuilder(
+    column: $table.provider,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get payloadJson => $composableBuilder(
+    column: $table.payloadJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get etag => $composableBuilder(
+    column: $table.etag,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get expiresAt => $composableBuilder(
+    column: $table.expiresAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MetadataCachesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $MetadataCachesTable> {
+  $$MetadataCachesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get cacheKey =>
+      $composableBuilder(column: $table.cacheKey, builder: (column) => column);
+
+  GeneratedColumn<String> get provider =>
+      $composableBuilder(column: $table.provider, builder: (column) => column);
+
+  GeneratedColumn<String> get payloadJson => $composableBuilder(
+    column: $table.payloadJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get etag =>
+      $composableBuilder(column: $table.etag, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get expiresAt =>
+      $composableBuilder(column: $table.expiresAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$MetadataCachesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $MetadataCachesTable,
+          MetadataCacheData,
+          $$MetadataCachesTableFilterComposer,
+          $$MetadataCachesTableOrderingComposer,
+          $$MetadataCachesTableAnnotationComposer,
+          $$MetadataCachesTableCreateCompanionBuilder,
+          $$MetadataCachesTableUpdateCompanionBuilder,
+          (
+            MetadataCacheData,
+            BaseReferences<
+              _$AppDatabase,
+              $MetadataCachesTable,
+              MetadataCacheData
+            >,
+          ),
+          MetadataCacheData,
+          PrefetchHooks Function()
+        > {
+  $$MetadataCachesTableTableManager(
+    _$AppDatabase db,
+    $MetadataCachesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MetadataCachesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MetadataCachesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MetadataCachesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> cacheKey = const Value.absent(),
+                Value<String> provider = const Value.absent(),
+                Value<String> payloadJson = const Value.absent(),
+                Value<String?> etag = const Value.absent(),
+                Value<DateTime> expiresAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MetadataCachesCompanion(
+                cacheKey: cacheKey,
+                provider: provider,
+                payloadJson: payloadJson,
+                etag: etag,
+                expiresAt: expiresAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String cacheKey,
+                required String provider,
+                required String payloadJson,
+                Value<String?> etag = const Value.absent(),
+                required DateTime expiresAt,
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MetadataCachesCompanion.insert(
+                cacheKey: cacheKey,
+                provider: provider,
+                payloadJson: payloadJson,
+                etag: etag,
+                expiresAt: expiresAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$MetadataCachesTable, MetadataCacheData>(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $MetadataCachesTable,
+                    MetadataCacheData
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MetadataCachesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $MetadataCachesTable,
+      MetadataCacheData,
+      $$MetadataCachesTableFilterComposer,
+      $$MetadataCachesTableOrderingComposer,
+      $$MetadataCachesTableAnnotationComposer,
+      $$MetadataCachesTableCreateCompanionBuilder,
+      $$MetadataCachesTableUpdateCompanionBuilder,
+      (
+        MetadataCacheData,
+        BaseReferences<_$AppDatabase, $MetadataCachesTable, MetadataCacheData>,
+      ),
+      MetadataCacheData,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -8725,4 +10471,8 @@ class $AppDatabaseManager {
       $$MediaAssignmentsTableTableManager(_db, _db.mediaAssignments);
   $$PlaybackProgressesTableTableManager get playbackProgresses =>
       $$PlaybackProgressesTableTableManager(_db, _db.playbackProgresses);
+  $$ExternalIdsTableTableManager get externalIds =>
+      $$ExternalIdsTableTableManager(_db, _db.externalIds);
+  $$MetadataCachesTableTableManager get metadataCaches =>
+      $$MetadataCachesTableTableManager(_db, _db.metadataCaches);
 }

@@ -1,6 +1,7 @@
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:reelva/app/app.dart';
@@ -24,6 +25,10 @@ Widget createTestApp({required AppDatabase db, GoRouter? router}) {
 
 void main() {
   group('Reelva Shell Navigation Tests', () {
+    setUp(() {
+      FlutterSecureStorage.setMockInitialValues({});
+    });
+
     testWidgets(
       'Desktop wide layout uses NavigationRail and navigates all 4 destinations',
       (tester) async {

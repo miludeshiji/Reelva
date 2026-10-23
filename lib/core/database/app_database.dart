@@ -15,6 +15,8 @@ part 'app_database.g.dart';
     Episodes,
     MediaAssignments,
     PlaybackProgresses,
+    ExternalIds,
+    MetadataCaches,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -22,8 +24,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? driftDatabase(name: 'reelva'));
 
   @override
-  int get schemaVersion => 1;
-
+  int get schemaVersion => 2;
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) async {
@@ -82,6 +83,16 @@ class AppDatabase extends _$AppDatabase {
               SELECT RAISE(ABORT, 'Cannot change work type to series while movie assignments exist');
             END;
           ''');
+    },
+    onUpgrade: (m, from, to) async {
+      if (from < 2) {
+        await m.createTable(externalIds);
+        await m.createTable(metadataCaches);
+        await m.addColumn(mediaFiles, mediaFiles.candidateType);
+        await m.addColumn(mediaFiles, mediaFiles.candidateSeasonNumber);
+        await m.addColumn(mediaFiles, mediaFiles.candidateEpisodeNumber);
+        await m.addColumn(mediaFiles, mediaFiles.candidateDetails);
+      }
     },
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON');

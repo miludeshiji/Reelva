@@ -2,7 +2,8 @@
 
 Reelva 是一个客户端优先的跨平台影视库与播放器项目，首批目标平台为 Windows 和 Android。
 
-M0 工程基线与 M1 播放器最小闭环已由用户验收。当前实现已推进并止于 M2：实现了媒体源管理、基于 SQLite/Drift 的本地影视库、目录扫描与解析播放链路，等待用户手工验收。
+M0 工程基线与 M1 播放器最小闭环已由用户验收。当前实现止于 M3：在既有媒体源、SQLite/Drift 索引和播放器之上，加入文件名识别、TMDB 匹配、元数据锁定、海报墙与多版本详情。M3 成果等待用户审查，未经审查不进入 M4。
+
 ## 开发环境与检查
 
 使用 FVM 和仓库的 `.fvmrc` 固定 **Flutter 3.47.7 / Dart 3.13.5**，不要使用可能指向其他 SDK 的裸 `flutter` / `dart` 命令。
@@ -31,7 +32,7 @@ fvm flutter devices
 fvm flutter run -d <android-device-id>
 ```
 
-Windows 需要 Visual Studio 的桌面 C++ 工具链。Android 需要 Android SDK、JDK 和已接受的 SDK 许可证；可通过 `fvm flutter doctor -v` 查看环境状态。许可证需由开发者自行审阅并接受。
+Windows 需要 Visual Studio 的桌面 C++ 工具链；新增的 `flutter_secure_storage_windows` 还要求安装 C++ ATL 组件。Android 需要 Android SDK、JDK 和已接受的 SDK 许可证；可通过 `fvm flutter doctor -v` 查看环境状态。许可证需由开发者自行审阅并接受。
 
 ## 目录与依赖
 
@@ -39,19 +40,21 @@ Windows 需要 Visual Studio 的桌面 C++ 工具链。Android 需要 Android SD
 | --- | --- |
 | `lib/main.dart` | 绑定、错误处理、media_kit 与 Windows 窗口初始化，Riverpod 入口 |
 | `lib/app/` | 根应用、路由和自适应导航 |
-| `lib/core/database/` | SQLite / Drift 数据库结构定义与迁移管理（Schema v1） |
+| `lib/core/database/` | SQLite / Drift 数据库结构定义与迁移管理（Schema v2，保留 v1 数据） |
 | `lib/core/errors/`、`lib/core/logging/` | 错误处理与日志脱敏 |
 | `lib/features/sources/` | 媒体源管理、扫描调度、进度状态与跨平台适配器（Windows 本地文件系统 / Android SAF 目录授权） |
-| `lib/features/library/` | 本地影视库仓储、列表分页展示与解析跳转播放 |
+| `lib/features/library/` | 作品分页海报墙、电影/季集详情、多版本选择与解析播放 |
+| `lib/features/metadata/` | 文件名解析、TMDB 请求与缓存、匹配评分、自动/手动匹配及安全凭据 |
 | `lib/features/player/` | 播放器领域、应用、基础设施与播放界面分层 |
 | `lib/features/home/`、`lib/features/settings/` | 首页与设置界面 |
-| `lib/shared/widgets/` | 共用空状态组件与 Reelva SVG 标识 |
-| `test/` | 导航外壳、数据库、仓储、扫描控制器、适配器、UI 流程与播放器生命周期测试 |
+| `lib/shared/widgets/` | 共用空状态、品牌标识与有回收策略的海报图片缓存 |
+| `test/` | 导航、数据库迁移、文件名识别、匹配与锁定、缓存/限流、扫描及播放流程测试 |
 | `android/`、`windows/` | 原生平台工程 |
 
 UI 界面通过 `SourceController` 驱动媒体源操作与扫描调度，通过 `MediaSourceAdapter` 跨平台统一抽象访问本地文件系统与 SAF 树状授权目录，通过 `MediaLibraryRepository` 读写 SQLite 数据库，并统一将条目解析为播放资源后跳转 `/player`。播放器边界保持独立，通过 `PlayerEngine` 及 `PlaybackSession` 管理播放生命周期。
 
-数据库基于 Drift 实现 Schema v1，包含 8 张核心表：`media_sources`、`media_entries`、`media_files`、`works`、`seasons`、`episodes`、`media_assignments`、`playback_progress`。M2 阶段将扫描到的视频文件自动创建为未刮削的本地作品候选，标题采用无后缀文件名，不引入任何模拟海报或伪造数据；库中已定义的季、集、关联及播放进度表结构仅作为基础 schema 准备，不代表已实现 M3 元数据刮削与 M4 进度同步功能。
+数据库基于 Drift 实现 Schema v2，在原有 8 张表上增加 `external_ids` 与 `metadata_cache`，并为媒体文件保存待确认的识别信息。v1 升级采用增表、增列迁移；已有媒体源、文件索引、人工锁定与观看数据予以保留。电影文件关联作品，剧集文件关联季下的具体集；同一作品的多个版本统一展示。`playback_progress` 仍只保留既有结构及数据保护，M4 的进度保存与恢复尚未实施。
+
 | 核心依赖 | 锁定版本 |
 | --- | --- |
 | `flutter_riverpod` | 3.4.3 |
@@ -62,25 +65,39 @@ UI 界面通过 `SourceController` 驱动媒体源操作与扫描调度，通过
 | `file_selector` | 1.1.0 |
 | `flutter_svg` | 2.3.0 |
 | `window_manager` | 0.5.2 |
+| `flutter_secure_storage` | 11.2.0 |
+| `cached_network_image` / `flutter_cache_manager` | 3.4.1 / 3.4.5 |
 
 ## 平台兼容性与验证边界
 
-| 平台 | 配置与依赖事实 | 当前验证范围 |
+| 平台 | 配置与依赖事实 | 既有原生验证记录 |
 | --- | --- | --- |
-| Windows | Flutter 支持 Windows 10/11；锁定的 `media_kit_libs_windows_video` 1.0.11 使用 x86_64 原生库，目标为 Windows x64 | M1 已获用户验收。本轮 M2 Windows `fvm flutter build windows --debug --no-pub` 构建成功，Debug 应用已正常启动并走到系统目录选择，随后按用户要求停止自动化验证；目录完整导入、应用重启后状态恢复及库内视频真实播放仍待用户手工验收 |
-| Android | 固定 SDK 默认 minSdk 24、compileSdk/targetSdk 36、NDK 28.2.13676358；媒体视频插件的 compileSdk 为 36，原生包提供 ARM32、ARM64、x86_64 等 ABI | M1 已获用户验收。当前 `adb devices` 为空，Android SAF 目录真机验收未通过。Android 调试构建曾遇 Kotlin 增量缓存跨盘错误，关闭增量缓存的替代构建在用户要求下已取消，无有效 APK 构建通过结论，不提供预构建 APK |
+| Windows | Flutter 支持 Windows 10/11；锁定的 `media_kit_libs_windows_video` 1.0.11 使用 x86_64 原生库，目标为 Windows x64 | M1 已获用户验收。M2 阶段调试构建成功并走到系统目录选择；目录完整导入、重启恢复及库内视频真实播放仍待手工验收。本轮 M3 未构建或启动原生应用 |
+| Android | 固定 SDK 默认 minSdk 24、compileSdk/targetSdk 36、NDK 28.2.13676358；安全存储插件要求 minSdk 23，项目满足版本条件 | M1 已获用户验收。M2 阶段无已连接设备，SAF 目录真机验收未通过；无有效 APK 构建通过结论。本轮 M3 安全存储和备份排除规则未在真机验证 |
 | Linux / macOS / iOS / Web | 本次未创建这些平台的工程 | 未验证 |
 
 Android 工程使用 Flutter 3.47.7 模板的 AGP 9.1.0、Gradle 9.3.1 和 Kotlin 2.4.0，Java 目标版本为 17；应用 ID 为 `dev.reelva.reelva`。Windows 工程使用 CMake 3.14+ 和 C++17。应用内标识、Windows 多尺寸 ICO 与 Android 普通及自适应启动图标均以既有 `assets/Reelva.svg` 为唯一图形来源，SVG 原稿未改动。
 
-依赖解析和 Widget 测试不能证明原生插件集成或设备播放可用。M1 基础播放与界面已完成用户验收；本轮 M2 聚焦于媒体源管理、文件系统/SAF 遍历与本地影视库索引，在用户明确要求下停止进一步自动化测试与真机操作，未打包发布成品应用。
+依赖解析与 Widget 测试不能证明原生插件集成或设备播放可用。M3 仅运行获准的静态分析、单元/Widget 测试及测试环境运行时验证，没有执行 `flutter build`、`flutter run`、签名、推送或发布。Android 备份规则仅排除安全存储使用的 SharedPreferences，保留普通数据库备份规则；平台实际备份恢复行为仍需设备验收。
 本机依赖解析沿用了既有腾讯云 Pub 镜像配置，下载源及校验摘要记录于 `pubspec.lock`。未修改全局 SDK、下载镜像、Android 许可证或 adb 配置。
+
+## M3 影视识别、匹配与海报墙
+
+1. **识别与浏览**：扫描完成或首次进入影视库后，对未处理文件提取标题、年份、画质及季集信息。电影和电视剧采用不同关联结构；明确的 `S01E05`、`01x05` 和 `S00E02` 可以建立季集记录，没有年份也能浏览和选择文件播放。
+2. **多版本作品**：影视库按作品分页，一部作品只显示一张卡片。点击进入详情，在电影版本列表或剧集季/集列表中选择文件，沿用既有媒体源解析与播放器。来源离线或文件缺失时保留记录并提供错误反馈。
+3. **配置 TMDB**：在「设置」输入 TMDB v3 API Key 或 API Read Access Token，可粘贴带 `Bearer` 前缀的令牌。凭据使用系统安全存储，保存后清空输入框，不回显旧凭据；可移除凭据。保存失败会明确提示，不回退到明文存储。
+4. **自动与手动匹配**：扫描成功、首次打开影视库或点击刷新后，后台按标题、年份、类型匹配；年份未知、结果相近或结构不确定时保留本地条目。在详情页打开手动匹配，修改关键词与年份、选择电影/剧集结果并确认。匹配到同一 TMDB 身份的作品会合并版本，详情页转到合并后的作品。
+5. **本地纠错与锁定**：无密钥也可编辑本地标题、年份、简介和 TMDB 海报相对路径（如 `/image_name.jpg`，留空可清除）。手动匹配及编辑会设置 `metadata_locked`；后续扫描和自动匹配不会覆盖锁定内容。需要更正时可再次手动编辑或匹配。
+6. **离线与缓存**：未配置密钥仍可浏览、播放本地索引。搜索和详情持久缓存分别保留 7 天与 14 天的新鲜期；无密钥或网络不可用时允许读取已有缓存，已保存的作品元数据不受网络状态影响。网络请求串行节流，并遵守 429 冷却时间；失败在影视库显示，可重试或进入设置。
+7. **海报与署名**：海报使用 TMDB 缩略图及磁盘缓存，按 300 个缓存对象、30 天闲置策略回收，可在设置清空；这不是磁盘字节硬上限。关于页包含保持[官方图形、渐变和宽高比的 TMDB Logo](https://www.themoviedb.org/about/logos-attribution)、[官方要求的署名声明](https://developer.themoviedb.org/docs/faq)及第三方许可证入口。SVG 样式等价转为内联填充，以兼容 Flutter 渲染。libmpv/FFmpeg 的分发许可仍需结合实际原生构建核对。
+
+多集范围、未知集号等文件保留为待确认候选，不自动展开成虚构的单集；完整的跨集关联编辑尚未提供。本轮未使用真实 TMDB 凭据，在线服务与海报下载未验证；Windows / Android 的原生安全存储和平台集成亦未验证。M3 不包含 M4 的继续观看、进度节流与恢复、字幕音轨扩展或快捷键工作。
 
 ## M2 媒体源与本地影视库使用
 
 1. **添加媒体源**：进入「媒体源」页面，点击「添加媒体源」，可填写可选显示名称、视频扩展名白名单（默认 `mkv, mp4, avi, mov, m4v, ts, webm`）与排除目录名称（默认 `.cache, $RECYCLE.BIN, System Volume Information`）；随后通过 Windows 系统目录选择器或 Android SAF 授权选择目标文件夹。
 2. **扫描与源管理**：添加成功后自动开启首次广度优先扫描，可在媒体源卡片中实时查看已访问目录数与发现视频数，支持随时取消扫描。空闲时可通过条目按钮重新扫描，或通过菜单进行重命名、同根目录重新授权与移除源。重复扫描复用已建索引与稳定 ID；扫描失败或取消不会清空数据库，也不会整批将旧条目误标缺失。
-3. **影视库与解析播放**：扫描完成后进入「影视库」，视频条目按初始 100 条分页展示，滑至底部可点击「加载更多 (+100)」。点击条目由控制器通过适配器解析出播放资源并自动载入播放器；解析失败保留当前库视图并提供安全重试提示，避免并发重复点击。
+3. **影视库与解析播放**：进入「影视库」按初始 100 部作品浏览海报墙，底部可加载更多。点击作品查看电影版本或季集列表，再选择文件解析播放；失败保留详情视图并提供安全重试提示，避免并发重复点击。
 4. **存储与视频安全**：扫描仅索引元数据，绝不复制或移动原始视频文件。Windows 数据库默认保存在用户 `Documents/reelva.sqlite`，Android 位于应用内部文档目录。
 
 ## M1 播放器使用与历史验收
@@ -89,11 +106,12 @@ Android 工程使用 Flutter 3.47.7 模板的 AGP 9.1.0、Gradle 9.3.1 和 Kotli
 
 ## 验证现状说明
 
-已完成数据库仓储、增量扫描、适配器与 UI 界面的针对性逻辑编写与部分测试执行。此前整套测试曾因测试代码编译错误及 Drift 查询流取消的 Timer 导致运行超时，分析器亦报告过测试文件符号与回调参数问题；相关回调参数、TargetPlatform 导入与 `pump(Duration.zero)` 定时器排空已完成代码调整。因用户明确要求停止自动化测试并由用户自行进行手工验收，未再执行静态分析或全套测试复验，不得声称当前静态分析或全套测试已全绿通过。
+M3 的 `fvm flutter pub get`、Drift 代码生成及针对变更文件的格式化已完成。最终 `fvm flutter analyze --no-pub` 为 `No issues found`；完整 `fvm flutter test --no-pub --reporter expanded` 为 **198 通过、0 失败**，包含 v1→v2 数据迁移、电影/季集识别、多版本选择播放、手动匹配合并与锁定、离线编辑、限流缓存及跨页浏览等回归。另以真实 Loopback HTTP、Dio、SQLite 验证了匹配与缓存运行路径，并在 Widget 测试中渲染检查海报墙、S01E05 详情和 TMDB 署名页面；临时验证脚本已清理。未构建或启动 Windows / Android 应用，测试替身与 Widget 渲染不等同于真机验收。
+
 重新生成启动图标时，在安装 `resvg-py` 与 `Pillow` 后执行 `python tool/generate_icons.py`；应用运行不依赖 Python。Android 自适应图标使用黑色背景和带安全边距的前景。
 
 ## 错误与日志
 
 Flutter 框架错误和未处理的平台异步错误统一进入脱敏日志。构建错误显示通用中文提示，未知路由不显示原始请求路径。
 
-日志在输出消息、异常和堆栈前过滤常见认证头、Cookie、令牌、密码及 API 密钥字段，并隐藏网络 URL，避免泄漏 URL 用户凭据和签名参数。日志脱敏不替代凭据管理；不要记录原始请求载荷、无字段标识的秘密或私密文件内容。安全存储将在实际接入凭据时引入。
+日志在输出消息、异常和堆栈前过滤常见认证头、Cookie、令牌、密码及 API 密钥字段，并隐藏网络 URL。TMDB 凭据仅存于系统安全存储；数据库缓存键不包含凭据，请求不跟随重定向，界面仅显示安全错误。不要记录原始请求载荷、无字段标识的秘密或私密文件内容。

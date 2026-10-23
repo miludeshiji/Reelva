@@ -69,6 +69,10 @@ class MediaFiles extends Table {
   TextColumn get videoCodec => text().nullable()();
   TextColumn get audioCodec => text().nullable()();
   TextColumn get parseState => text().withDefault(const Constant('pending'))();
+  TextColumn get candidateType => text().nullable()();
+  IntColumn get candidateSeasonNumber => integer().nullable()();
+  IntColumn get candidateEpisodeNumber => integer().nullable()();
+  TextColumn get candidateDetails => text().nullable()();
 }
 
 @DataClassName('WorkData')
@@ -200,4 +204,38 @@ class PlaybackProgresses extends Table {
         "(target_type = 'episode' AND episode_id IS NOT NULL AND target_id = episode_id AND work_id IS NULL)"
         ")",
   ];
+}
+
+@DataClassName('ExternalIdData')
+class ExternalIds extends Table {
+  @override
+  String get tableName => 'external_ids';
+
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get workId =>
+      integer().references(Works, #id, onDelete: KeyAction.cascade)();
+  TextColumn get provider => text()();
+  TextColumn get providerEntityId => text()();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+    {provider, providerEntityId},
+  ];
+}
+
+@DataClassName('MetadataCacheData')
+class MetadataCaches extends Table {
+  @override
+  String get tableName => 'metadata_cache';
+
+  TextColumn get cacheKey => text()();
+  TextColumn get provider => text()();
+  TextColumn get payloadJson => text()();
+  TextColumn get etag => text().nullable()();
+  DateTimeColumn get expiresAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column> get primaryKey => {cacheKey};
 }

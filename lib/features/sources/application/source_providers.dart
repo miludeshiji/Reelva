@@ -54,13 +54,6 @@ final mediaSourcesProvider = StreamProvider<List<MediaSourceConfig>>((ref) {
   return repo.watchSources();
 });
 
-/// 影视库条目列表流 Provider（分页/数量限制）
-final libraryVideosProvider = StreamProvider.autoDispose
-    .family<List<LibraryVideo>, int>((ref, limit) {
-      final repo = ref.watch(mediaLibraryRepositoryProvider);
-      return repo.watchLibrary(limit: limit);
-    });
-
 /// 媒体源控制器 Provider，暴露实时扫描进度状态 `Map<int, ScanProgress>`
 final sourceControllerProvider =
     NotifierProvider<SourceController, Map<int, ScanProgress>>(
