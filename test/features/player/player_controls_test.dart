@@ -318,7 +318,7 @@ void main() {
     );
 
     testWidgets(
-      'Narrow viewport renders without overflow and keeps fullscreen button visible',
+      'Narrow viewport with large text and hour-long duration keeps seek and fullscreen usable',
       (tester) async {
         tester.view.physicalSize = const Size(320, 600);
         tester.view.devicePixelRatio = 1.0;
@@ -326,22 +326,31 @@ void main() {
         addTearDown(tester.view.resetDevicePixelRatio);
 
         final engine = FakePlayerEngine();
+        addTearDown(engine.dispose);
 
         await tester.pumpWidget(
           MaterialApp(
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context)
+                  .copyWith(textScaler: const TextScaler.linear(1.5)),
+              child: child!,
+            ),
             home: Scaffold(
-              body: PlayerControls(
-                snapshot: const PlaybackSnapshot(
-                  status: PlaybackStatus.playing,
-                  position: Duration(seconds: 45),
-                  duration: Duration(minutes: 3),
-                  buffered: Duration(minutes: 1),
-                  volume: 90.0,
-                  rate: 1.25,
+              body: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: PlayerControls(
+                  snapshot: const PlaybackSnapshot(
+                    status: PlaybackStatus.playing,
+                    position: Duration(minutes: 18, seconds: 24),
+                    duration: Duration(hours: 2, minutes: 16),
+                    buffered: Duration(minutes: 28),
+                    volume: 90.0,
+                    rate: 1.25,
+                  ),
+                  engine: engine,
+                  isFullscreen: false,
+                  onToggleFullscreen: () {},
                 ),
-                engine: engine,
-                isFullscreen: false,
-                onToggleFullscreen: () {},
               ),
             ),
           ),
@@ -349,9 +358,19 @@ void main() {
 
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
+        expect(find.text('18:24 / 2:16:00'), findsOneWidget);
+        final slider = find.byKey(const Key('player_seek_slider'));
+        expect(slider.hitTestable(), findsOneWidget);
         expect(
-          find.byKey(const Key('player_fullscreen_button')),
+          find.byKey(const Key('player_fullscreen_button')).hitTestable(),
           findsOneWidget,
+        );
+        await tester.drag(slider, const Offset(60, 0));
+        await tester.pump();
+        expect(engine.seekCount, 1);
+        expect(
+          engine.lastSeekPosition,
+          greaterThan(const Duration(minutes: 18, seconds: 24)),
         );
       },
     );

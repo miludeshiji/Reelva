@@ -196,6 +196,46 @@ class _PlayerControlsState extends State<PlayerControls> {
         ? formatDuration(snapshot.duration)
         : '--:--';
 
+    final seekSlider = Slider(
+      key: const Key('player_seek_slider'),
+      value: displayPosMs.clamp(0.0, totalDurationMs),
+      min: 0.0,
+      max: totalDurationMs,
+      secondaryTrackValue: hasKnownDuration
+          ? snapshot.buffered.inMilliseconds
+                .clamp(0, totalDurationMs.toInt())
+                .toDouble()
+          : null,
+      onChangeStart: isSeekEnabled
+          ? (_) => widget.onInteractionChanged?.call(true)
+          : null,
+      onChanged: isSeekEnabled
+          ? (value) => setState(() => _dragPositionMs = value)
+          : null,
+      onChangeEnd: isSeekEnabled
+          ? (value) {
+              setState(() => _dragPositionMs = null);
+              engine.seek(Duration(milliseconds: value.round()));
+              widget.onInteractionChanged?.call(false);
+            }
+          : null,
+    );
+    final timeDisplay = Text(
+      '$displayPosText / $totalDurText',
+      key: const Key('player_time_display_text'),
+      style: theme.textTheme.labelMedium?.copyWith(
+        fontFeatures: const [FontFeature.tabularFigures()],
+      ),
+    );
+    final bufferDisplay = Text(
+      '缓冲: ${formatDuration(snapshot.buffered)}',
+      key: const Key('player_buffer_text'),
+      style: theme.textTheme.labelSmall?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+        fontFeatures: const [FontFeature.tabularFigures()],
+      ),
+    );
+
     final transport = Row(
       mainAxisSize: MainAxisSize.min,
       spacing: ReelvaDesign.space4,
@@ -440,61 +480,25 @@ class _PlayerControlsState extends State<PlayerControls> {
                 ],
                 const SizedBox(height: ReelvaDesign.space16),
               ],
-              Row(
-                children: [
-                  Expanded(
-                    child: Slider(
-                      key: const Key('player_seek_slider'),
-                      value: displayPosMs.clamp(0.0, totalDurationMs),
-                      min: 0.0,
-                      max: totalDurationMs,
-                      secondaryTrackValue: hasKnownDuration
-                          ? snapshot.buffered.inMilliseconds
-                                .clamp(0, totalDurationMs.toInt())
-                                .toDouble()
-                          : null,
-                      onChangeStart: isSeekEnabled
-                          ? (_) => widget.onInteractionChanged?.call(true)
-                          : null,
-                      onChanged: isSeekEnabled
-                          ? (value) {
-                              setState(() => _dragPositionMs = value);
-                            }
-                          : null,
-                      onChangeEnd: isSeekEnabled
-                          ? (value) {
-                              setState(() => _dragPositionMs = null);
-                              engine.seek(
-                                Duration(milliseconds: value.round()),
-                              );
-                              widget.onInteractionChanged?.call(false);
-                            }
-                          : null,
+              if (compact) ...[
+                seekSlider,
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  spacing: ReelvaDesign.space12,
+                  runSpacing: ReelvaDesign.space4,
+                  children: [timeDisplay, bufferDisplay],
+                ),
+              ] else
+                Row(
+                  children: [
+                    Expanded(child: seekSlider),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [timeDisplay, bufferDisplay],
                     ),
-                  ),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        '$displayPosText / $totalDurText',
-                        key: const Key('player_time_display_text'),
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                      Text(
-                        '缓冲: ${formatDuration(snapshot.buffered)}',
-                        key: const Key('player_buffer_text'),
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                  ],
+                ),
               const SizedBox(height: ReelvaDesign.space4),
               if (compact) ...[
                 Row(children: [transport, const Spacer(), mute, fullscreen]),
