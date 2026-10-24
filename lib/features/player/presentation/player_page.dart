@@ -7,8 +7,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../../../app/theme/reelva_theme.dart';
 import '../../../core/logging/app_logger.dart';
-import '../../../shared/widgets/reelva_logo.dart';
+import '../../../shared/widgets/glass_widgets.dart';
+import '../../metadata/domain/media_filename_parser.dart';
 import '../application/playback_session.dart';
 import '../application/player_providers.dart';
 import '../domain/playback_resource.dart';
@@ -358,12 +360,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       case PlaybackStatus.resolving:
       case PlaybackStatus.opening:
       case PlaybackStatus.buffering:
-        overlayContent = Container(
+        overlayContent = GlassCard(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          decoration: BoxDecoration(
-            color: Colors.black54,
-            borderRadius: BorderRadius.circular(12),
-          ),
+          color: const Color(0xC2263543),
+          blur: true,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -384,12 +384,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         break;
 
       case PlaybackStatus.completed:
-        overlayContent = Container(
+        overlayContent = GlassCard(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          decoration: BoxDecoration(
-            color: const Color(0x99000000),
-            borderRadius: BorderRadius.circular(12),
-          ),
+          color: const Color(0xC2263543),
+          blur: true,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -413,16 +411,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         break;
 
       case PlaybackStatus.error:
-        overlayContent = Container(
+        overlayContent = GlassCard(
           margin: const EdgeInsets.all(24),
           padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.black87,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: theme.colorScheme.error.withValues(alpha: 0.5),
-            ),
-          ),
+          color: const Color(0xE61B2634),
+          blur: true,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -593,12 +586,122 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     return KeyEventResult.ignored;
   }
 
+  Widget _buildHeader(
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required bool fullscreen,
+  }) {
+    final theme = Theme.of(context);
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          maxWidth: ReelvaDesign.contentMaxWidth,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(ReelvaDesign.space16),
+          child: Row(
+            children: [
+              GlassCard(
+                blur: true,
+                color: Colors.white.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(ReelvaDesign.radiusLarge),
+                padding: EdgeInsets.zero,
+                child: IconButton(
+                  key: Key(
+                    fullscreen
+                        ? 'fullscreen_exit_back_button'
+                        : 'player_back_button',
+                  ),
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  tooltip: fullscreen ? '退出全屏' : '返回',
+                  style: IconButton.styleFrom(shape: const CircleBorder()),
+                  onPressed: fullscreen
+                      ? () => _setFullscreen(false)
+                      : _handleExit,
+                ),
+              ),
+              const SizedBox(width: ReelvaDesign.space16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      key: fullscreen ? null : const Key('player_title_text'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: ReelvaDesign.space4),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (!fullscreen) ...[
+                const SizedBox(width: ReelvaDesign.space8),
+                IconButton(
+                  key: const Key('appbar_pick_file_button'),
+                  icon: const Icon(Icons.folder_open_rounded),
+                  tooltip: '选择本地视频',
+                  onPressed: _pickNativeVideo,
+                ),
+                IconButton(
+                  key: const Key('appbar_open_url_button'),
+                  icon: const Icon(Icons.link_rounded),
+                  tooltip: '输入网络链接',
+                  onPressed: _openNetworkVideo,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(playerSessionProvider);
     _session = session;
-    final theme = Theme.of(context);
-    final displayName = _currentResource?.displayName ?? '播放器';
+    final resource = _currentResource;
+    final displayName = resource?.displayName ?? '播放器';
+    final parsed = resource == null
+        ? null
+        : MediaFilenameParser.parse(displayName);
+    final season = parsed?.seasonNumber;
+    final episode = parsed?.episodeNumber;
+    final metadata = [
+      if (season != null) season == 0 ? '特别篇' : '第 $season 季',
+      if (episode != null) '第 $episode 集',
+      if (parsed != null &&
+          parsed.isMultiEpisode &&
+          parsed.episodeNumbers.isNotEmpty)
+        '第 ${parsed.episodeNumbers.join('、')} 集',
+      if (parsed?.resolution != null) parsed!.resolution!,
+    ].join(' · ');
+    final subtitle = metadata.isNotEmpty
+        ? metadata
+        : resource == null
+        ? '选择文件或网络链接开始播放'
+        : resource.libraryFileId != null
+        ? '媒体库视频'
+        : resource.uri.scheme == 'file' || resource.uri.scheme == 'content'
+        ? '本地视频'
+        : '网络播放';
+    final nowPlayingTitle = parsed == null || parsed.title.isEmpty
+        ? displayName
+        : parsed.title;
 
     return PopScope(
       canPop: false,
@@ -625,133 +728,146 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
             }
           }
 
-          return Focus(
-            focusNode: _focusNode,
-            autofocus: true,
-            onKeyEvent: (node, event) =>
-                _handleKeyEvent(node, event, snapshot, session.engine),
-            child: Scaffold(
-              backgroundColor: Colors.black,
-              appBar: _isFullscreen
-                  ? null
-                  : AppBar(
-                      leading: BackButton(
-                        key: const Key('player_back_button'),
-                        onPressed: _handleExit,
-                      ),
-                      title: Row(
-                        children: [
-                          const ReelvaLogo(size: 24),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              displayName,
-                              key: const Key('player_title_text'),
-                              overflow: TextOverflow.ellipsis,
-                            ),
+          return Theme(
+            data: ReelvaTheme.player,
+            child: Builder(
+              builder: (context) => Focus(
+                focusNode: _focusNode,
+                autofocus: true,
+                onKeyEvent: (node, event) =>
+                    _handleKeyEvent(node, event, snapshot, session.engine),
+                child: Scaffold(
+                  backgroundColor: const Color(0xFF0E141C),
+                  body: SafeArea(
+                    child: Column(
+                      children: [
+                        if (!_isFullscreen)
+                          _buildHeader(
+                            context,
+                            title: displayName,
+                            subtitle: subtitle,
+                            fullscreen: false,
                           ),
-                        ],
-                      ),
-                      actions: [
-                        IconButton(
-                          key: const Key('appbar_pick_file_button'),
-                          icon: const Icon(Icons.folder_open),
-                          tooltip: '选择本地视频',
-                          onPressed: _pickNativeVideo,
-                        ),
-                        IconButton(
-                          key: const Key('appbar_open_url_button'),
-                          icon: const Icon(Icons.link),
-                          tooltip: '输入网络链接',
-                          onPressed: _openNetworkVideo,
+                        Expanded(
+                          key: const Key('player_viewport'),
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final overlay =
+                                  _isFullscreen ||
+                                  constraints.maxHeight < 420 ||
+                                  constraints.maxWidth > constraints.maxHeight;
+                              final videoHeight = overlay
+                                  ? constraints.maxHeight
+                                  : constraints.maxWidth * 9 / 16;
+                              final controlsHeight = overlay
+                                  ? constraints.maxHeight * 0.58
+                                  : constraints.maxHeight - videoHeight;
+                              final inset =
+                                  ((constraints.maxWidth -
+                                              ReelvaDesign.contentMaxWidth) /
+                                          2)
+                                      .clamp(0.0, double.infinity)
+                                      .toDouble();
+                              return Stack(
+                                children: [
+                                  // 全屏切换只改变布局约束，保留同一原生视频曲面。
+                                  Positioned(
+                                    key: const Key('player_video_region'),
+                                    top: 0,
+                                    left: 0,
+                                    right: 0,
+                                    height: videoHeight,
+                                    child: ColoredBox(
+                                      color: Colors.black,
+                                      child: Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          Center(
+                                            child: session.videoBuilder(
+                                              context,
+                                            ),
+                                          ),
+                                          Positioned.fill(
+                                            top: _isFullscreen ? 80 : 0,
+                                            bottom: overlay
+                                                ? controlsHeight
+                                                : 0,
+                                            child: _buildStatusOverlay(
+                                              context,
+                                              snapshot,
+                                              handleReplayOrRetry,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  if (_isFullscreen)
+                                    Positioned(
+                                      key: const Key(
+                                        'player_fullscreen_header',
+                                      ),
+                                      top: 0,
+                                      left: 0,
+                                      right: 0,
+                                      child: DecoratedBox(
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            begin: Alignment.topCenter,
+                                            end: Alignment.bottomCenter,
+                                            colors: [
+                                              const Color(0xFF0E141C)
+                                                  .withValues(alpha: 0.9),
+                                              Colors.transparent,
+                                            ],
+                                          ),
+                                        ),
+                                        child: _buildHeader(
+                                          context,
+                                          title: displayName,
+                                          subtitle: subtitle,
+                                          fullscreen: true,
+                                        ),
+                                      ),
+                                    ),
+                                  Positioned(
+                                    key: const Key('player_controls_panel'),
+                                    top: overlay ? null : videoHeight,
+                                    left:
+                                        inset +
+                                        (overlay ? ReelvaDesign.space12 : 0),
+                                    right:
+                                        inset +
+                                        (overlay ? ReelvaDesign.space12 : 0),
+                                    bottom: overlay ? ReelvaDesign.space12 : 0,
+                                    child: ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        maxHeight: controlsHeight,
+                                      ),
+                                      child: SingleChildScrollView(
+                                        child: PlayerControls(
+                                          snapshot: snapshot,
+                                          engine: session.engine,
+                                          title: !overlay && resource != null
+                                              ? nowPlayingTitle
+                                              : null,
+                                          subtitle: subtitle,
+                                          overlay: overlay,
+                                          isFullscreen: _isFullscreen,
+                                          onToggleFullscreen: () =>
+                                              _setFullscreen(!_isFullscreen),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
                         ),
                       ],
                     ),
-              body: SafeArea(
-                top: !_isFullscreen,
-                bottom: !_isFullscreen,
-                child: Stack(
-                  children: [
-                    // 主视频画面（全屏与非全屏使用同一直属 session.videoBuilder）
-                    Positioned.fill(
-                      child: Container(
-                        color: Colors.black,
-                        child: Center(child: session.videoBuilder(context)),
-                      ),
-                    ),
-
-                    // 状态遮罩层（空闲、缓冲加载、播放完成重播、错误提示；内嵌滚动支持小高度视口）
-                    Positioned.fill(
-                      child: _buildStatusOverlay(
-                        context,
-                        snapshot,
-                        handleReplayOrRetry,
-                      ),
-                    ),
-
-                    // 全屏模式下的顶部控制浮层（提供退出全屏返回与标题展示）
-                    if (_isFullscreen)
-                      Positioned(
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Colors.black.withValues(alpha: 0.8),
-                                Colors.transparent,
-                              ],
-                            ),
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          child: Row(
-                            children: [
-                              IconButton(
-                                key: const Key('fullscreen_exit_back_button'),
-                                icon: const Icon(
-                                  Icons.arrow_back,
-                                  color: Colors.white,
-                                ),
-                                tooltip: '退出全屏',
-                                onPressed: () => _setFullscreen(false),
-                              ),
-                              const SizedBox(width: 8),
-                              const ReelvaLogo(size: 20),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  displayName,
-                                  style: theme.textTheme.titleMedium?.copyWith(
-                                    color: Colors.white,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                    // 底部控制面板（进度条、时长缓冲独立行、Wrap响应式控制按钮）
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: PlayerControls(
-                        snapshot: snapshot,
-                        engine: session.engine,
-                        isFullscreen: _isFullscreen,
-                        onToggleFullscreen: () =>
-                            _setFullscreen(!_isFullscreen),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),

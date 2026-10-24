@@ -150,6 +150,24 @@ final libraryWorksProvider = StreamProvider.autoDispose
       return repo.watchWorks(limit: limit);
     });
 
+typedef LibraryWorksFilter = ({
+  int limit,
+  String search,
+  String? type,
+  bool recentlyAdded,
+});
+
+final filteredLibraryWorksProvider = StreamProvider.autoDispose
+    .family<List<LibraryWork>, LibraryWorksFilter>((ref, filter) {
+      final repo = ref.watch(mediaLibraryRepositoryProvider);
+      return repo.watchWorks(
+        limit: filter.limit,
+        search: filter.search,
+        type: filter.type,
+        recentlyAdded: filter.recentlyAdded,
+      );
+    });
+
 /// 作品详情流 Provider
 final workDetailsProvider = StreamProvider.autoDispose
     .family<WorkDetails?, int>((ref, workId) {

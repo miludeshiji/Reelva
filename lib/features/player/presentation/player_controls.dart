@@ -1,25 +1,23 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 
+import '../../../app/theme/reelva_theme.dart';
+import '../../../shared/widgets/glass_widgets.dart';
 import '../domain/playback_snapshot.dart';
 import '../domain/player_engine.dart';
 
-/// 格式化时长为分:秒或时:分:秒
+/// 格式化时长为分:秒或时:分:秒。
 String formatDuration(Duration d) {
   if (d < Duration.zero) return '00:00';
   final hours = d.inHours;
   final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
   final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-  if (hours > 0) {
-    return '$hours:$minutes:$seconds';
-  }
+  if (hours > 0) return '$hours:$minutes:$seconds';
   return '$minutes:$seconds';
 }
 
-/// 播放器底部控制面板
-///
-/// 包含播放/暂停/重播/停止、进度预览跳转、时长与缓冲行分离、倍速选择（.5/1/1.25/1.5/2/3）、
-/// 音量调节与静音记忆恢复、全屏切换。
-/// 采用 Wrap 响应式多行折行并保证全屏及核心按钮均可见，彻底防止大字体及窄屏溢出。
+/// 深色视频区的玻璃控制面板；父页面为小高度视口提供滚动空间。
 class PlayerControls extends StatefulWidget {
   const PlayerControls({
     super.key,
@@ -27,12 +25,18 @@ class PlayerControls extends StatefulWidget {
     required this.engine,
     required this.isFullscreen,
     required this.onToggleFullscreen,
+    this.title,
+    this.subtitle,
+    this.overlay = false,
   });
 
   final PlaybackSnapshot snapshot;
   final PlayerEngine engine;
   final bool isFullscreen;
   final VoidCallback onToggleFullscreen;
+  final String? title;
+  final String? subtitle;
+  final bool overlay;
 
   static const List<double> supportedRates = [0.5, 1.0, 1.25, 1.5, 2.0, 3.0];
 
@@ -71,19 +75,22 @@ class _PlayerControlsState extends State<PlayerControls> {
     }
   }
 
-  Widget _buildPlaybackAction(
-    PlaybackSnapshot snapshot,
-    PlayerEngine engine,
-    bool isFullscreen,
-  ) {
-    final color = isFullscreen ? Colors.white : null;
+  Widget _buildPlaybackAction(PlaybackSnapshot snapshot, PlayerEngine engine) {
+    final style = IconButton.styleFrom(
+      backgroundColor: Colors.white.withValues(alpha: 0.22),
+      foregroundColor: Colors.white,
+      disabledForegroundColor: Colors.white38,
+      minimumSize: const Size(56, 56),
+      iconSize: 28,
+      shape: const CircleBorder(side: BorderSide(color: Colors.white54)),
+    );
 
     if (snapshot.status == PlaybackStatus.completed) {
       return IconButton(
         key: const Key('player_replay_button'),
-        icon: const Icon(Icons.replay),
+        icon: const Icon(Icons.replay_rounded),
         tooltip: '重新播放',
-        color: color,
+        style: style,
         onPressed: () async {
           await engine.seek(Duration.zero);
           await engine.play();
@@ -93,14 +100,15 @@ class _PlayerControlsState extends State<PlayerControls> {
 
     if (snapshot.status == PlaybackStatus.resolving ||
         snapshot.status == PlaybackStatus.opening) {
-      return const IconButton(
-        key: Key('player_play_button'),
-        icon: SizedBox(
+      return IconButton(
+        key: const Key('player_play_button'),
+        icon: const SizedBox(
           width: 20,
           height: 20,
-          child: CircularProgressIndicator(strokeWidth: 2),
+          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
         ),
         tooltip: '正在准备',
+        style: style,
         onPressed: null,
       );
     }
@@ -109,9 +117,9 @@ class _PlayerControlsState extends State<PlayerControls> {
         snapshot.status == PlaybackStatus.idle) {
       return IconButton(
         key: const Key('player_play_button'),
-        icon: const Icon(Icons.play_arrow),
+        icon: const Icon(Icons.play_arrow_rounded),
         tooltip: '不可播放',
-        color: color?.withValues(alpha: 0.4),
+        style: style,
         onPressed: null,
       );
     }
@@ -119,28 +127,43 @@ class _PlayerControlsState extends State<PlayerControls> {
     if (snapshot.isPlaying) {
       return IconButton(
         key: const Key('player_pause_button'),
-        icon: const Icon(Icons.pause),
+        icon: const Icon(Icons.pause_rounded),
         tooltip: '暂停',
-        color: color,
+        style: style,
         onPressed: engine.pause,
       );
     }
 
     return IconButton(
       key: const Key('player_play_button'),
-      icon: const Icon(Icons.play_arrow),
+      icon: const Icon(Icons.play_arrow_rounded),
       tooltip: '播放',
-      color: color,
+      style: style,
       onPressed: engine.play,
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    // 独立挂载在浅色 MaterialApp 时也与深色控制面板保持一致。
+    return Theme(
+      data: ReelvaTheme.player,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final controls = _buildControls(context);
+          return constraints.hasBoundedHeight
+              ? SingleChildScrollView(child: controls)
+              : controls;
+        },
+      ),
+    );
+  }
+
+  Widget _buildControls(BuildContext context) {
     final theme = Theme.of(context);
     final snapshot = widget.snapshot;
     final engine = widget.engine;
-
+    final isOverlay = widget.overlay || widget.isFullscreen;
     final hasKnownDuration = snapshot.duration > Duration.zero;
     final totalDurationMs = hasKnownDuration
         ? snapshot.duration.inMilliseconds.toDouble()
@@ -150,14 +173,12 @@ class _PlayerControlsState extends State<PlayerControls> {
               .clamp(0, snapshot.duration.inMilliseconds)
               .toDouble()
         : 0.0;
-
     final isSeekEnabled =
         hasKnownDuration &&
         snapshot.status != PlaybackStatus.idle &&
         snapshot.status != PlaybackStatus.error &&
         snapshot.status != PlaybackStatus.resolving &&
         snapshot.status != PlaybackStatus.opening;
-
     final displayPosMs = _dragPositionMs ?? currentPosMs;
     final displayPosText = formatDuration(
       Duration(milliseconds: displayPosMs.round()),
@@ -165,306 +186,229 @@ class _PlayerControlsState extends State<PlayerControls> {
     final totalDurText = hasKnownDuration
         ? formatDuration(snapshot.duration)
         : '--:--';
-    final bufferText = '缓冲: ${formatDuration(snapshot.buffered)}';
 
-    return Container(
-      decoration: BoxDecoration(
-        color: widget.isFullscreen
-            ? Colors.black.withValues(alpha: 0.85)
-            : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.95),
-        borderRadius: widget.isFullscreen
-            ? null
-            : const BorderRadius.vertical(top: Radius.circular(12)),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 0. 非致命保存错误提示栏
-          if (snapshot.progressErrorMessage != null &&
-              snapshot.progressErrorMessage!.isNotEmpty)
-            Container(
-              key: const Key('player_progress_error_banner'),
-              margin: const EdgeInsets.only(bottom: 6),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.errorContainer.withValues(alpha: 0.85),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.warning_amber_rounded,
-                    size: 16,
-                    color: theme.colorScheme.onErrorContainer,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(ReelvaDesign.radiusLarge),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(
+          sigmaX: isOverlay ? 16 : 0,
+          sigmaY: isOverlay ? 16 : 0,
+        ),
+        child: Container(
+          color: const Color(0xFF0E141C)
+              .withValues(alpha: isOverlay ? 0.88 : 1),
+          padding: EdgeInsets.all(
+            isOverlay ? ReelvaDesign.space16 : ReelvaDesign.space24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (snapshot.progressErrorMessage != null &&
+                  snapshot.progressErrorMessage!.isNotEmpty)
+                Container(
+                  key: const Key('player_progress_error_banner'),
+                  margin: const EdgeInsets.only(bottom: ReelvaDesign.space12),
+                  padding: const EdgeInsets.all(ReelvaDesign.space12),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(
+                      ReelvaDesign.radiusSmall,
+                    ),
                   ),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      snapshot.progressErrorMessage!,
-                      key: const Key('player_progress_error_text'),
-                      style: theme.textTheme.labelSmall?.copyWith(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        size: 20,
                         color: theme.colorScheme.onErrorContainer,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          // 1. 时长与缓冲时间独立行（防止大字体下与 SeekSlider 挤压溢出）
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                '$displayPosText / $totalDurText',
-                key: const Key('player_time_display_text'),
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: widget.isFullscreen ? Colors.white : null,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
-              ),
-              Text(
-                bufferText,
-                key: const Key('player_buffer_text'),
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: widget.isFullscreen
-                      ? Colors.white70
-                      : theme.colorScheme.outline,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
-              ),
-            ],
-          ),
-
-          // 2. 独立完整宽度的 SeekSlider，支持拖动预览与释放触发单个 Seek 操作
-          SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackHeight: 4,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-            ),
-            child: Slider(
-              key: const Key('player_seek_slider'),
-              value: displayPosMs.clamp(0.0, totalDurationMs),
-              min: 0.0,
-              max: totalDurationMs,
-              // secondaryTrackValue 与 min/max 同为毫秒单位
-              secondaryTrackValue: hasKnownDuration
-                  ? snapshot.buffered.inMilliseconds
-                        .clamp(0, totalDurationMs.toInt())
-                        .toDouble()
-                  : null,
-              onChanged: isSeekEnabled
-                  ? (value) {
-                      setState(() {
-                        _dragPositionMs = value;
-                      });
-                    }
-                  : null,
-              onChangeEnd: isSeekEnabled
-                  ? (value) {
-                      final targetMs = value.round();
-                      setState(() {
-                        _dragPositionMs = null;
-                      });
-                      engine.seek(Duration(milliseconds: targetMs));
-                    }
-                  : null,
-            ),
-          ),
-
-          const SizedBox(height: 2),
-
-          // 3. 底部控制按钮组：采用 Wrap 响应式多行折行，杜绝把全屏按钮推出屏幕外
-          Wrap(
-            spacing: 12,
-            runSpacing: 4,
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              // 播放/暂停/重播与停止按钮组
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildPlaybackAction(snapshot, engine, widget.isFullscreen),
-                  IconButton(
-                    key: const Key('player_stop_button'),
-                    icon: const Icon(Icons.stop),
-                    tooltip: '停止',
-                    color: widget.isFullscreen ? Colors.white : null,
-                    onPressed: snapshot.status == PlaybackStatus.idle
-                        ? null
-                        : engine.stop,
-                  ),
-                ],
-              ),
-
-              // 静音与音量调节滑动条组
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    key: const Key('player_mute_button'),
-                    icon: Icon(
-                      snapshot.volume == 0 ? Icons.volume_off : Icons.volume_up,
-                    ),
-                    tooltip: snapshot.volume == 0 ? '取消静音' : '静音',
-                    color: widget.isFullscreen ? Colors.white : null,
-                    onPressed: _toggleMute,
-                  ),
-                  SizedBox(
-                    width: 80,
-                    child: SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        trackHeight: 3,
-                        thumbShape: const RoundSliderThumbShape(
-                          enabledThumbRadius: 5,
+                      const SizedBox(width: ReelvaDesign.space8),
+                      Expanded(
+                        child: Text(
+                          snapshot.progressErrorMessage!,
+                          key: const Key('player_progress_error_text'),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onErrorContainer,
+                          ),
                         ),
                       ),
-                      child: Slider(
-                        key: const Key('player_volume_slider'),
-                        value: snapshot.volume.clamp(0.0, 100.0),
-                        min: 0.0,
-                        max: 100.0,
-                        onChanged: (val) => engine.setVolume(val),
-                      ),
+                    ],
+                  ),
+                ),
+              if (widget.title != null) ...[
+                Text(
+                  '当前播放',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: ReelvaDesign.space8),
+                RichText(
+                  key: const Key('player_now_playing_title'),
+                  textScaler: MediaQuery.textScalerOf(context),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  text: TextSpan(
+                    text: widget.title,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                if (widget.subtitle != null) ...[
+                  const SizedBox(height: ReelvaDesign.space4),
+                  Text(
+                    widget.subtitle!,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: ReelvaDesign.space16),
+              ],
+              SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 4,
+                  activeTrackColor: Colors.white,
+                  inactiveTrackColor: const Color(0xFF536A73),
+                  secondaryActiveTrackColor: const Color(0xFF96A8B1),
+                  thumbColor: Colors.white,
+                  overlayColor: Colors.white12,
+                  thumbShape: const RoundSliderThumbShape(
+                    enabledThumbRadius: 6,
+                  ),
+                  overlayShape: const RoundSliderOverlayShape(
+                    overlayRadius: 14,
+                  ),
+                ),
+                child: Slider(
+                  key: const Key('player_seek_slider'),
+                  value: displayPosMs.clamp(0.0, totalDurationMs),
+                  min: 0.0,
+                  max: totalDurationMs,
+                  secondaryTrackValue: hasKnownDuration
+                      ? snapshot.buffered.inMilliseconds
+                            .clamp(0, totalDurationMs.toInt())
+                            .toDouble()
+                      : null,
+                  onChanged: isSeekEnabled
+                      ? (value) {
+                          setState(() => _dragPositionMs = value);
+                        }
+                      : null,
+                  onChangeEnd: isSeekEnabled
+                      ? (value) {
+                          setState(() => _dragPositionMs = null);
+                          engine.seek(Duration(milliseconds: value.round()));
+                        }
+                      : null,
+                ),
+              ),
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                spacing: ReelvaDesign.space12,
+                runSpacing: ReelvaDesign.space4,
+                children: [
+                  Text(
+                    '$displayPosText / $totalDurText',
+                    key: const Key('player_time_display_text'),
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: Colors.white,
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                   Text(
-                    '${snapshot.volume.round()}%',
-                    key: const Key('player_volume_text'),
+                    '缓冲: ${formatDuration(snapshot.buffered)}',
+                    key: const Key('player_buffer_text'),
                     style: theme.textTheme.labelSmall?.copyWith(
-                      color: widget.isFullscreen ? Colors.white : null,
+                      color: theme.colorScheme.onSurfaceVariant,
                       fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                 ],
               ),
-
-              // 音频与字幕轨道选择组
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  PopupMenuButton<String>(
-                    key: const Key('player_audio_track_button'),
-                    tooltip: '音频轨道',
-                    initialValue: snapshot.audioTrackId,
-                    enabled: snapshot.audioTracks.isNotEmpty,
-                    onSelected: (id) => engine.setAudioTrack(id),
-                    itemBuilder: (context) => snapshot.audioTracks
-                        .map(
-                          (t) => PopupMenuItem<String>(
-                            value: t.id,
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    t.label,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                if (t.id == snapshot.audioTrackId) ...[
-                                  const SizedBox(width: 8),
-                                  const Icon(Icons.check, size: 16),
-                                ],
-                              ],
-                            ),
-                          ),
-                        )
-                        .toList(),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 4,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.audiotrack,
-                            size: 18,
-                            color: widget.isFullscreen ? Colors.white : null,
-                          ),
-                          const SizedBox(width: 2),
-                          Text(
-                            '音频',
-                            key: const Key('player_audio_track_text'),
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: widget.isFullscreen ? Colors.white : null,
-                            ),
-                          ),
-                        ],
-                      ),
+              const SizedBox(height: ReelvaDesign.space20),
+              GlassCard(
+                blur: true,
+                color: Colors.white.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(32),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: ReelvaDesign.space16,
+                  vertical: ReelvaDesign.space8,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    IconButton(
+                      key: const Key('player_seek_back_button'),
+                      icon: const Icon(Icons.replay_10_rounded),
+                      tooltip: '后退 10 秒',
+                      onPressed: isSeekEnabled
+                          ? () {
+                              final target =
+                                  snapshot.position -
+                                  const Duration(seconds: 10);
+                              engine.seek(
+                                target < Duration.zero ? Duration.zero : target,
+                              );
+                            }
+                          : null,
                     ),
-                  ),
-                  const SizedBox(width: 4),
-                  PopupMenuButton<String>(
-                    key: const Key('player_subtitle_track_button'),
-                    tooltip: '字幕轨道',
-                    initialValue: snapshot.subtitleTrackId,
-                    enabled: snapshot.subtitleTracks.isNotEmpty,
-                    onSelected: (id) => engine.setSubtitleTrack(id),
-                    itemBuilder: (context) => snapshot.subtitleTracks
-                        .map(
-                          (t) => PopupMenuItem<String>(
-                            value: t.id,
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    t.label,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                if (t.id == snapshot.subtitleTrackId) ...[
-                                  const SizedBox(width: 8),
-                                  const Icon(Icons.check, size: 16),
-                                ],
-                              ],
-                            ),
-                          ),
-                        )
-                        .toList(),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 4,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.subtitles,
-                            size: 18,
-                            color: widget.isFullscreen ? Colors.white : null,
-                          ),
-                          const SizedBox(width: 2),
-                          Text(
-                            '字幕',
-                            key: const Key('player_subtitle_track_text'),
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: widget.isFullscreen ? Colors.white : null,
-                            ),
-                          ),
-                        ],
-                      ),
+                    _buildPlaybackAction(snapshot, engine),
+                    IconButton(
+                      key: const Key('player_seek_forward_button'),
+                      icon: const Icon(Icons.forward_10_rounded),
+                      tooltip: '快进 10 秒',
+                      onPressed: isSeekEnabled
+                          ? () {
+                              final target =
+                                  snapshot.position +
+                                  const Duration(seconds: 10);
+                              engine.seek(
+                                target > snapshot.duration
+                                    ? snapshot.duration
+                                    : target,
+                              );
+                            }
+                          : null,
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-
-              // 倍速与全屏控制组
-              Row(
-                mainAxisSize: MainAxisSize.min,
+              const SizedBox(height: ReelvaDesign.space12),
+              Wrap(
+                spacing: ReelvaDesign.space8,
+                runSpacing: ReelvaDesign.space4,
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
+                  _buildTrackMenu(
+                    context,
+                    menuKey: const Key('player_subtitle_track_button'),
+                    textKey: const Key('player_subtitle_track_text'),
+                    label: '字幕',
+                    tooltip: '字幕轨道',
+                    tracks: snapshot.subtitleTracks,
+                    selectedId: snapshot.subtitleTrackId,
+                    onSelected: engine.setSubtitleTrack,
+                  ),
+                  _buildTrackMenu(
+                    context,
+                    menuKey: const Key('player_audio_track_button'),
+                    textKey: const Key('player_audio_track_text'),
+                    label: '音频',
+                    tooltip: '音频轨道',
+                    tracks: snapshot.audioTracks,
+                    selectedId: snapshot.audioTrackId,
+                    onSelected: engine.setAudioTrack,
+                  ),
                   PopupMenuButton<double>(
                     key: const Key('player_rate_button'),
                     tooltip: '播放倍速',
                     initialValue: snapshot.rate,
-                    onSelected: (rate) => engine.setRate(rate),
+                    onSelected: engine.setRate,
                     itemBuilder: (context) => PlayerControls.supportedRates
                         .map(
                           (r) => PopupMenuItem<double>(
@@ -475,47 +419,142 @@ class _PlayerControlsState extends State<PlayerControls> {
                         .toList(),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 4,
+                        horizontal: ReelvaDesign.space8,
+                        vertical: ReelvaDesign.space12,
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.speed,
-                            size: 18,
-                            color: widget.isFullscreen ? Colors.white : null,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${snapshot.rate}x',
-                            key: const Key('player_rate_text'),
-                            style: theme.textTheme.labelMedium?.copyWith(
-                              color: widget.isFullscreen ? Colors.white : null,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
+                      child: Text(
+                        '${snapshot.rate}x',
+                        key: const Key('player_rate_text'),
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
                   IconButton(
                     key: const Key('player_fullscreen_button'),
                     icon: Icon(
                       widget.isFullscreen
-                          ? Icons.fullscreen_exit
-                          : Icons.fullscreen,
+                          ? Icons.fullscreen_exit_rounded
+                          : Icons.fullscreen_rounded,
                     ),
                     tooltip: widget.isFullscreen ? '退出全屏' : '全屏',
-                    color: widget.isFullscreen ? Colors.white : null,
                     onPressed: widget.onToggleFullscreen,
+                  ),
+                  IconButton(
+                    key: const Key('player_stop_button'),
+                    icon: const Icon(Icons.stop_rounded),
+                    tooltip: '停止',
+                    onPressed: snapshot.status == PlaybackStatus.idle
+                        ? null
+                        : engine.stop,
                   ),
                 ],
               ),
+              LayoutBuilder(
+                builder: (context, constraints) => Align(
+                  alignment: Alignment.centerLeft,
+                  child: SizedBox(
+                    width: constraints.maxWidth.clamp(0, 260).toDouble(),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          key: const Key('player_mute_button'),
+                          icon: Icon(
+                            snapshot.volume == 0
+                                ? Icons.volume_off_rounded
+                                : Icons.volume_up_rounded,
+                          ),
+                          tooltip: snapshot.volume == 0 ? '取消静音' : '静音',
+                          onPressed: _toggleMute,
+                        ),
+                        Expanded(
+                          child: SliderTheme(
+                            data: SliderTheme.of(context).copyWith(
+                              trackHeight: 3,
+                              activeTrackColor: Colors.white,
+                              inactiveTrackColor: Colors.white24,
+                              thumbColor: Colors.white,
+                              overlayColor: Colors.white12,
+                              thumbShape: const RoundSliderThumbShape(
+                                enabledThumbRadius: 5,
+                              ),
+                            ),
+                            child: Slider(
+                              key: const Key('player_volume_slider'),
+                              value: snapshot.volume.clamp(0.0, 100.0),
+                              min: 0.0,
+                              max: 100.0,
+                              onChanged: engine.setVolume,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          '${snapshot.volume.round()}%',
+                          key: const Key('player_volume_text'),
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: Colors.white,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
-        ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTrackMenu(
+    BuildContext context, {
+    required Key menuKey,
+    required Key textKey,
+    required String label,
+    required String tooltip,
+    required List<PlaybackTrack> tracks,
+    required String? selectedId,
+    required ValueChanged<String> onSelected,
+  }) {
+    return PopupMenuButton<String>(
+      key: menuKey,
+      tooltip: tooltip,
+      initialValue: selectedId,
+      enabled: tracks.isNotEmpty,
+      onSelected: onSelected,
+      itemBuilder: (context) => tracks
+          .map(
+            (track) => PopupMenuItem<String>(
+              value: track.id,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(track.label, overflow: TextOverflow.ellipsis),
+                  ),
+                  if (track.id == selectedId) ...[
+                    const SizedBox(width: ReelvaDesign.space8),
+                    const Icon(Icons.check, size: 16),
+                  ],
+                ],
+              ),
+            ),
+          )
+          .toList(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: ReelvaDesign.space8,
+          vertical: ReelvaDesign.space12,
+        ),
+        child: Text(
+          label,
+          key: textKey,
+          style: Theme.of(context).textTheme.labelMedium
+              ?.copyWith(color: tracks.isEmpty ? Colors.white38 : Colors.white),
+        ),
       ),
     );
   }

@@ -13,6 +13,7 @@ import 'package:reelva/features/player/application/player_providers.dart';
 import 'package:reelva/features/settings/settings_page.dart';
 import 'package:reelva/features/sources/application/source_providers.dart';
 import 'package:reelva/features/sources/sources_page.dart';
+import 'package:reelva/shared/widgets/glass_navigation.dart';
 
 import 'features/player/fake_player_engine.dart';
 
@@ -34,7 +35,7 @@ void main() {
     });
 
     testWidgets(
-      'Desktop wide layout uses NavigationRail and navigates all 4 destinations',
+      'Desktop wide layout uses GlassSidebar and navigates all 4 destinations',
       (tester) async {
         final db = AppDatabase(executor: NativeDatabase.memory());
         addTearDown(db.close);
@@ -47,41 +48,37 @@ void main() {
           await tester.pumpWidget(createTestApp(db: db));
           await tester.pumpAndSettle();
 
-          expect(find.byType(NavigationRail), findsOneWidget);
-          expect(find.byType(NavigationBar), findsNothing);
+          expect(find.byType(GlassSidebar), findsOneWidget);
+          expect(find.byType(GlassBottomNavigationBar), findsNothing);
           expect(find.byType(HomePage), findsOneWidget);
 
           // Navigate to 影视库
-          final libraryDest = find.descendant(
-            of: find.byType(NavigationRail),
-            matching: find.text('影视库'),
+          final libraryDest = find.byKey(
+            const ValueKey('navigation_destination_library'),
           );
           await tester.tap(libraryDest);
           await tester.pumpAndSettle();
           expect(find.byType(LibraryPage), findsOneWidget);
 
           // Navigate to 媒体源
-          final sourcesDest = find.descendant(
-            of: find.byType(NavigationRail),
-            matching: find.text('媒体源'),
+          final sourcesDest = find.byKey(
+            const ValueKey('navigation_destination_sources'),
           );
           await tester.tap(sourcesDest);
           await tester.pumpAndSettle();
           expect(find.byType(SourcesPage), findsOneWidget);
 
           // Navigate to 设置
-          final settingsDest = find.descendant(
-            of: find.byType(NavigationRail),
-            matching: find.text('设置'),
+          final settingsDest = find.byKey(
+            const ValueKey('navigation_destination_settings'),
           );
           await tester.tap(settingsDest);
           await tester.pumpAndSettle();
           expect(find.byType(SettingsPage), findsOneWidget);
 
           // Navigate back to 首页
-          final homeDest = find.descendant(
-            of: find.byType(NavigationRail),
-            matching: find.text('首页'),
+          final homeDest = find.byKey(
+            const ValueKey('navigation_destination_home'),
           );
           await tester.tap(homeDest);
           await tester.pumpAndSettle();
@@ -95,7 +92,7 @@ void main() {
     );
 
     testWidgets(
-      'Mobile narrow layout uses NavigationBar and navigates all 4 destinations',
+      'Mobile narrow layout uses GlassBottomNavigationBar and navigates all 4 destinations',
       (tester) async {
         final db = AppDatabase(executor: NativeDatabase.memory());
         addTearDown(db.close);
@@ -108,41 +105,37 @@ void main() {
           await tester.pumpWidget(createTestApp(db: db));
           await tester.pumpAndSettle();
 
-          expect(find.byType(NavigationBar), findsOneWidget);
-          expect(find.byType(NavigationRail), findsNothing);
+          expect(find.byType(GlassBottomNavigationBar), findsOneWidget);
+          expect(find.byType(GlassSidebar), findsNothing);
           expect(find.byType(HomePage), findsOneWidget);
 
           // Navigate to 影视库
-          final libraryDest = find.descendant(
-            of: find.byType(NavigationBar),
-            matching: find.text('影视库'),
+          final libraryDest = find.byKey(
+            const ValueKey('navigation_destination_library'),
           );
           await tester.tap(libraryDest);
           await tester.pumpAndSettle();
           expect(find.byType(LibraryPage), findsOneWidget);
 
           // Navigate to 媒体源
-          final sourcesDest = find.descendant(
-            of: find.byType(NavigationBar),
-            matching: find.text('媒体源'),
+          final sourcesDest = find.byKey(
+            const ValueKey('navigation_destination_sources'),
           );
           await tester.tap(sourcesDest);
           await tester.pumpAndSettle();
           expect(find.byType(SourcesPage), findsOneWidget);
 
           // Navigate to 设置
-          final settingsDest = find.descendant(
-            of: find.byType(NavigationBar),
-            matching: find.text('设置'),
+          final settingsDest = find.byKey(
+            const ValueKey('navigation_destination_settings'),
           );
           await tester.tap(settingsDest);
           await tester.pumpAndSettle();
           expect(find.byType(SettingsPage), findsOneWidget);
 
           // Navigate back to 首页
-          final homeDest = find.descendant(
-            of: find.byType(NavigationBar),
-            matching: find.text('首页'),
+          final homeDest = find.byKey(
+            const ValueKey('navigation_destination_home'),
           );
           await tester.tap(homeDest);
           await tester.pumpAndSettle();
@@ -246,43 +239,34 @@ void main() {
         addTearDown(tester.view.resetDevicePixelRatio);
 
         try {
-          await tester.pumpWidget(
-            MediaQuery(
-              data: const MediaQueryData(
-                size: Size(320, 568),
-                textScaler: TextScaler.linear(1.5),
-              ),
-              child: createTestApp(db: db),
-            ),
-          );
+          tester.platformDispatcher.textScaleFactorTestValue = 1.5;
+          addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+          await tester.pumpWidget(createTestApp(db: db));
           await tester.pumpAndSettle();
 
           expect(find.byType(HomePage), findsOneWidget);
-          expect(find.byType(NavigationBar), findsOneWidget);
+          expect(find.byType(GlassBottomNavigationBar), findsOneWidget);
           expect(tester.takeException(), isNull);
 
           // Verify destination navigation under small viewport
-          final libraryDest = find.descendant(
-            of: find.byType(NavigationBar),
-            matching: find.text('影视库'),
+          final libraryDest = find.byKey(
+            const ValueKey('navigation_destination_library'),
           );
           await tester.tap(libraryDest);
           await tester.pumpAndSettle();
           expect(find.byType(LibraryPage), findsOneWidget);
           expect(tester.takeException(), isNull);
 
-          final sourcesDest = find.descendant(
-            of: find.byType(NavigationBar),
-            matching: find.text('媒体源'),
+          final sourcesDest = find.byKey(
+            const ValueKey('navigation_destination_sources'),
           );
           await tester.tap(sourcesDest);
           await tester.pumpAndSettle();
           expect(find.byType(SourcesPage), findsOneWidget);
           expect(tester.takeException(), isNull);
 
-          final settingsDest = find.descendant(
-            of: find.byType(NavigationBar),
-            matching: find.text('设置'),
+          final settingsDest = find.byKey(
+            const ValueKey('navigation_destination_settings'),
           );
           await tester.tap(settingsDest);
           await tester.pumpAndSettle();

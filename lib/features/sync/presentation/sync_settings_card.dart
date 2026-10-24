@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/widgets/glass_widgets.dart';
 import '../application/sync_providers.dart';
 import '../domain/sync_models.dart';
 import '../infrastructure/sync_configuration_store.dart';
@@ -184,12 +185,10 @@ class _SyncSettingsCardState extends ConsumerState<SyncSettingsCard> {
         _endpointController.text.trim() == currentConfig.endpoint.toString() &&
         _usernameController.text.trim() == currentConfig.username;
 
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: colorScheme.outlineVariant),
-      ),
+    return GlassCard(
+      padding: EdgeInsets.zero,
+      borderRadius: BorderRadius.circular(22),
+      color: Colors.white.withValues(alpha: 0.88),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(

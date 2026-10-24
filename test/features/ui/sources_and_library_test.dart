@@ -306,6 +306,8 @@ void main() {
             const Key('work_play_version_button_2'),
           );
           expect(play2160pFinder, findsOneWidget);
+          await tester.ensureVisible(play2160pFinder);
+          await tester.pumpAndSettle();
           await tester.tap(play2160pFinder);
           await tester.pumpAndSettle();
 
@@ -379,6 +381,8 @@ void main() {
             const Key('work_play_version_button_1'),
           );
           expect(playButtonFinder, findsOneWidget);
+          await tester.ensureVisible(playButtonFinder);
+          await tester.pumpAndSettle();
           await tester.tap(playButtonFinder);
           await tester.pumpAndSettle();
 
@@ -447,6 +451,8 @@ void main() {
             const Key('work_local_edit_button'),
           );
           expect(editButtonFinder, findsOneWidget);
+          await tester.ensureVisible(editButtonFinder);
+          await tester.pumpAndSettle();
           await tester.tap(editButtonFinder);
           await tester.pumpAndSettle();
 
@@ -583,6 +589,8 @@ void main() {
           expect(find.byType(WorkDetailsPage), findsOneWidget);
           final matchButton = find.byKey(const Key('work_manual_match_button'));
           expect(matchButton, findsOneWidget);
+          await tester.ensureVisible(matchButton);
+          await tester.pumpAndSettle();
           await tester.tap(matchButton);
           await tester.pumpAndSettle();
 
@@ -748,6 +756,8 @@ void main() {
           expect(find.byType(WorkDetailsPage), findsOneWidget);
           final matchButton = find.byKey(const Key('work_manual_match_button'));
           expect(matchButton, findsOneWidget);
+          await tester.ensureVisible(matchButton);
+          await tester.pumpAndSettle();
           await tester.tap(matchButton);
           await tester.pumpAndSettle();
 
@@ -1052,7 +1062,11 @@ void main() {
           );
           final scrollableFinder = find.descendant(
             of: find.byKey(const Key('library_works_scroll_view')),
-            matching: find.byType(Scrollable),
+            matching: find.byWidgetPredicate(
+              (widget) =>
+                  widget is Scrollable &&
+                  axisDirectionToAxis(widget.axisDirection) == Axis.vertical,
+            ),
           );
 
           // 滚动至视图底部展示“加载更多”按钮并交互

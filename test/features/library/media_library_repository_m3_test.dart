@@ -20,6 +20,246 @@ void main() {
       await db.close();
     });
 
+    group('watchWorks filters', () {
+      late int sourceId;
+      var entryNumber = 0;
+
+      setUp(() async {
+        entryNumber = 0;
+        sourceId = await db
+            .into(db.mediaSources)
+            .insert(
+              MediaSourcesCompanion.insert(
+                kind: 'local',
+                name: 'Filters',
+                rootLocator: 'C:/Filters',
+              ),
+            );
+      });
+
+      Future<void> addVersion(int workId, {String? type, int? source}) async {
+        final name = 'fixture-${entryNumber++}.mkv';
+        final entryId = await db
+            .into(db.mediaEntries)
+            .insert(
+              MediaEntriesCompanion.insert(
+                sourceId: source ?? sourceId,
+                externalEntryId: name,
+                relativeLocator: name,
+                name: name,
+                isDirectory: false,
+              ),
+            );
+        final fileId = await db
+            .into(db.mediaFiles)
+            .insert(
+              MediaFilesCompanion.insert(
+                entryId: entryId,
+                parseState: const Value('parsed'),
+              ),
+            );
+        int? episodeId;
+        if (type == 'series') {
+          final seasonId = await db
+              .into(db.seasons)
+              .insert(
+                SeasonsCompanion.insert(seriesId: workId, seasonNumber: 1),
+              );
+          episodeId = await db
+              .into(db.episodes)
+              .insert(
+                EpisodesCompanion.insert(seasonId: seasonId, episodeNumber: 1),
+              );
+        }
+        await db
+            .into(db.mediaAssignments)
+            .insert(
+              MediaAssignmentsCompanion.insert(
+                fileId: fileId,
+                workId: Value(episodeId == null ? workId : null),
+                episodeId: Value(episodeId),
+              ),
+            );
+      }
+
+      Future<int> addWork(
+        String title, {
+        String? originalTitle,
+        String? type = 'movie',
+        DateTime? createdAt,
+        int? source,
+      }) async {
+        final id = await db
+            .into(db.works)
+            .insert(
+              WorksCompanion.insert(
+                title: title,
+                originalTitle: Value(originalTitle),
+                type: Value(type),
+                createdAt: Value(createdAt ?? DateTime.utc(2026)),
+              ),
+            );
+        await addVersion(id, type: type, source: source);
+        return id;
+      }
+
+      test('searches title and original title beyond the default page before limiting', () async {
+        await db.transaction(() async {
+          for (var i = 0; i < 105; i++) {
+            await addWork('A filler $i');
+          }
+        });
+        final titleMatch = await addWork('Z Midnight Train');
+        final originalMatch = await addWork(
+          'Z Translated',
+          originalTitle: 'The Midnight Train Returns',
+        );
+
+        final firstPage = await repo.watchWorks().first;
+        expect(firstPage, hasLength(100));
+        expect(firstPage.map((w) => w.id), isNot(contains(titleMatch)));
+        expect(firstPage.map((w) => w.id), isNot(contains(originalMatch)));
+        final matches = await repo.watchWorks(search: 'mIDNIGHT tRAIN').first;
+        expect(matches.map((w) => w.id), [titleMatch, originalMatch]);
+        final bounded = await repo
+            .watchWorks(search: 'Midnight Train', limit: 1)
+            .first;
+        expect(bounded.map((w) => w.id), [titleMatch]);
+      });
+
+      test(
+        'preserves contiguous phrases and leading and trailing spaces',
+        () async {
+          final plain = await addWork('Alpha Beta');
+          final padded = await addWork(' Alpha Beta ');
+          final split = await addWork('Alpha other Beta');
+          final doubled = await addWork('Alpha  Beta');
+
+          final phrase = await repo.watchWorks(search: 'aLPHA bETA').first;
+          expect(phrase.map((w) => w.id), [padded, plain]);
+          final spaces = await repo.watchWorks(search: ' Alpha Beta ').first;
+          expect(spaces.map((w) => w.id), [padded]);
+          final doubleSpaces = await repo
+              .watchWorks(search: 'Alpha  Beta')
+              .first;
+          expect(doubleSpaces.map((w) => w.id), [doubled]);
+          final reordered = await repo.watchWorks(search: 'Beta Alpha').first;
+          expect(reordered, isEmpty);
+          final onlySpace = await repo.watchWorks(search: ' ').first;
+          expect(
+            onlySpace.map((w) => w.id),
+            containsAll([plain, padded, split, doubled]),
+          );
+        },
+      );
+
+      test(
+        'treats percent, underscore and backslash as literals in both titles',
+        () async {
+          final percent = await addWork('Literal 100%');
+          final underscore = await addWork('Literal A_B');
+          final backslash = await addWork(r'Literal A\B');
+          final combined = await addWork('Original', originalTitle: r'100%_\');
+          await addWork('Literal 1000 A-B AB');
+
+          for (final (search, expected) in <(String, List<int>)>[
+            ('%', [percent, combined]),
+            ('_', [underscore, combined]),
+            (r'\', [backslash, combined]),
+            (r'%_\', [combined]),
+          ]) {
+            final matches = await repo.watchWorks(search: search).first;
+            expect(matches.map((w) => w.id), expected, reason: search);
+          }
+          final injection = await repo.watchWorks(search: "' OR 1=1 --").first;
+          expect(injection, isEmpty);
+        },
+      );
+
+      test('filters exact types before the limit and follows series episode assignments', () async {
+        final unknown = await addWork('A Unknown', type: null);
+        final movie = await addWork('B Shared', type: 'movie');
+        final series = await addWork('C Shared', type: 'series');
+        await addVersion(movie);
+
+        final all = await repo.watchWorks(type: null).first;
+        expect(all.map((w) => w.id), [unknown, movie, series]);
+        expect(all.singleWhere((w) => w.id == movie).versionCount, 2);
+        final movies = await repo.watchWorks(type: 'movie', limit: 1).first;
+        expect(movies.map((w) => w.id), [movie]);
+        final shows = await repo
+            .watchWorks(type: 'series', limit: 1, search: 'shared')
+            .first;
+        expect(shows.map((w) => w.id), [series]);
+        expect(shows.single.versionCount, 1);
+        final uppercase = await repo.watchWorks(type: 'Movie').first;
+        expect(uppercase, isEmpty);
+        final injection = await repo.watchWorks(type: "movie' OR 1=1 --").first;
+        expect(injection, isEmpty);
+      });
+
+      test('orders by case insensitive title and id or by creation time and descending id', () async {
+        final old = DateTime.utc(2025);
+        final recent = DateTime.utc(2026);
+        final first = await addWork('beta', createdAt: recent);
+        final second = await addWork('Beta', createdAt: recent);
+        final third = await addWork('Alpha', createdAt: old);
+
+        final alphabetical = await repo.watchWorks().first;
+        expect(alphabetical.map((w) => w.id), [third, first, second]);
+        final newest = await repo.watchWorks(recentlyAdded: true).first;
+        expect(newest.map((w) => w.id), [second, first, third]);
+        final bounded = await repo
+            .watchWorks(
+              recentlyAdded: true,
+              search: 'beta',
+              type: 'movie',
+              limit: 1,
+            )
+            .first;
+        expect(bounded.map((w) => w.id), [second]);
+      });
+
+      test(
+        'excludes disabled sources while retaining enabled offline versions',
+        () async {
+          final disabledSource = await db
+              .into(db.mediaSources)
+              .insert(
+                MediaSourcesCompanion.insert(
+                  kind: 'local',
+                  name: 'Disabled',
+                  rootLocator: 'C:/Disabled',
+                  enabled: const Value(false),
+                ),
+              );
+          await addWork('A Match Hidden', source: disabledSource);
+          await addWork(
+            'B Match Hidden Series',
+            type: 'series',
+            source: disabledSource,
+          );
+          final movie = await addWork('C Match Movie');
+          final series = await addWork('D Match Series', type: 'series');
+          await addVersion(movie, source: disabledSource);
+          await db
+              .update(db.mediaEntries)
+              .write(const MediaEntriesCompanion(available: Value(false)));
+
+          final matches = await repo.watchWorks(search: 'match').first;
+          expect(matches.map((w) => w.id), [movie, series]);
+          expect(
+            matches.every((w) => !w.available && w.versionCount == 1),
+            isTrue,
+          );
+          final bounded = await repo
+              .watchWorks(search: 'match', limit: 1)
+              .first;
+          expect(bounded.single.id, movie);
+        },
+      );
+    });
+
     test('recognizePendingFiles groups two quality versions of same movie into one work', () async {
       final source = await repo.upsertSource(
         kind: 'local',

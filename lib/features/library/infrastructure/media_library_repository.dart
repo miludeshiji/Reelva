@@ -732,9 +732,19 @@ class MediaLibraryRepository {
   /// 监视媒体作品列表，DB 层级分页。
   ///
   /// 首次发射前触发识别，包含启用源的不可用文件，排除全源停用的作品。
-  Stream<List<LibraryWork>> watchWorks({int limit = 100}) async* {
+  Stream<List<LibraryWork>> watchWorks({
+    int limit = 100,
+    String search = '',
+    String? type,
+    bool recentlyAdded = false,
+  }) async* {
     await recognizePendingFiles();
-    yield* _watchWorksInternal(limit);
+    yield* _watchWorksInternal(
+      limit: limit,
+      search: search,
+      type: type,
+      recentlyAdded: recentlyAdded,
+    );
   }
 
   static const _workBaseSelectSql = '''
@@ -800,8 +810,32 @@ class MediaLibraryRepository {
     );
   }
 
-  Stream<List<LibraryWork>> _watchWorksInternal(int limit) {
-    const queryStr =
+  Stream<List<LibraryWork>> _watchWorksInternal({
+    required int limit,
+    required String search,
+    required String? type,
+    required bool recentlyAdded,
+  }) {
+    final variables = <Variable<Object>>[];
+    var filters = '';
+    if (search.isNotEmpty) {
+      final pattern =
+          '%${search.replaceAll(r'\', r'\\').replaceAll('%', r'\%').replaceAll('_', r'\_')}%';
+      filters += r" AND (w.title LIKE ? ESCAPE '\' OR w.original_title LIKE ? ESCAPE '\')";
+      variables.addAll([
+        Variable.withString(pattern),
+        Variable.withString(pattern),
+      ]);
+    }
+    if (type != null) {
+      filters += ' AND w.type = ?';
+      variables.add(Variable.withString(type));
+    }
+    variables.add(Variable.withInt(limit));
+    final orderBy = recentlyAdded
+        ? 'w.created_at DESC, w.id DESC'
+        : 'w.title COLLATE NOCASE ASC, w.id ASC';
+    final queryStr =
         '''
       $_workBaseSelectSql
       WHERE EXISTS (
@@ -818,14 +852,15 @@ class MediaLibraryRepository {
           )
         )
       )
-      ORDER BY w.title COLLATE NOCASE ASC, w.id ASC
+      $filters
+      ORDER BY $orderBy
       LIMIT ?
     ''';
 
     return db
         .customSelect(
           queryStr,
-          variables: [Variable.withInt(limit)],
+          variables: variables,
           readsFrom: <TableInfo<Table, dynamic>>{
             db.works,
             db.mediaAssignments,

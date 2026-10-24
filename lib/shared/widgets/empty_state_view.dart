@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:reelva/app/theme/reelva_theme.dart';
 
 /// Reusable empty-state display for clean, honest placeholders across the app.
 class EmptyStateView extends StatelessWidget {
@@ -24,42 +25,58 @@ class EmptyStateView extends StatelessWidget {
 
     return Center(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            if (icon != null) ...[
-              Icon(icon, size: 64.0, color: colorScheme.outline),
-              const SizedBox(height: 16.0),
-            ],
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: colorScheme.onSurface,
+        padding: const EdgeInsets.symmetric(
+          horizontal: ReelvaDesign.space24,
+          vertical: ReelvaDesign.space32,
+        ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              if (icon != null) ...[
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: colorScheme.primaryContainer.withValues(alpha: 0.65),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: ReelvaDesign.glassBorder),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(ReelvaDesign.space20),
+                    child: Icon(icon, size: 44, color: colorScheme.primary),
+                  ),
+                ),
+                const SizedBox(height: ReelvaDesign.space24),
+              ],
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: colorScheme.onSurface,
+                ),
               ),
-            ),
-            if (message != null) ...[
-              const SizedBox(height: 8.0),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 480.0),
-                child: Text(
+              if (message != null) ...[
+                const SizedBox(height: ReelvaDesign.space8),
+                Text(
                   message!,
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
                 ),
-              ),
+              ],
+              if (actionLabel != null && onAction != null) ...[
+                const SizedBox(height: ReelvaDesign.space24),
+                FilledButton(
+                  onPressed: onAction,
+                  child: Text(actionLabel!, textAlign: TextAlign.center),
+                ),
+              ],
             ],
-            if (actionLabel != null && onAction != null) ...[
-              const SizedBox(height: 24.0),
-              FilledButton(onPressed: onAction, child: Text(actionLabel!)),
-            ],
-          ],
+          ),
         ),
       ),
     );
