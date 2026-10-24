@@ -44,6 +44,67 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   int _actionCounter = 0;
   final FocusNode _focusNode = FocusNode();
   bool _isWindowClosing = false;
+  final GlobalKey _controlsKey = GlobalKey();
+  Timer? _controlsHideTimer;
+  PlaybackStatus? _controlsStatus;
+  bool _usesOverlayControls = false;
+  bool _controlsVisible = true;
+  bool _pointerOverControls = false;
+  bool _controlsHaveFocus = false;
+  bool _controlsInteracting = false;
+  bool _hasProgressError = false;
+
+  void _scheduleControlsHide() {
+    _controlsHideTimer?.cancel();
+    if (!_usesOverlayControls ||
+        _controlsStatus != PlaybackStatus.playing ||
+        _pointerOverControls ||
+        _controlsHaveFocus ||
+        _controlsInteracting ||
+        _hasProgressError) {
+      return;
+    }
+    _controlsHideTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _controlsVisible = false);
+    });
+  }
+
+  void _showControls() {
+    if (!_controlsVisible) setState(() => _controlsVisible = true);
+    _scheduleControlsHide();
+  }
+
+  void _updateControlsVisibility(PlaybackSnapshot snapshot, bool overlay) {
+    final hasProgressError = snapshot.progressErrorMessage?.isNotEmpty ?? false;
+    if (_controlsStatus == snapshot.status &&
+        _usesOverlayControls == overlay &&
+        _hasProgressError == hasProgressError) {
+      return;
+    }
+    _controlsStatus = snapshot.status;
+    _usesOverlayControls = overlay;
+    _hasProgressError = hasProgressError;
+    _controlsVisible = true;
+    _scheduleControlsHide();
+  }
+
+  Widget _buildControlsVisibility(Widget child) {
+    return IgnorePointer(
+      ignoring: !_controlsVisible,
+      child: ExcludeFocus(
+        excluding: !_controlsVisible,
+        child: ExcludeSemantics(
+          excluding: !_controlsVisible,
+          child: AnimatedOpacity(
+            opacity: _controlsVisible ? 1 : 0,
+            duration: const Duration(milliseconds: 200),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -144,6 +205,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       });
     }
     WidgetsBinding.instance.removeObserver(this);
+    _controlsHideTimer?.cancel();
     _focusNode.dispose();
     _session?.engine.stop().catchError((Object e, StackTrace st) {
       AppLogger.instance.error('卸载页面停止播放引擎异常', error: e, stackTrace: st);
@@ -314,48 +376,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
 
     switch (snapshot.status) {
       case PlaybackStatus.idle:
-        overlayContent = Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.video_library_outlined,
-              size: 56,
-              color: Colors.white54,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '未加载视频',
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: Colors.white70,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 12,
-              runSpacing: 8,
-              alignment: WrapAlignment.center,
-              children: [
-                FilledButton.icon(
-                  key: const Key('idle_open_file_button'),
-                  icon: const Icon(Icons.folder_open),
-                  label: const Text('选择本地视频'),
-                  onPressed: _pickNativeVideo,
-                ),
-                OutlinedButton.icon(
-                  key: const Key('idle_open_url_button'),
-                  icon: const Icon(Icons.link),
-                  label: const Text('输入网络链接'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: const BorderSide(color: Colors.white54),
-                  ),
-                  onPressed: _openNetworkVideo,
-                ),
-              ],
-            ),
-          ],
-        );
-        break;
+        return const SizedBox.shrink();
 
       case PlaybackStatus.resolving:
       case PlaybackStatus.opening:
@@ -510,6 +531,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       return KeyEventResult.ignored;
     }
 
+    _showControls();
     final key = event.logicalKey;
 
     if (key == LogicalKeyboardKey.space) {
@@ -599,29 +621,33 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           maxWidth: ReelvaDesign.contentMaxWidth,
         ),
         child: Padding(
-          padding: const EdgeInsets.all(ReelvaDesign.space16),
+          padding: const EdgeInsets.symmetric(
+            horizontal: ReelvaDesign.space16,
+            vertical: ReelvaDesign.space20,
+          ),
           child: Row(
             children: [
-              GlassCard(
-                blur: true,
-                color: Colors.white.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(ReelvaDesign.radiusLarge),
-                padding: EdgeInsets.zero,
-                child: IconButton(
-                  key: Key(
-                    fullscreen
-                        ? 'fullscreen_exit_back_button'
-                        : 'player_back_button',
-                  ),
-                  icon: const Icon(Icons.arrow_back_rounded),
-                  tooltip: fullscreen ? '退出全屏' : '返回',
-                  style: IconButton.styleFrom(shape: const CircleBorder()),
-                  onPressed: fullscreen
-                      ? () => _setFullscreen(false)
-                      : _handleExit,
+              IconButton(
+                key: Key(
+                  fullscreen
+                      ? 'fullscreen_exit_back_button'
+                      : 'player_back_button',
                 ),
+                icon: const Icon(Icons.arrow_back_rounded),
+                tooltip: fullscreen ? '退出全屏' : '返回',
+                style: IconButton.styleFrom(
+                  minimumSize: const Size(40, 40),
+                  padding: const EdgeInsets.all(8),
+                  backgroundColor: fullscreen
+                      ? ReelvaDesign.playerGlassFill
+                      : theme.colorScheme.surface,
+                  side: BorderSide(color: theme.colorScheme.outlineVariant),
+                ),
+                onPressed: fullscreen
+                    ? () => _setFullscreen(false)
+                    : _handleExit,
               ),
-              const SizedBox(width: ReelvaDesign.space16),
+              const SizedBox(width: ReelvaDesign.space12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -632,14 +658,12 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       key: fullscreen ? null : const Key('player_title_text'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        color: Colors.white,
-                      ),
+                      style: theme.textTheme.titleMedium,
                     ),
                     const SizedBox(height: ReelvaDesign.space4),
                     Text(
                       subtitle,
-                      maxLines: 2,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
@@ -654,12 +678,20 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                   key: const Key('appbar_pick_file_button'),
                   icon: const Icon(Icons.folder_open_rounded),
                   tooltip: '选择本地视频',
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size(40, 40),
+                    padding: const EdgeInsets.all(8),
+                  ),
                   onPressed: _pickNativeVideo,
                 ),
                 IconButton(
                   key: const Key('appbar_open_url_button'),
                   icon: const Icon(Icons.link_rounded),
                   tooltip: '输入网络链接',
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size(40, 40),
+                    padding: const EdgeInsets.all(8),
+                  ),
                   onPressed: _openNetworkVideo,
                 ),
               ],
@@ -667,6 +699,382 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildEmptySurface(BuildContext context) {
+    final theme = Theme.of(context);
+    return GlassCard(
+      key: const Key('player_empty_surface'),
+      color: theme.colorScheme.surface.withValues(alpha: 0.7),
+      borderRadius: BorderRadius.circular(ReelvaDesign.radiusLarge),
+      padding: const EdgeInsets.all(ReelvaDesign.space24),
+      child: Center(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              GlassCard(
+                color: theme.colorScheme.primaryContainer,
+                padding: const EdgeInsets.all(ReelvaDesign.space16),
+                child: Icon(
+                  Icons.video_library_outlined,
+                  size: 32,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(height: ReelvaDesign.space20),
+              Text(
+                '让好故事开始播放',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleLarge,
+              ),
+              const SizedBox(height: ReelvaDesign.space8),
+              Text(
+                '从本地选择影片，或粘贴视频链接。',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: ReelvaDesign.space24),
+              Wrap(
+                spacing: ReelvaDesign.space8,
+                runSpacing: ReelvaDesign.space8,
+                alignment: WrapAlignment.center,
+                children: [
+                  FilledButton.icon(
+                    key: const Key('idle_open_file_button'),
+                    icon: const Icon(Icons.folder_open_rounded),
+                    label: const Text('选择本地视频'),
+                    onPressed: _pickNativeVideo,
+                  ),
+                  OutlinedButton.icon(
+                    key: const Key('idle_open_url_button'),
+                    icon: const Icon(Icons.link_rounded),
+                    label: const Text('网络链接'),
+                    onPressed: _openNetworkVideo,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlaybackHeading(BuildContext context, PlaybackStatus status) {
+    final label = switch (status) {
+      PlaybackStatus.idle => '就绪',
+      PlaybackStatus.resolving || PlaybackStatus.opening => '正在加载',
+      PlaybackStatus.playing => '正在播放',
+      PlaybackStatus.paused => '已暂停',
+      PlaybackStatus.buffering => '正在缓冲',
+      PlaybackStatus.completed => '播放完成',
+      PlaybackStatus.error => '播放出错',
+    };
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Expanded(
+          child: GlassSectionTitle(
+            title: status == PlaybackStatus.idle ? '准备好观看了吗？' : label,
+            subtitle: status == PlaybackStatus.idle
+                ? '选择一个视频，开始你的观影时光。'
+                : '你的私人影院，随时继续。',
+          ),
+        ),
+        const SizedBox(width: ReelvaDesign.space16),
+        GlassCard(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.circle,
+                size: 6,
+                color: status == PlaybackStatus.error
+                    ? theme.colorScheme.error
+                    : theme.colorScheme.primary,
+              ),
+              const SizedBox(width: ReelvaDesign.space8),
+              Text(label, style: theme.textTheme.labelSmall),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildControls(
+    PlaybackSnapshot snapshot,
+    PlayerEngine engine, {
+    required bool overlay,
+  }) {
+    return MouseRegion(
+      onEnter: (_) {
+        _pointerOverControls = true;
+        _showControls();
+      },
+      onExit: (_) {
+        _pointerOverControls = false;
+        _scheduleControlsHide();
+      },
+      child: Focus(
+        onFocusChange: (focused) {
+          _controlsHaveFocus = focused;
+          if (focused) {
+            _showControls();
+          } else {
+            _scheduleControlsHide();
+          }
+        },
+        child: PlayerControls(
+          key: _controlsKey,
+          snapshot: snapshot,
+          engine: engine,
+          overlay: overlay,
+          isFullscreen: _isFullscreen,
+          onToggleFullscreen: () => _setFullscreen(!_isFullscreen),
+          onInteractionChanged: (interacting) {
+            _controlsInteracting = interacting;
+            _showControls();
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVideoRegion(
+    BuildContext context, {
+    required PlaybackSession session,
+    required PlaybackSnapshot snapshot,
+    required double height,
+    required bool overlay,
+    required String title,
+    required String subtitle,
+    required VoidCallback onRetry,
+    required Widget? controls,
+  }) {
+    final idle = snapshot.status == PlaybackStatus.idle;
+    return SizedBox(
+      key: const Key('player_video_region'),
+      height: height,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(
+          _isFullscreen ? 0 : ReelvaDesign.radiusLarge,
+        ),
+        child: Listener(
+          onPointerDown: (_) => _showControls(),
+          onPointerMove: (_) => _showControls(),
+          child: MouseRegion(
+            onHover: (_) => _showControls(),
+            cursor: overlay && !_controlsVisible
+                ? SystemMouseCursors.none
+                : MouseCursor.defer,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // 始终保留同一曲面；全屏、缩放和停止只改变约束与可见性。
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    _focusNode.requestFocus();
+                    _showControls();
+                  },
+                  child: ColoredBox(
+                    color: idle
+                        ? Colors.transparent
+                        : ReelvaDesign.playerBackground,
+                    child: Offstage(
+                      offstage: idle,
+                      child: Center(child: session.videoBuilder(context)),
+                    ),
+                  ),
+                ),
+                if (idle)
+                  _buildEmptySurface(context)
+                else
+                  Positioned.fill(
+                    top: _isFullscreen ? 80 : 0,
+                    bottom: overlay ? (height * 0.32).clamp(0.0, 128.0) : 0,
+                    child: Theme(
+                      data: ReelvaTheme.player,
+                      child: Builder(
+                        builder: (context) =>
+                            _buildStatusOverlay(context, snapshot, onRetry),
+                      ),
+                    ),
+                  ),
+                if (_isFullscreen)
+                  Positioned(
+                    key: const Key('player_fullscreen_header'),
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: _buildControlsVisibility(
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              ReelvaDesign.playerBackground.withValues(
+                                alpha: 0.9,
+                              ),
+                              Colors.transparent,
+                            ],
+                          ),
+                        ),
+                        child: _buildHeader(
+                          context,
+                          title: title,
+                          subtitle: subtitle,
+                          fullscreen: true,
+                        ),
+                      ),
+                    ),
+                  ),
+                if (overlay && controls != null)
+                  Positioned(
+                    left: ReelvaDesign.space12,
+                    right: ReelvaDesign.space12,
+                    bottom: ReelvaDesign.space12,
+                    child: Align(
+                      alignment: Alignment.bottomCenter,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: 1040,
+                          maxHeight: height * 0.48,
+                        ),
+                        child: _buildControlsVisibility(
+                          KeyedSubtree(
+                            key: const Key('player_controls_panel'),
+                            child: controls,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildViewport(
+    BuildContext context, {
+    required PlaybackSession session,
+    required PlaybackSnapshot snapshot,
+    required String displayName,
+    required String title,
+    required String subtitle,
+    required VoidCallback onRetry,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final idle = snapshot.status == PlaybackStatus.idle;
+        final wide = constraints.maxWidth >= ReelvaDesign.desktopBreakpoint;
+        final overlay = _isFullscreen || wide;
+        _updateControlsVisibility(snapshot, overlay);
+        final padding = _isFullscreen
+            ? 0.0
+            : wide
+            ? ReelvaDesign.space32
+            : ReelvaDesign.space16;
+        final contentWidth = _isFullscreen
+            ? constraints.maxWidth
+            : (constraints.maxWidth - padding * 2)
+                  .clamp(0.0, ReelvaDesign.playerContentMaxWidth)
+                  .toDouble();
+        final videoHeight = _isFullscreen
+            ? constraints.maxHeight
+            : idle
+            ? (contentWidth * 9 / 16).clamp(320.0, double.infinity).toDouble()
+            : contentWidth * 9 / 16;
+        final controls = idle
+            ? null
+            : _buildControls(snapshot, session.engine, overlay: overlay);
+        return SingleChildScrollView(
+          physics: _isFullscreen ? const NeverScrollableScrollPhysics() : null,
+          padding: EdgeInsets.symmetric(
+            horizontal: padding,
+            vertical: _isFullscreen ? 0 : ReelvaDesign.space24,
+          ),
+          child: Center(
+            child: SizedBox(
+              width: contentWidth,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (!_isFullscreen) ...[
+                    _buildPlaybackHeading(context, snapshot.status),
+                    const SizedBox(height: ReelvaDesign.space20),
+                  ],
+                  _buildVideoRegion(
+                    context,
+                    session: session,
+                    snapshot: snapshot,
+                    height: videoHeight,
+                    overlay: overlay,
+                    title: displayName,
+                    subtitle: subtitle,
+                    onRetry: onRetry,
+                    controls: overlay ? controls : null,
+                  ),
+                  if (!overlay && controls != null) ...[
+                    const SizedBox(height: ReelvaDesign.space12),
+                    KeyedSubtree(
+                      key: const Key('player_controls_panel'),
+                      child: controls,
+                    ),
+                  ],
+                  if (!_isFullscreen) ...[
+                    const SizedBox(height: ReelvaDesign.space20),
+                    if (idle)
+                      Text(
+                        '支持本地文件与网络视频 · 播放进度在开始播放后显示',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      )
+                    else
+                      Wrap(
+                        spacing: ReelvaDesign.space16,
+                        runSpacing: ReelvaDesign.space4,
+                        alignment: WrapAlignment.spaceBetween,
+                        children: [
+                          RichText(
+                            key: const Key('player_now_playing_title'),
+                            textScaler: MediaQuery.textScalerOf(context),
+                            text: TextSpan(
+                              text: title,
+                              style: Theme.of(context).textTheme.titleSmall,
+                            ),
+                          ),
+                          Text(
+                            subtitle,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                          ),
+                        ],
+                      ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -699,7 +1107,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         : resource.uri.scheme == 'file' || resource.uri.scheme == 'content'
         ? '本地视频'
         : '网络播放';
-    final nowPlayingTitle = parsed == null || parsed.title.isEmpty
+    final title = parsed == null || parsed.title.isEmpty
         ? displayName
         : parsed.title;
 
@@ -718,6 +1126,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         initialData: session.engine.snapshot,
         builder: (context, snapshotAsync) {
           final snapshot = snapshotAsync.data ?? const PlaybackSnapshot();
+          final idle = snapshot.status == PlaybackStatus.idle;
 
           void handleReplayOrRetry() async {
             if (snapshot.status == PlaybackStatus.completed) {
@@ -729,7 +1138,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           }
 
           return Theme(
-            data: ReelvaTheme.player,
+            data: _isFullscreen ? ReelvaTheme.player : ReelvaTheme.light,
             child: Builder(
               builder: (context) => Focus(
                 focusNode: _focusNode,
@@ -737,135 +1146,47 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                 onKeyEvent: (node, event) =>
                     _handleKeyEvent(node, event, snapshot, session.engine),
                 child: Scaffold(
-                  backgroundColor: const Color(0xFF0E141C),
-                  body: SafeArea(
-                    child: Column(
-                      children: [
-                        if (!_isFullscreen)
-                          _buildHeader(
-                            context,
-                            title: displayName,
-                            subtitle: subtitle,
-                            fullscreen: false,
-                          ),
-                        Expanded(
-                          key: const Key('player_viewport'),
-                          child: LayoutBuilder(
-                            builder: (context, constraints) {
-                              final overlay =
-                                  _isFullscreen ||
-                                  constraints.maxHeight < 420 ||
-                                  constraints.maxWidth > constraints.maxHeight;
-                              final videoHeight = overlay
-                                  ? constraints.maxHeight
-                                  : constraints.maxWidth * 9 / 16;
-                              final controlsHeight = overlay
-                                  ? constraints.maxHeight * 0.58
-                                  : constraints.maxHeight - videoHeight;
-                              final inset =
-                                  ((constraints.maxWidth -
-                                              ReelvaDesign.contentMaxWidth) /
-                                          2)
-                                      .clamp(0.0, double.infinity)
-                                      .toDouble();
-                              return Stack(
-                                children: [
-                                  // 全屏切换只改变布局约束，保留同一原生视频曲面。
-                                  Positioned(
-                                    key: const Key('player_video_region'),
-                                    top: 0,
-                                    left: 0,
-                                    right: 0,
-                                    height: videoHeight,
-                                    child: ColoredBox(
-                                      color: Colors.black,
-                                      child: Stack(
-                                        fit: StackFit.expand,
-                                        children: [
-                                          Center(
-                                            child: session.videoBuilder(
-                                              context,
-                                            ),
-                                          ),
-                                          Positioned.fill(
-                                            top: _isFullscreen ? 80 : 0,
-                                            bottom: overlay
-                                                ? controlsHeight
-                                                : 0,
-                                            child: _buildStatusOverlay(
-                                              context,
-                                              snapshot,
-                                              handleReplayOrRetry,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
+                  backgroundColor: _isFullscreen
+                      ? ReelvaDesign.playerBackground
+                      : ReelvaDesign.background,
+                  body: GlassBackground(
+                    child: SafeArea(
+                      child: Column(
+                        children: [
+                          if (!_isFullscreen)
+                            DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                border: Border(
+                                  bottom: BorderSide(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .outlineVariant
+                                        .withValues(alpha: 0.4),
                                   ),
-                                  if (_isFullscreen)
-                                    Positioned(
-                                      key: const Key(
-                                        'player_fullscreen_header',
-                                      ),
-                                      top: 0,
-                                      left: 0,
-                                      right: 0,
-                                      child: DecoratedBox(
-                                        decoration: BoxDecoration(
-                                          gradient: LinearGradient(
-                                            begin: Alignment.topCenter,
-                                            end: Alignment.bottomCenter,
-                                            colors: [
-                                              const Color(0xFF0E141C)
-                                                  .withValues(alpha: 0.9),
-                                              Colors.transparent,
-                                            ],
-                                          ),
-                                        ),
-                                        child: _buildHeader(
-                                          context,
-                                          title: displayName,
-                                          subtitle: subtitle,
-                                          fullscreen: true,
-                                        ),
-                                      ),
-                                    ),
-                                  Positioned(
-                                    key: const Key('player_controls_panel'),
-                                    top: overlay ? null : videoHeight,
-                                    left:
-                                        inset +
-                                        (overlay ? ReelvaDesign.space12 : 0),
-                                    right:
-                                        inset +
-                                        (overlay ? ReelvaDesign.space12 : 0),
-                                    bottom: overlay ? ReelvaDesign.space12 : 0,
-                                    child: ConstrainedBox(
-                                      constraints: BoxConstraints(
-                                        maxHeight: controlsHeight,
-                                      ),
-                                      child: SingleChildScrollView(
-                                        child: PlayerControls(
-                                          snapshot: snapshot,
-                                          engine: session.engine,
-                                          title: !overlay && resource != null
-                                              ? nowPlayingTitle
-                                              : null,
-                                          subtitle: subtitle,
-                                          overlay: overlay,
-                                          isFullscreen: _isFullscreen,
-                                          onToggleFullscreen: () =>
-                                              _setFullscreen(!_isFullscreen),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              );
-                            },
+                                ),
+                              ),
+                              child: _buildHeader(
+                                context,
+                                title: idle ? '播放器' : displayName,
+                                subtitle: idle ? '播放本地文件或网络媒体' : subtitle,
+                                fullscreen: false,
+                              ),
+                            ),
+                          Expanded(
+                            key: const Key('player_viewport'),
+                            child: _buildViewport(
+                              context,
+                              session: session,
+                              snapshot: snapshot,
+                              displayName: displayName,
+                              title: title,
+                              subtitle: subtitle,
+                              onRetry: handleReplayOrRetry,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),

@@ -302,7 +302,11 @@ void main() {
     testWidgets(
       'Fullscreen toggle and two-stage back exit using real GoRouter',
       (tester) async {
-        final fakeEngine = FakePlayerEngine();
+        final fakeEngine = FakePlayerEngine(
+          initialSnapshot: const PlaybackSnapshot(
+            status: PlaybackStatus.paused,
+          ),
+        );
         final fakeSession = createFakeSession(engine: fakeEngine);
 
         final router = createRouter(initialLocation: '/player');
@@ -327,6 +331,9 @@ void main() {
           expect(find.byType(PlayerPage), findsOneWidget);
 
           // Enter fullscreen
+          await tester.ensureVisible(
+            find.byKey(const Key('player_fullscreen_button')),
+          );
           await tester.tap(find.byKey(const Key('player_fullscreen_button')));
           await tester.pumpAndSettle();
 
@@ -363,7 +370,9 @@ void main() {
     );
 
     testWidgets('Escape key exits fullscreen', (tester) async {
-      final fakeEngine = FakePlayerEngine();
+      final fakeEngine = FakePlayerEngine(
+        initialSnapshot: const PlaybackSnapshot(status: PlaybackStatus.paused),
+      );
       final fakeSession = createFakeSession(engine: fakeEngine);
 
       final router = createRouter(initialLocation: '/player');
@@ -377,6 +386,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await tester.ensureVisible(
+        find.byKey(const Key('player_fullscreen_button')),
+      );
       await tester.tap(find.byKey(const Key('player_fullscreen_button')));
       await tester.pumpAndSettle();
       expect(
