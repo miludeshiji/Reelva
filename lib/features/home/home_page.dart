@@ -23,7 +23,7 @@ import 'application/home_providers.dart';
 /// 4. 最近添加展示创建时间倒序的作品（去重多版本，一作品一卡片），点击跳转作品详情；
 /// 5. 媒体库全空时保留前往媒体源的 CTA 引导；
 /// 6. 单项展架失败时内联展示安全可重试状态，不遮挡已有有效展架；
-/// 7. 有内容时在页头打开播放器，无内容时保留右下角 FAB。
+/// 7. 有内容时在页头提供播放器入口。
 class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
 
@@ -67,7 +67,7 @@ class _HomePageState extends ConsumerState<HomePage> {
           .resolvePlayback(entry.fileId!);
 
       if (!mounted) return;
-      context.go('/player', extra: resource);
+      await context.push<void>('/player', extra: resource);
     } catch (e, st) {
       AppLogger.instance.error('解析播放地址失败', error: e, stackTrace: st);
       if (!mounted) return;
@@ -108,10 +108,6 @@ class _HomePageState extends ConsumerState<HomePage> {
   Widget build(BuildContext context) {
     final continueWatchingAsync = ref.watch(continueWatchingProvider);
     final recentWorksAsync = ref.watch(recentWorksProvider);
-    final hasContent =
-        (continueWatchingAsync.value?.isNotEmpty ?? false) ||
-        (recentWorksAsync.value?.isNotEmpty ?? false);
-
     return Scaffold(
       backgroundColor: ReelvaDesign.background,
       body: GlassBackground(
@@ -120,14 +116,6 @@ class _HomePageState extends ConsumerState<HomePage> {
           child: _buildBody(context, continueWatchingAsync, recentWorksAsync),
         ),
       ),
-      floatingActionButton: hasContent
-          ? null
-          : FloatingActionButton.extended(
-              key: const Key('home_open_player_fab'),
-              onPressed: () => context.go('/player'),
-              icon: const Icon(Icons.play_arrow),
-              label: const Text('打开播放器'),
-            ),
     );
   }
 
@@ -249,16 +237,12 @@ class _HomePageState extends ConsumerState<HomePage> {
               SliverPadding(
                 padding: EdgeInsets.fromLTRB(
                   inset,
-                  compact ? ReelvaDesign.space8 : pagePadding,
+                  ReelvaDesign.space20,
                   inset,
-                  compact ? ReelvaDesign.space8 : ReelvaDesign.space24,
+                  ReelvaDesign.space20,
                 ),
                 sliver: SliverToBoxAdapter(
-                  child: _buildHeader(
-                    context,
-                    isDesktop: isDesktop,
-                    compact: compact,
-                  ),
+                  child: _buildHeader(context, isDesktop: isDesktop),
                 ),
               ),
               SliverPadding(
@@ -434,84 +418,78 @@ class _HomePageState extends ConsumerState<HomePage> {
     );
   }
 
-  Widget _buildHeader(
-    BuildContext context, {
-    required bool isDesktop,
-    required bool compact,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox(
-          width: double.infinity,
-          child: Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 16,
+  Widget _buildHeader(BuildContext context, {required bool isDesktop}) {
+    return SizedBox(
+      width: double.infinity,
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 16,
+        runSpacing: 8,
+        children: [
+          ConstrainedBox(
+            constraints: const BoxConstraints(
+              minHeight: ReelvaDesign.pageHeaderMinHeight,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!isDesktop) ...[
+                  const ReelvaLogo(size: 32, excludeFromSemantics: true),
+                  const SizedBox(width: ReelvaDesign.space12),
+                ],
+                Flexible(
+                  child: Semantics(
+                    header: true,
+                    child: Text(
+                      isDesktop ? '首页' : 'Reelva',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.headlineLarge
+                          ?.copyWith(
+                            fontSize: 30,
+                            fontWeight: FontWeight.w700,
+                            color: ReelvaDesign.ink,
+                          ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Wrap(
+            spacing: 8,
             runSpacing: 8,
             children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (!isDesktop) ...[
-                    const ReelvaLogo(size: 32, excludeFromSemantics: true),
-                    const SizedBox(width: ReelvaDesign.space12),
-                  ],
-                  Flexible(
-                    child: Semantics(
-                      header: true,
-                      child: Text(
-                        isDesktop ? '首页' : 'Reelva',
-                        style: TextStyle(
-                          fontSize: isDesktop ? 30 : 26,
-                          height: 1.2,
-                          fontWeight: FontWeight.w700,
-                          color: ReelvaDesign.ink,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+              GlassIconButton(
+                key: const Key('home_open_player_fab'),
+                tooltip: '打开播放器',
+                icon: Icons.play_arrow_rounded,
+                onPressed: () {
+                  final router = GoRouter.of(context);
+                  if (router.routeInformationProvider.value.uri.path !=
+                      '/player') {
+                    router.push<void>('/player');
+                  }
+                },
               ),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  GlassIconButton(
-                    key: const Key('home_open_player_fab'),
-                    tooltip: '打开播放器',
-                    icon: Icons.play_arrow_rounded,
-                    onPressed: () => context.go('/player'),
-                  ),
-                  if (isDesktop)
-                    GlassButton(
-                      icon: Icons.search_rounded,
-                      tooltip: '前往影视库搜索作品',
-                      onPressed: () => context.go('/library'),
-                      child: const Text('搜索影视作品'),
-                    )
-                  else
-                    GlassIconButton(
-                      icon: Icons.search_rounded,
-                      onPressed: () => context.go('/library'),
-                      tooltip: '前往影视库搜索作品',
-                    ),
-                ],
-              ),
+              if (isDesktop)
+                GlassButton(
+                  icon: Icons.search_rounded,
+                  tooltip: '前往影视库搜索作品',
+                  onPressed: () => context.go('/library'),
+                  child: const Text('搜索影视作品'),
+                )
+              else
+                GlassIconButton(
+                  icon: Icons.search_rounded,
+                  onPressed: () => context.go('/library'),
+                  tooltip: '前往影视库搜索作品',
+                ),
             ],
           ),
-        ),
-        SizedBox(height: compact ? ReelvaDesign.space4 : ReelvaDesign.space8),
-        const Text(
-          '你的私人影视空间',
-          style: TextStyle(
-            fontSize: 13,
-            height: 1.4,
-            color: ReelvaDesign.muted,
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

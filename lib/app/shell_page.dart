@@ -29,7 +29,13 @@ class AppShell extends StatelessWidget {
             GlassSidebar(
               selectedIndex: navigationShell.currentIndex,
               onDestinationSelected: _onDestinationSelected,
-              onOpenPlayer: () => context.go('/player'),
+              onOpenPlayer: () {
+                final router = GoRouter.of(context);
+                if (router.routeInformationProvider.value.uri.path !=
+                    '/player') {
+                  router.push<void>('/player');
+                }
+              },
             ),
             Expanded(child: navigationShell),
           ],

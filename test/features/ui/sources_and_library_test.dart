@@ -254,9 +254,9 @@ void main() {
 
           // 1. 在 SourcesPage 触发添加媒体源弹窗
           expect(find.byType(SourcesPage), findsOneWidget);
-          final addFabFinder = find.byKey(const Key('sources_add_fab'));
-          expect(addFabFinder, findsOneWidget);
-          await tester.tap(addFabFinder);
+          final addButton = find.byKey(const Key('sources_add_appbar_button'));
+          expect(addButton, findsOneWidget);
+          await tester.tap(addButton);
           await tester.pumpAndSettle();
 
           // 2. 确认添加并触发 SourceController.addDirectory 真实流程
@@ -300,6 +300,7 @@ void main() {
           // 验证详情页呈现两个版本条目
           expect(find.byKey(const Key('work_version_item_1')), findsOneWidget);
           expect(find.byKey(const Key('work_version_item_2')), findsOneWidget);
+          final detailsState = tester.state(find.byType(WorkDetailsPage));
 
           // 6. 选择第二个 2160p (4K) 版本进行播放
           final play2160pFinder = find.byKey(
@@ -318,6 +319,19 @@ void main() {
           expect(fakeAdapter.lastResolvedEntryId, file2160p);
           expect(fakePlayerEngine.lastOpenedResource?.displayName, file2160p);
           expect(find.text(file2160p), findsOneWidget);
+
+          // 8. 播放器返回时保留作品详情及滚动位置
+          await tester.tap(find.byKey(const Key('player_back_button')));
+          await tester.pumpAndSettle();
+          expect(
+            testRouter.routeInformationProvider.value.uri.path,
+            '/library/work/1',
+          );
+          expect(
+            tester.state(find.byType(WorkDetailsPage)),
+            same(detailsState),
+          );
+          expect(play2160pFinder.hitTestable(), findsOneWidget);
         } finally {
           await tester.pumpWidget(const SizedBox.shrink());
           await tester.pump(Duration.zero);

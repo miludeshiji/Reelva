@@ -87,11 +87,13 @@ void main() {
   testWidgets('添加弹窗默认展示本地配置并保留原有交互', (tester) async {
     try {
       await tester.pumpWidget(buildTestApp());
+      expect(find.byType(FloatingActionButton), findsNothing);
       await tester.pumpAndSettle();
+      expect(find.byType(FloatingActionButton), findsNothing);
 
-      final fab = find.byKey(const Key('sources_add_fab'));
-      expect(fab, findsOneWidget);
-      await tester.tap(fab);
+      final addButton = find.byKey(const Key('sources_add_appbar_button'));
+      expect(addButton, findsOneWidget);
+      await tester.tap(addButton);
       await tester.pumpAndSettle();
 
       // 默认类型下拉值为本地目录
@@ -128,7 +130,7 @@ void main() {
       await tester.pumpWidget(buildTestApp());
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('sources_add_fab')));
+      await tester.tap(find.byKey(const Key('sources_add_appbar_button')));
       await tester.pumpAndSettle();
 
       // 切换至 WebDAV

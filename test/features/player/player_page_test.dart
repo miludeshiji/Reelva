@@ -78,6 +78,10 @@ void main() {
         final fakeSession = createFakeSession(engine: fakeEngine);
 
         final router = createRouter(initialLocation: '/');
+        tester.view.physicalSize = const Size(1200, 800);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
 
         try {
           await tester.pumpWidget(
@@ -104,12 +108,12 @@ void main() {
           expect(find.byType(HomePage), findsOneWidget);
           expect(find.widgetWithText(FilledButton, '前往媒体源'), findsOneWidget);
 
-          // Rapid repeated taps on FAB
-          final fab = find.byKey(const Key('home_open_player_fab'));
-          expect(fab, findsOneWidget);
-          await tester.tap(fab);
-          await tester.tap(fab);
-          await tester.tap(fab);
+          // Rapid repeated taps on the sidebar player entry
+          final openPlayer = find.byKey(const Key('sidebar_open_player'));
+          expect(openPlayer, findsOneWidget);
+          await tester.tap(openPlayer);
+          await tester.tap(openPlayer);
+          await tester.tap(openPlayer);
           await tester.pumpAndSettle();
 
           // Ensure exactly one PlayerPage instance is rendered (no stacked duplicates)

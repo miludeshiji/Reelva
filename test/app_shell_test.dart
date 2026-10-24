@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +11,7 @@ import 'package:reelva/core/database/app_database.dart';
 import 'package:reelva/features/home/home_page.dart';
 import 'package:reelva/features/library/library_page.dart';
 import 'package:reelva/features/player/application/player_providers.dart';
+import 'package:reelva/features/player/presentation/player_page.dart';
 import 'package:reelva/features/settings/settings_page.dart';
 import 'package:reelva/features/sources/application/source_providers.dart';
 import 'package:reelva/features/sources/sources_page.dart';
@@ -177,6 +179,67 @@ void main() {
         await db.close();
       }
     });
+
+    for (final (path, pageType) in [
+      ('/', HomePage),
+      ('/library', LibraryPage),
+      ('/sources', SourcesPage),
+      ('/settings', SettingsPage),
+    ]) {
+      testWidgets('Player exit preserves the page and state at $path', (
+        tester,
+      ) async {
+        final db = AppDatabase(
+          executor: DatabaseConnection(
+            NativeDatabase.memory(),
+            closeStreamsSynchronously: true,
+          ),
+        );
+        final router = createRouter(initialLocation: path);
+        tester.view.physicalSize = const Size(1200, 800);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        try {
+          await tester.pumpWidget(createTestApp(db: db, router: router));
+          await tester.pumpAndSettle();
+
+          final pageElement = tester.element(find.byType(pageType));
+          if (pageType == LibraryPage) {
+            await tester.enterText(
+              find.byKey(const Key('library_search_field')),
+              '保留搜索条件',
+            );
+            await tester.pumpAndSettle();
+          }
+
+          await tester.tap(find.byKey(const Key('sidebar_open_player')));
+          await tester.pumpAndSettle();
+          expect(find.byType(PlayerPage), findsOneWidget);
+
+          await tester.tap(find.byKey(const Key('player_back_button')));
+          await tester.pumpAndSettle();
+
+          expect(router.routeInformationProvider.value.uri.path, path);
+          expect(tester.element(find.byType(pageType)), same(pageElement));
+          if (pageType == LibraryPage) {
+            final searchField = tester.widget<TextField>(
+              find.descendant(
+                of: find.byKey(const Key('library_search_field')),
+                matching: find.byType(TextField),
+              ),
+            );
+            expect(searchField.controller!.text, '保留搜索条件');
+          }
+        } finally {
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump();
+          router.dispose();
+          await db.close();
+        }
+      });
+    }
 
     testWidgets('Direct routes navigate to specified destinations', (
       tester,

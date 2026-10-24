@@ -518,19 +518,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Theme(
-                    data: theme.copyWith(
-                      textTheme: theme.textTheme.copyWith(
-                        bodyMedium: theme.textTheme.bodyMedium?.copyWith(
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                    child: const GlassPageHeader(
-                      title: '设置',
-                      subtitle: '让 Reelva 按你的方式运行',
-                    ),
-                  ),
+                  const GlassPageHeader(title: '设置'),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(
                       ReelvaDesign.space24,
@@ -538,28 +526,17 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       ReelvaDesign.space24,
                       ReelvaDesign.space32,
                     ),
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final isDesktop =
-                            MediaQuery.sizeOf(context).width >=
-                            ReelvaDesign.desktopBreakpoint;
-                        final sectionWidth = isDesktop
-                            ? (constraints.maxWidth - ReelvaDesign.space24) / 2
-                            : constraints.maxWidth;
-                        return Wrap(
-                          spacing: ReelvaDesign.space24,
-                          runSpacing: ReelvaDesign.space32,
-                          children: [
-                            SizedBox(width: sectionWidth, child: mediaSection),
-                            SizedBox(
-                              width: sectionWidth,
-                              child: storageSection,
-                            ),
-                            SizedBox(width: sectionWidth, child: otherSection),
-                            SizedBox(width: sectionWidth, child: privacyCard),
-                          ],
-                        );
-                      },
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        mediaSection,
+                        const SizedBox(height: ReelvaDesign.space32),
+                        storageSection,
+                        const SizedBox(height: ReelvaDesign.space32),
+                        otherSection,
+                        const SizedBox(height: ReelvaDesign.space32),
+                        privacyCard,
+                      ],
                     ),
                   ),
                 ],

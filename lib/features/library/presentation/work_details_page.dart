@@ -60,7 +60,7 @@ class _WorkDetailsPageState extends ConsumerState<WorkDetailsPage> {
           .resolvePlayback(version.fileId);
 
       if (!mounted) return;
-      context.go('/player', extra: resource);
+      await context.push<void>('/player', extra: resource);
     } catch (e, st) {
       AppLogger.instance.error('解析播放地址失败', error: e, stackTrace: st);
       if (!mounted) return;

@@ -112,7 +112,7 @@ Future<void> _cleanUpTestWidgets(
 void main() {
   group('HomePage Widget & Behavioral Tests (M4)', () {
     testWidgets(
-      'Empty library displays EmptyStateView with source CTA and FAB',
+      'Empty library displays source CTA without a floating player button',
       (tester) async {
         final db = AppDatabase(executor: NativeDatabase.memory());
         final router = createRouter(initialLocation: '/');
@@ -139,9 +139,7 @@ void main() {
           expect(find.text('暂无影视内容'), findsOneWidget);
           expect(find.text('前往媒体源'), findsOneWidget);
 
-          // FAB is present
-          final fabFinder = find.byKey(const Key('home_open_player_fab'));
-          expect(fabFinder, findsOneWidget);
+          expect(find.byType(FloatingActionButton), findsNothing);
 
           // Tap CTA navigates to SourcesPage
           await tester.tap(find.widgetWithText(FilledButton, '前往媒体源'));
@@ -153,9 +151,12 @@ void main() {
       },
     );
 
-    testWidgets('FAB navigates directly to /player', (tester) async {
+    testWidgets('Header opens player and returns without reloading home', (
+      tester,
+    ) async {
       final db = AppDatabase(executor: NativeDatabase.memory());
       final router = createRouter(initialLocation: '/');
+      var recentWorksLoads = 0;
 
       try {
         await tester.pumpWidget(
@@ -166,21 +167,38 @@ void main() {
               continueWatchingProvider.overrideWith(
                 (ref) => Stream.value(const <ContinueWatchingEntry>[]),
               ),
-              recentWorksProvider.overrideWith(
-                (ref) => Stream.value(const <LibraryWork>[]),
-              ),
+              recentWorksProvider.overrideWith((ref) {
+                recentWorksLoads++;
+                return Stream.value(const [
+                  LibraryWork(
+                    id: 1,
+                    title: '测试电影',
+                    year: 2026,
+                    versionCount: 1,
+                    available: true,
+                  ),
+                ]);
+              }),
             ],
           ),
         );
         await tester.pumpAndSettle();
 
-        final fabFinder = find.byKey(const Key('home_open_player_fab'));
-        expect(fabFinder, findsOneWidget);
+        final homeState = tester.state(find.byType(HomePage));
+        final openPlayer = find.byKey(const Key('home_open_player_fab'));
+        expect(openPlayer, findsOneWidget);
 
-        await tester.tap(fabFinder);
+        await tester.tap(openPlayer);
         await tester.pumpAndSettle();
 
         expect(find.byType(PlayerPage), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('player_back_button')));
+        await tester.pumpAndSettle();
+
+        expect(router.routeInformationProvider.value.uri.path, '/');
+        expect(tester.state(find.byType(HomePage)), same(homeState));
+        expect(recentWorksLoads, 1);
       } finally {
         await _cleanUpTestWidgets(tester, router: router, db: db);
       }
@@ -566,6 +584,7 @@ void main() {
 
         // Loading state
         expect(find.byKey(const Key('home_loading_indicator')), findsOneWidget);
+        expect(find.byType(FloatingActionButton), findsNothing);
 
         // Error state
         cwController.addError(Exception('Network error'));

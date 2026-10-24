@@ -142,10 +142,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 const Expanded(
-                                  child: GlassPageHeader(
-                                    title: '影视库',
-                                    subtitle: '在这里，所有故事都井然有序。',
-                                  ),
+                                  child: GlassPageHeader(title: '影视库'),
                                 ),
                                 Padding(
                                   padding: const EdgeInsets.only(

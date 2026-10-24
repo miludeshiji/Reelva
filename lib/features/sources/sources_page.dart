@@ -25,26 +25,10 @@ class SourcesPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final sourcesAsync = ref.watch(mediaSourcesProvider);
-    final hasSources = sourcesAsync.value?.isNotEmpty == true;
     final scanProgressMap = ref.watch(sourceControllerProvider);
-    final theme = Theme.of(context);
 
     return Scaffold(
       backgroundColor: ReelvaDesign.background,
-      floatingActionButton: hasSources
-          ? null
-          : FloatingActionButton.extended(
-              key: const Key('sources_add_fab'),
-              onPressed: () => _showAddSourceDialog(context, ref),
-              backgroundColor: Colors.white.withValues(alpha: 0.94),
-              foregroundColor: ReelvaDesign.accent,
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(ReelvaDesign.radius),
-              ),
-              icon: const Icon(Icons.add),
-              label: const Text('添加媒体源'),
-            ),
       body: GlassBackground(
         child: SafeArea(
           bottom: false,
@@ -53,7 +37,7 @@ class SourcesPage extends ConsumerWidget {
               final isDesktop =
                   constraints.maxWidth >= ReelvaDesign.desktopBreakpoint;
               final addCard = _AddSourceCard(
-                key: hasSources ? const Key('sources_add_fab') : null,
+                key: const Key('sources_add_card'),
                 onTap: () => _showAddSourceDialog(context, ref),
               );
 
@@ -67,28 +51,15 @@ class SourcesPage extends ConsumerWidget {
                     key: const Key('sources_list_view'),
                     padding: EdgeInsets.fromLTRB(
                       0,
-                      ReelvaDesign.space4,
                       0,
-                      (hasSources ? ReelvaDesign.space32 : 180.0) +
+                      0,
+                      ReelvaDesign.space32 +
                           MediaQuery.viewPaddingOf(context).bottom,
                     ),
                     children: [
                       Row(
                         children: [
-                          Expanded(
-                            child: Theme(
-                              data: theme.copyWith(
-                                textTheme: theme.textTheme.copyWith(
-                                  bodyMedium: theme.textTheme.bodyMedium
-                                      ?.copyWith(fontSize: 12),
-                                ),
-                              ),
-                              child: const GlassPageHeader(
-                                title: '媒体源',
-                                subtitle: '将你的影片连接到 Reelva',
-                              ),
-                            ),
-                          ),
+                          const Expanded(child: GlassPageHeader(title: '媒体源')),
                           Padding(
                             padding: const EdgeInsets.only(
                               right: ReelvaDesign.space24,

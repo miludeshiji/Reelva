@@ -611,7 +611,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   Widget _buildHeader(
     BuildContext context, {
     required String title,
-    required String subtitle,
+    required String? subtitle,
     required bool fullscreen,
   }) {
     final theme = Theme.of(context);
@@ -660,15 +660,17 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.titleMedium,
                     ),
-                    const SizedBox(height: ReelvaDesign.space4),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                    if (subtitle != null) ...[
+                      const SizedBox(height: ReelvaDesign.space4),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
@@ -761,49 +763,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildPlaybackHeading(BuildContext context, PlaybackStatus status) {
-    final label = switch (status) {
-      PlaybackStatus.idle => '就绪',
-      PlaybackStatus.resolving || PlaybackStatus.opening => '正在加载',
-      PlaybackStatus.playing => '正在播放',
-      PlaybackStatus.paused => '已暂停',
-      PlaybackStatus.buffering => '正在缓冲',
-      PlaybackStatus.completed => '播放完成',
-      PlaybackStatus.error => '播放出错',
-    };
-    final theme = Theme.of(context);
-    return Row(
-      children: [
-        Expanded(
-          child: GlassSectionTitle(
-            title: status == PlaybackStatus.idle ? '准备好观看了吗？' : label,
-            subtitle: status == PlaybackStatus.idle
-                ? '选择一个视频，开始你的观影时光。'
-                : '你的私人影院，随时继续。',
-          ),
-        ),
-        const SizedBox(width: ReelvaDesign.space16),
-        GlassCard(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.circle,
-                size: 6,
-                color: status == PlaybackStatus.error
-                    ? theme.colorScheme.error
-                    : theme.colorScheme.primary,
-              ),
-              const SizedBox(width: ReelvaDesign.space8),
-              Text(label, style: theme.textTheme.labelSmall),
-            ],
-          ),
-        ),
-      ],
     );
   }
 
@@ -1011,10 +970,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (!_isFullscreen) ...[
-                    _buildPlaybackHeading(context, snapshot.status),
-                    const SizedBox(height: ReelvaDesign.space20),
-                  ],
                   _buildVideoRegion(
                     context,
                     session: session,
@@ -1033,41 +988,32 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       child: controls,
                     ),
                   ],
-                  if (!_isFullscreen) ...[
+                  if (!_isFullscreen && !idle) ...[
                     const SizedBox(height: ReelvaDesign.space20),
-                    if (idle)
-                      Text(
-                        '支持本地文件与网络视频 · 播放进度在开始播放后显示',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    Wrap(
+                      spacing: ReelvaDesign.space16,
+                      runSpacing: ReelvaDesign.space4,
+                      alignment: WrapAlignment.spaceBetween,
+                      children: [
+                        RichText(
+                          key: const Key('player_now_playing_title'),
+                          textScaler: MediaQuery.textScalerOf(context),
+                          text: TextSpan(
+                            text: title,
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
                         ),
-                      )
-                    else
-                      Wrap(
-                        spacing: ReelvaDesign.space16,
-                        runSpacing: ReelvaDesign.space4,
-                        alignment: WrapAlignment.spaceBetween,
-                        children: [
-                          RichText(
-                            key: const Key('player_now_playing_title'),
-                            textScaler: MediaQuery.textScalerOf(context),
-                            text: TextSpan(
-                              text: title,
-                              style: Theme.of(context).textTheme.titleSmall,
-                            ),
-                          ),
-                          Text(
-                            subtitle,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
-                                ),
-                          ),
-                        ],
-                      ),
+                        Text(
+                          subtitle,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                        ),
+                      ],
+                    ),
                   ],
                 ],
               ),
@@ -1169,7 +1115,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                               child: _buildHeader(
                                 context,
                                 title: idle ? '播放器' : displayName,
-                                subtitle: idle ? '播放本地文件或网络媒体' : subtitle,
+                                subtitle: idle ? null : subtitle,
                                 fullscreen: false,
                               ),
                             ),
