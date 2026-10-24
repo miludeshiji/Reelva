@@ -129,7 +129,7 @@ void main() {
         router.dispose();
       }
     },
-    variant: TargetPlatformVariant({
+    variant: const TargetPlatformVariant({
       TargetPlatform.android,
       TargetPlatform.windows,
     }),
@@ -158,9 +158,11 @@ void main() {
           }
           await tester.pump();
 
-          final route = ModalRoute.of(
-            tester.element(find.byType(pageType)),
-          )! as PageRoute<void>;
+          final route =
+              ModalRoute.of(
+                    tester.element(find.byType(pageType, skipOffstage: false)),
+                  )!
+                  as PageRoute<void>;
           expect(route.settings, isA<MaterialPage<void>>());
           expect(route.animation!.status, AnimationStatus.forward);
           await tester.pump(const Duration(milliseconds: 100));
@@ -173,9 +175,9 @@ void main() {
             await tester.pumpAndSettle();
             await tester.tap(licenseButton);
             await tester.pumpAndSettle();
-            final licenseRoute = ModalRoute.of(
-              tester.element(find.byType(LicensePage)),
-            )! as PageRoute<void>;
+            final licenseRoute =
+                ModalRoute.of(tester.element(find.byType(LicensePage)))!
+                    as PageRoute<void>;
             expect(route.transitionDuration, licenseRoute.transitionDuration);
             expect(
               route.reverseTransitionDuration,
@@ -204,7 +206,7 @@ void main() {
         router.dispose();
       }
     },
-    variant: TargetPlatformVariant({
+    variant: const TargetPlatformVariant({
       TargetPlatform.android,
       TargetPlatform.windows,
     }),
