@@ -276,13 +276,6 @@ class _SyncSettingsCardState extends ConsumerState<SyncSettingsCard> {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              '多台设备配置相同 WebDAV 目录，可同步播放进度与影视条目手动修正。同步仅传输进度与元数据变更，绝不上传媒体视频文件。',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
 
             // 配置加载异常时的可恢复操作提示
             if (configAsync.hasError) ...[
@@ -385,8 +378,6 @@ class _SyncSettingsCardState extends ConsumerState<SyncSettingsCard> {
               decoration: InputDecoration(
                 labelText: '密码（可选）',
                 hintText: isSameIdentity ? '留空保留现有密码' : 'WebDAV 密码（可选）',
-                helperText: '仅在端点与用户名未改变时留空保留旧密码；修改端点或用户名时留空使用空密码。',
-                helperMaxLines: 2,
                 prefixIcon: const Icon(Icons.lock_outline),
                 border: const OutlineInputBorder(),
                 isDense: true,

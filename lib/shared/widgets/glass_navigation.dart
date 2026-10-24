@@ -119,16 +119,6 @@ class GlassSidebar extends StatelessWidget {
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: ReelvaDesign.space12),
-                              const Text(
-                                'YOUR MEDIA SPACE',
-                                style: TextStyle(
-                                  color: ReelvaDesign.muted,
-                                  fontSize: 10,
-                                  letterSpacing: 1,
-                                  height: 1.4,
-                                ),
-                              ),
                               const SizedBox(height: ReelvaDesign.space32),
                               for (
                                 var index = 0;

@@ -273,7 +273,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            '支持 TMDB API Key (v3 32位 Hex) 或 Read Access Token (v4 Bearer)。凭据通过系统安全存储加密保管，绝不向输入框回显。',
+            '支持 TMDB API Key (v3 32位 Hex) 或 Read Access Token (v4 Bearer)。',
             style: theme.textTheme.bodySmall?.copyWith(
               color: colorScheme.onSurfaceVariant,
             ),
@@ -465,45 +465,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         ),
       ],
     );
-    final privacyCard = GlassCard(
-      padding: const EdgeInsets.all(ReelvaDesign.space16),
-      borderRadius: BorderRadius.circular(22),
-      color: Colors.white.withValues(alpha: 0.55),
-      blur: true,
-      child: Row(
-        children: [
-          const Icon(
-            Icons.verified_user_outlined,
-            color: ReelvaDesign.accent,
-            size: 22,
-          ),
-          const SizedBox(width: ReelvaDesign.space12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '你的影视，始终属于你',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: ReelvaDesign.ink,
-                  ),
-                ),
-                const SizedBox(height: ReelvaDesign.space4),
-                Text(
-                  '视频文件保留在原存储中；仅手动通过 WebDAV 同步观看进度与元数据修正。',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontSize: 11,
-                    color: ReelvaDesign.muted,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
 
     return Scaffold(
       backgroundColor: ReelvaDesign.background,
@@ -534,8 +495,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         storageSection,
                         const SizedBox(height: ReelvaDesign.space32),
                         otherSection,
-                        const SizedBox(height: ReelvaDesign.space32),
-                        privacyCard,
                       ],
                     ),
                   ),

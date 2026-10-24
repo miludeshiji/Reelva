@@ -16,28 +16,42 @@ GoRouter createRouter({String initialLocation = '/'}) {
   return GoRouter(
     initialLocation: initialLocation,
     routes: [
-      StatefulShellRoute.indexedStack(
-        builder: (context, state, navigationShell) {
-          return AppShell(navigationShell: navigationShell);
-        },
+      StatefulShellRoute(
+        pageBuilder: (context, state, navigationShell) => _buildMaterialPage(
+          state,
+          AppShell(navigationShell: navigationShell),
+        ),
+        navigatorContainerBuilder: (context, navigationShell, children) =>
+            AnimatedBranchContainer(
+              currentIndex: navigationShell.currentIndex,
+              children: children,
+            ),
         branches: [
           StatefulShellBranch(
             routes: [
-              GoRoute(path: '/', builder: (context, state) => const HomePage()),
+              GoRoute(
+                path: '/',
+                pageBuilder: (context, state) =>
+                    _buildMaterialPage(state, const HomePage()),
+              ),
             ],
           ),
           StatefulShellBranch(
             routes: [
               GoRoute(
                 path: '/library',
-                builder: (context, state) => const LibraryPage(),
+                pageBuilder: (context, state) =>
+                    _buildMaterialPage(state, const LibraryPage()),
                 routes: [
                   GoRoute(
                     path: 'work/:id',
-                    builder: (context, state) {
+                    pageBuilder: (context, state) {
                       final id =
                           int.tryParse(state.pathParameters['id'] ?? '') ?? 0;
-                      return WorkDetailsPage(workId: id);
+                      return _buildMaterialPage(
+                        state,
+                        WorkDetailsPage(workId: id),
+                      );
                     },
                   ),
                 ],
@@ -48,7 +62,8 @@ GoRouter createRouter({String initialLocation = '/'}) {
             routes: [
               GoRoute(
                 path: '/sources',
-                builder: (context, state) => const SourcesPage(),
+                pageBuilder: (context, state) =>
+                    _buildMaterialPage(state, const SourcesPage()),
               ),
             ],
           ),
@@ -56,11 +71,13 @@ GoRouter createRouter({String initialLocation = '/'}) {
             routes: [
               GoRoute(
                 path: '/settings',
-                builder: (context, state) => const SettingsPage(),
+                pageBuilder: (context, state) =>
+                    _buildMaterialPage(state, const SettingsPage()),
                 routes: [
                   GoRoute(
                     path: 'about',
-                    builder: (context, state) => const AboutPage(),
+                    pageBuilder: (context, state) =>
+                        _buildMaterialPage(state, const AboutPage()),
                   ),
                 ],
               ),
@@ -70,23 +87,40 @@ GoRouter createRouter({String initialLocation = '/'}) {
       ),
       GoRoute(
         path: '/player',
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final extra = state.extra;
           final initialResource = extra is PlaybackResource ? extra : null;
-          return PlayerPage(initialResource: initialResource);
+          return _buildMaterialPage(
+            state,
+            PlayerPage(initialResource: initialResource),
+          );
         },
       ),
     ],
-    errorBuilder: (context, state) => Scaffold(
-      appBar: AppBar(title: const Text('Reelva')),
-      body: EmptyStateView(
-        icon: Icons.error_outline,
-        title: '页面未找到',
-        message: '请求的页面不存在或已被移除。',
-        actionLabel: '返回首页',
-        onAction: () => context.go('/'),
+    errorPageBuilder: (context, state) => _buildMaterialPage(
+      state,
+      Scaffold(
+        appBar: AppBar(title: const Text('Reelva')),
+        body: EmptyStateView(
+          icon: Icons.error_outline,
+          title: '页面未找到',
+          message: '请求的页面不存在或已被移除。',
+          actionLabel: '返回首页',
+          onAction: () => context.go('/'),
+        ),
       ),
     ),
+  );
+}
+
+// 显式使用 Flutter Material 页面，避免自动识别失败时回退为无动画页面。
+MaterialPage<void> _buildMaterialPage(GoRouterState state, Widget child) {
+  return MaterialPage<void>(
+    key: state.pageKey,
+    name: state.name ?? state.path,
+    arguments: {...state.pathParameters, ...state.uri.queryParameters},
+    restorationId: state.pageKey.value,
+    child: child,
   );
 }
 
