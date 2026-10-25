@@ -55,8 +55,7 @@ class _NativePlayer extends Fake implements NativePlayer {
     bool open = false,
     bool notify = true,
     bool synchronized = true,
-  }) =>
-      delegate.stop();
+  }) => delegate.stop();
 
   @override
   Future<void> dispose({bool synchronized = true}) => delegate.dispose();
