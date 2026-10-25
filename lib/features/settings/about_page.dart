@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../shared/widgets/reelva_logo.dart';
+import 'reelva_license_page.dart';
 
 /// 关于页面
 ///
@@ -187,19 +188,22 @@ class AboutPage extends StatelessWidget {
                 // 4. 查看系统聚合许可证入口
                 OutlinedButton.icon(
                   onPressed: () {
-                    showLicensePage(
-                      context: context,
-                      applicationName: 'Reelva',
-                      applicationVersion: '0.1.0+1',
-                      applicationIcon: const Padding(
-                        padding: EdgeInsets.all(8.0),
-                        child: ReelvaLogo(size: 48),
+                    Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (context) => const ReelvaLicensePage(
+                          applicationName: 'Reelva',
+                          applicationVersion: '0.1.0+1',
+                          applicationIcon: Padding(
+                            padding: EdgeInsets.all(8),
+                            child: ReelvaLogo(size: 48),
+                          ),
+                          applicationLegalese:
+                              '© 2026 Reelva Contributors.\n'
+                              '$tmdbRequiredNotice\n'
+                              'Native playback engines incorporate FFmpeg and libmpv under LGPL/GPL licenses.\n'
+                              'SMB functionality incorporates dart_smb2 (BSD-3-Clause) and libsmb2 (LGPL-2.1+, https://github.com/sahlberg/libsmb2).',
+                        ),
                       ),
-                      applicationLegalese:
-                          '© 2026 Reelva Contributors.\n'
-                          '$tmdbRequiredNotice\n'
-                          'Native playback engines incorporate FFmpeg and libmpv under LGPL/GPL licenses.\n'
-                          'SMB functionality incorporates dart_smb2 (BSD-3-Clause) and libsmb2 (LGPL-2.1+, https://github.com/sahlberg/libsmb2).',
                     );
                   },
                   icon: const Icon(Icons.description_outlined, size: 18),

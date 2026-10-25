@@ -2,7 +2,6 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:reelva/shared/widgets/glass_widgets.dart';
-import 'package:reelva/shared/widgets/reelva_logo.dart';
 
 const _destinations = [
   (id: 'home', label: '首页', icon: Icons.home_outlined),
@@ -62,97 +61,93 @@ class GlassBottomNavigationBar extends StatelessWidget {
   }
 }
 
-class GlassSidebar extends StatelessWidget {
+class GlassSidebar extends StatefulWidget {
   const GlassSidebar({
     super.key,
     required this.selectedIndex,
     required this.onDestinationSelected,
-    required this.onOpenPlayer,
   });
 
   final int selectedIndex;
   final ValueChanged<int> onDestinationSelected;
-  final VoidCallback onOpenPlayer;
+
+  @override
+  State<GlassSidebar> createState() => _GlassSidebarState();
+}
+
+class _GlassSidebarState extends State<GlassSidebar> {
+  bool _isCollapsed = false;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       key: const ValueKey('glass_sidebar'),
-      width: 248,
+      width: _isCollapsed ? 128 : 248,
       child: Padding(
         padding: const EdgeInsets.all(ReelvaDesign.space16),
         child: _GlassSurface(
           borderRadius: BorderRadius.circular(ReelvaDesign.radiusLarge),
           child: SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                return SingleChildScrollView(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight,
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(ReelvaDesign.space16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              const Row(
-                                children: [
-                                  ReelvaLogo(
-                                    size: 40,
-                                    excludeFromSemantics: true,
-                                  ),
-                                  SizedBox(width: ReelvaDesign.space12),
-                                  Expanded(
-                                    child: Text(
-                                      'Reelva',
-                                      style: TextStyle(
-                                        color: ReelvaDesign.ink,
-                                        fontSize: 22,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: ReelvaDesign.space32),
-                              for (
-                                var index = 0;
-                                index < _destinations.length;
-                                index++
-                              ) ...[
-                                if (index > 0)
-                                  const SizedBox(height: ReelvaDesign.space8),
-                                _NavigationButton(
-                                  index: index,
-                                  selected: index == selectedIndex,
-                                  isSidebar: true,
-                                  onTap: () => onDestinationSelected(index),
-                                ),
-                              ],
-                            ],
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.only(
-                              top: ReelvaDesign.space32,
-                            ),
-                            child: GlassButton(
-                              key: const ValueKey('sidebar_open_player'),
-                              icon: Icons.play_circle_outline,
-                              onPressed: onOpenPlayer,
-                              child: const Text('打开播放器'),
-                            ),
-                          ),
-                        ],
+            child: SingleChildScrollView(
+              padding: EdgeInsets.symmetric(
+                horizontal: _isCollapsed
+                    ? ReelvaDesign.space8
+                    : ReelvaDesign.space16,
+                vertical: ReelvaDesign.space16,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    mainAxisAlignment: _isCollapsed
+                        ? MainAxisAlignment.center
+                        : MainAxisAlignment.start,
+                    children: [
+                      IconButton(
+                        key: const ValueKey('sidebar_toggle'),
+                        tooltip: _isCollapsed ? '展开侧栏' : '收起侧栏',
+                        icon: Icon(
+                          _isCollapsed
+                              ? Icons.menu_rounded
+                              : Icons.menu_open_rounded,
+                          color: ReelvaDesign.ink,
+                        ),
+                        onPressed: () => setState(() {
+                          _isCollapsed = !_isCollapsed;
+                        }),
                       ),
-                    ),
+                      if (!_isCollapsed) ...[
+                        const SizedBox(width: ReelvaDesign.space12),
+                        const Expanded(
+                          child: Text(
+                            'Reelva',
+                            style: TextStyle(
+                              color: ReelvaDesign.ink,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                );
-              },
+                  const SizedBox(height: ReelvaDesign.space32),
+                  for (
+                    var index = 0;
+                    index < _destinations.length;
+                    index++
+                  ) ...[
+                    if (index > 0) const SizedBox(height: ReelvaDesign.space8),
+                    _NavigationButton(
+                      index: index,
+                      selected: index == widget.selectedIndex,
+                      isSidebar: true,
+                      textOnly: _isCollapsed,
+                      onTap: () => widget.onDestinationSelected(index),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
         ),
@@ -204,12 +199,14 @@ class _NavigationButton extends StatelessWidget {
     required this.selected,
     required this.onTap,
     this.isSidebar = false,
+    this.textOnly = false,
   });
 
   final int index;
   final bool selected;
   final VoidCallback onTap;
   final bool isSidebar;
+  final bool textOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -219,7 +216,7 @@ class _NavigationButton extends StatelessWidget {
     final icon = Icon(destination.icon, size: 20, color: color);
     final label = Text(
       destination.label,
-      textAlign: isSidebar ? TextAlign.start : TextAlign.center,
+      textAlign: isSidebar && !textOnly ? TextAlign.start : TextAlign.center,
       style: TextStyle(
         color: color,
         fontSize: isSidebar ? 14 : 11,
@@ -247,14 +244,16 @@ class _NavigationButton extends StatelessWidget {
             constraints: BoxConstraints(minHeight: isSidebar ? 54 : 62),
             child: Padding(
               padding: EdgeInsets.symmetric(
-                horizontal: isSidebar
+                horizontal: isSidebar && !textOnly
                     ? ReelvaDesign.space16
                     : ReelvaDesign.space4,
                 vertical: isSidebar
                     ? ReelvaDesign.space12
                     : ReelvaDesign.space8,
               ),
-              child: isSidebar
+              child: textOnly
+                  ? Center(child: label)
+                  : isSidebar
                   ? Row(
                       children: [
                         icon,

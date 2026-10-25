@@ -7,7 +7,6 @@ import '../../core/logging/app_logger.dart';
 import '../../shared/widgets/empty_state_view.dart';
 import '../../shared/widgets/glass_widgets.dart';
 import '../../shared/widgets/poster_image.dart';
-import '../../shared/widgets/reelva_logo.dart';
 import '../library/domain/library_work.dart';
 import '../progress/application/progress_providers.dart';
 import '../sources/application/source_providers.dart';
@@ -434,15 +433,11 @@ class _HomePageState extends ConsumerState<HomePage> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (!isDesktop) ...[
-                  const ReelvaLogo(size: 32, excludeFromSemantics: true),
-                  const SizedBox(width: ReelvaDesign.space12),
-                ],
                 Flexible(
                   child: Semantics(
                     header: true,
                     child: Text(
-                      isDesktop ? '首页' : 'Reelva',
+                      '首页',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.headlineLarge

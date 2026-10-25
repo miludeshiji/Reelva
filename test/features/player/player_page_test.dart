@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:reelva/app/router.dart';
 import 'package:reelva/features/home/application/home_providers.dart';
 import 'package:reelva/features/home/home_page.dart';
+import 'package:reelva/features/library/domain/library_work.dart';
 import 'package:reelva/features/player/application/player_providers.dart';
 import 'package:reelva/features/player/domain/playback_resource.dart';
 import 'package:reelva/features/player/domain/playback_snapshot.dart';
@@ -91,7 +92,14 @@ void main() {
                   (ref) => Stream.value(const []),
                 ),
                 recentWorksProvider.overrideWith(
-                  (ref) => Stream.value(const []),
+                  (ref) => Stream.value(const [
+                    LibraryWork(
+                      id: 1,
+                      title: '测试电影',
+                      year: 2026,
+                      versionCount: 1,
+                    ),
+                  ]),
                 ),
                 playerSessionProvider.overrideWith((ref) {
                   ref.onDispose(() {
@@ -106,10 +114,10 @@ void main() {
           await tester.pumpAndSettle();
 
           expect(find.byType(HomePage), findsOneWidget);
-          expect(find.widgetWithText(FilledButton, '前往媒体源'), findsOneWidget);
+          expect(find.text('测试电影'), findsWidgets);
 
-          // Rapid repeated taps on the sidebar player entry
-          final openPlayer = find.byKey(const Key('sidebar_open_player'));
+          // Rapid repeated taps on the home player entry
+          final openPlayer = find.byKey(const Key('home_open_player_fab'));
           expect(openPlayer, findsOneWidget);
           await tester.tap(openPlayer);
           await tester.tap(openPlayer);

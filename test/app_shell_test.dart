@@ -37,7 +37,7 @@ void main() {
     });
 
     testWidgets(
-      'Desktop wide layout uses GlassSidebar and navigates all 4 destinations',
+      'Desktop sidebar collapses to text navigation and preserves state across destinations',
       (tester) async {
         final db = AppDatabase(executor: NativeDatabase.memory());
         addTearDown(db.close);
@@ -50,17 +50,44 @@ void main() {
           await tester.pumpWidget(createTestApp(db: db));
           await tester.pumpAndSettle();
 
-          expect(find.byType(GlassSidebar), findsOneWidget);
+          final sidebar = find.byType(GlassSidebar);
+          final toggle = find.byKey(const ValueKey('sidebar_toggle'));
+          expect(sidebar, findsOneWidget);
+          expect(tester.getSize(sidebar).width, 248);
           expect(find.byType(GlassBottomNavigationBar), findsNothing);
           expect(find.byType(HomePage), findsOneWidget);
+          expect(
+            find.byKey(const ValueKey('sidebar_open_player')),
+            findsNothing,
+          );
+
+          await tester.tap(toggle);
+          await tester.pumpAndSettle();
+          expect(tester.getSize(sidebar).width, 128);
+          expect(
+            find.descendant(of: sidebar, matching: find.text('Reelva')),
+            findsNothing,
+          );
 
           // Navigate to 影视库
           final libraryDest = find.byKey(
             const ValueKey('navigation_destination_library'),
           );
+          expect(
+            find.descendant(of: libraryDest, matching: find.text('影视库')),
+            findsOneWidget,
+          );
+          expect(
+            find.descendant(of: libraryDest, matching: find.byType(Icon)),
+            findsNothing,
+          );
           await tester.tap(libraryDest);
           await tester.pumpAndSettle();
           expect(find.byType(LibraryPage), findsOneWidget);
+          expect(
+            tester.widget<Semantics>(libraryDest).properties.selected,
+            isTrue,
+          );
 
           // Navigate to 媒体源
           final sourcesDest = find.byKey(
@@ -85,6 +112,20 @@ void main() {
           await tester.tap(homeDest);
           await tester.pumpAndSettle();
           expect(find.byType(HomePage), findsOneWidget);
+          expect(tester.getSize(sidebar).width, 128);
+
+          await tester.tap(toggle);
+          await tester.pumpAndSettle();
+          expect(tester.getSize(sidebar).width, 248);
+          expect(
+            find.descendant(of: sidebar, matching: find.text('Reelva')),
+            findsOneWidget,
+          );
+          expect(
+            find.descendant(of: libraryDest, matching: find.byType(Icon)),
+            findsOneWidget,
+          );
+          expect(tester.takeException(), isNull);
         } finally {
           await tester.pumpWidget(const SizedBox.shrink());
           await tester.pump(Duration.zero);
@@ -214,7 +255,7 @@ void main() {
             await tester.pumpAndSettle();
           }
 
-          await tester.tap(find.byKey(const Key('sidebar_open_player')));
+          router.push<void>('/player');
           await tester.pumpAndSettle();
           expect(find.byType(PlayerPage), findsOneWidget);
 
