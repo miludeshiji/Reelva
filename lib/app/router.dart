@@ -48,6 +48,13 @@ GoRouter createRouter({String initialLocation = '/'}) {
                     _buildMaterialPage(state, const LibraryPage()),
                 routes: [
                   GoRoute(
+                    path: 'unmatched',
+                    pageBuilder: (context, state) => _buildMaterialPage(
+                      state,
+                      const LibraryPage(unmatchedOnly: true),
+                    ),
+                  ),
+                  GoRoute(
                     path: 'work/:id',
                     pageBuilder: (context, state) {
                       final id =

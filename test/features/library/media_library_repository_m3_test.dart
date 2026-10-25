@@ -127,6 +127,33 @@ void main() {
         expect(bounded.map((w) => w.id), [titleMatch]);
       });
 
+      test('待匹配筛选在分页前排除 TMDB 条目、人工确认和停用来源', () async {
+        final locked = await addWork('A Locked');
+        await repo.editMetadata(locked, title: 'A Locked');
+        final matched = await addWork('B Matched');
+        await repo.applyMetadata(
+          matched,
+          const TmdbWork(id: 900, type: 'movie', title: 'B Matched'),
+        );
+        final disabled = await repo.upsertSource(
+          kind: 'local',
+          rootLocator: 'C:/Disabled',
+          name: 'Disabled',
+        );
+        await addWork('C Disabled', source: disabled.id);
+        await repo.disableSource(disabled.id);
+        final pending = await addWork('Z Pending');
+        final result = await repo
+            .watchWorks(unmatchedOnly: true, limit: 1)
+            .first;
+        expect(result.map((work) => work.id), [pending]);
+        expect((await repo.unmatchedWorks()).map((work) => work.id), [pending]);
+        expect(
+          await repo.watchWorks(unmatchedOnly: true, search: 'Pending').first,
+          hasLength(1),
+        );
+      });
+
       test(
         'preserves contiguous phrases and leading and trailing spaces',
         () async {

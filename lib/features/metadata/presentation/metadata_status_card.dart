@@ -75,7 +75,7 @@ class MetadataStatusCard extends StatelessWidget {
                   : null,
             ),
             const SizedBox(height: ReelvaDesign.space8),
-            if (total != null) Text('已处理 ${state.processed} / $total 部作品'),
+            if (total != null) Text('已处理 ${state.processed} / $total 个条目'),
             const Text('可切换页面，处理完成后会自动更新'),
           ] else if (hasError) ...[
             Text(state.error!),
@@ -87,8 +87,22 @@ class MetadataStatusCard extends StatelessWidget {
             ),
           ] else if (localOnly)
             const Text('配置 TMDB 后可补充海报与简介')
-          else
-            Text('已匹配 ${result!.matched} 部 · ${result.needsReview} 部需核对'),
+          else ...[
+            Text(
+              '本次整理：已匹配 ${result!.matched} 个条目 · ${result.needsReview} 个未自动匹配',
+            ),
+            if (result.needsReview > 0)
+              const Text(
+                '标题、年份或季集信息不足，或未找到可靠的 TMDB 结果。可查看待匹配条目，或在媒体源按文件夹批量匹配。',
+              ),
+          ],
+          if (!state.running && (result?.needsReview ?? 0) > 0)
+            TextButton.icon(
+              key: const Key('metadata_review_button'),
+              onPressed: () => context.push('/library/unmatched'),
+              icon: const Icon(Icons.manage_search_outlined, size: 18),
+              label: const Text('查看待匹配条目'),
+            ),
           if (!state.running && (localOnly || hasError))
             TextButton.icon(
               onPressed: () => context.push('/settings/tmdb'),

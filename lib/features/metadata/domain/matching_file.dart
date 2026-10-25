@@ -19,6 +19,23 @@ class MatchingFile {
 
   ParsedMediaFilename get parsed =>
       MediaFilenameParser.parse(name, directoryNames: directoryNames);
+
+  ({int? season, int? episode}) get seriesNumbers {
+    final parsedName = parsed;
+    final numericMatch = RegExp(r'^(\d{1,3})\.[^./\\]+$').firstMatch(name);
+    final number = int.tryParse(numericMatch?.group(1) ?? '');
+    final numericEpisode = number != null && number > 0 ? number : null;
+    final directorySeason = directoryNames.reversed
+        .map(MediaFilenameParser.seasonFromName)
+        .whereType<int>()
+        .firstOrNull;
+    return (
+      season: numericEpisode != null
+          ? directorySeason ?? seasonNumber ?? 1
+          : parsedName.seasonNumber ?? seasonNumber,
+      episode: parsedName.episodeNumber ?? episodeNumber ?? numericEpisode,
+    );
+  }
 }
 
 class PreparedFileMatch {

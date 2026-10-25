@@ -10,10 +10,13 @@ import '../metadata/application/metadata_providers.dart';
 import '../metadata/presentation/metadata_status_card.dart';
 import '../sources/application/source_providers.dart';
 import 'domain/library_work.dart';
+import 'presentation/manual_match_page.dart';
 
 /// 以逻辑作品组织海报，搜索与类型筛选在数据库分页之前执行。
 class LibraryPage extends ConsumerStatefulWidget {
-  const LibraryPage({super.key});
+  const LibraryPage({super.key, this.unmatchedOnly = false});
+
+  final bool unmatchedOnly;
 
   @override
   ConsumerState<LibraryPage> createState() => _LibraryPageState();
@@ -34,7 +37,12 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _hasInitialRefreshed) return;
+      if (!mounted || _hasInitialRefreshed || widget.unmatchedOnly) return;
+      final router = GoRouter.maybeOf(context);
+      if (router != null &&
+          router.routeInformationProvider.value.uri.path != '/library') {
+        return;
+      }
       _hasInitialRefreshed = true;
       ref.read(metadataControllerProvider.notifier).refresh();
     });
@@ -49,6 +57,14 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
 
   void _triggerRefresh() {
     ref.read(metadataControllerProvider.notifier).refresh();
+  }
+
+  Future<void> _reviewWork(LibraryWork work) async {
+    final details = await ref
+        .read(mediaLibraryRepositoryProvider)
+        .getWorkDetails(work.id);
+    if (!mounted || details == null) return;
+    await ManualMatchPage.showForWork(context, details);
   }
 
   void _updateSearch(String value) {
@@ -96,8 +112,10 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
       search: _search,
       type: _type,
       recentlyAdded: _recentlyAdded,
+      unmatchedOnly: widget.unmatchedOnly,
     );
-    final usesFilteredProvider = _hasFilters || _recentlyAdded;
+    final usesFilteredProvider =
+        _hasFilters || _recentlyAdded || widget.unmatchedOnly;
     final worksAsync = usesFilteredProvider
         ? ref.watch(filteredLibraryWorksProvider(query))
         : ref.watch(libraryWorksProvider(_limit));
@@ -199,6 +217,22 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                                     onSelected: (_) => _selectType('series'),
                                   ),
                                   FilterChip(
+                                    key: const Key('library_filter_unmatched'),
+                                    label: const Text(
+                                      '待匹配',
+                                      style: TextStyle(fontSize: 12),
+                                    ),
+                                    selected: widget.unmatchedOnly,
+                                    showCheckmark: false,
+                                    onSelected: (_) {
+                                      if (widget.unmatchedOnly) {
+                                        context.go('/library');
+                                      } else {
+                                        context.push('/library/unmatched');
+                                      }
+                                    },
+                                  ),
+                                  FilterChip(
                                     key: const Key('library_sort_recent'),
                                     label: const Text(
                                       '最近添加',
@@ -211,11 +245,44 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                                 ],
                               ),
                             ),
-                            MetadataStatusCard(
-                              state: metaTaskState,
-                              onRetry: _triggerRefresh,
-                              margin: const EdgeInsets.fromLTRB(24, 0, 24, 20),
-                            ),
+                            if (widget.unmatchedOnly)
+                              GlassCard(
+                                key: const Key('library_unmatched_help'),
+                                margin: const EdgeInsets.fromLTRB(
+                                  24,
+                                  0,
+                                  24,
+                                  20,
+                                ),
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      '这些条目尚未自动关联 TMDB。点击条目进行手动匹配，确认后会自动移出列表。',
+                                    ),
+                                    TextButton.icon(
+                                      onPressed: () => context.go('/sources'),
+                                      icon: const Icon(
+                                        Icons.folder_outlined,
+                                        size: 18,
+                                      ),
+                                      label: const Text('前往媒体源按文件夹批量匹配'),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            else
+                              MetadataStatusCard(
+                                state: metaTaskState,
+                                onRetry: _triggerRefresh,
+                                margin: const EdgeInsets.fromLTRB(
+                                  24,
+                                  0,
+                                  24,
+                                  20,
+                                ),
+                              ),
                           ],
                         ),
                       ),
@@ -295,6 +362,17 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                                       actionLabel: '查看媒体源',
                                       onAction: () => context.go('/sources'),
                                     )
+                                  : widget.unmatchedOnly
+                                  ? EmptyStateView(
+                                      key: const Key(
+                                        'library_unmatched_empty_view',
+                                      ),
+                                      icon: Icons.task_alt,
+                                      title: '暂无待匹配条目',
+                                      message: '当前条目已完成匹配或人工确认，可返回影视库查看。',
+                                      actionLabel: '查看全部',
+                                      onAction: () => context.go('/library'),
+                                    )
                                   : EmptyStateView(
                                       key: const Key('library_empty_view'),
                                       icon: Icons.video_library_outlined,
@@ -332,9 +410,15 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                                     return _WorkPosterCard(
                                       key: Key('library_work_card_${work.id}'),
                                       work: work,
-                                      onTap: () => context.go(
-                                        '/library/work/${work.id}',
-                                      ),
+                                      onTap: () {
+                                        if (widget.unmatchedOnly) {
+                                          _reviewWork(work);
+                                        } else {
+                                          context.go(
+                                            '/library/work/${work.id}',
+                                          );
+                                        }
+                                      },
                                     );
                                   }, childCount: works.length),
                                 ),
@@ -375,7 +459,19 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Expanded(child: GlassPageHeader(title: '影视库')),
+                          Expanded(
+                            child: GlassPageHeader(
+                              title: widget.unmatchedOnly ? '待匹配' : '影视库',
+                              leading: widget.unmatchedOnly
+                                  ? GlassIconButton(
+                                      icon: Icons.arrow_back,
+                                      tooltip: '返回',
+                                      size: ReelvaDesign.pageHeaderButtonSize,
+                                      onPressed: () => context.pop(),
+                                    )
+                                  : null,
+                            ),
+                          ),
                           Padding(
                             padding: const EdgeInsets.only(
                               top: ReelvaDesign.space12,

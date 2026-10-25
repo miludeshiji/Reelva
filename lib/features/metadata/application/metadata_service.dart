@@ -103,13 +103,9 @@ class MetadataService {
         continue;
       }
       final parsed = file.parsed;
-      final numbers = overrides[file.fileId];
-      final season = numbers != null
-          ? numbers.season
-          : parsed.seasonNumber ?? file.seasonNumber;
-      final number = numbers != null
-          ? numbers.episode
-          : parsed.episodeNumber ?? file.episodeNumber;
+      final numbers = overrides[file.fileId] ?? file.seriesNumbers;
+      final season = numbers.season;
+      final number = numbers.episode;
       String? error;
       TmdbEpisode? episode;
       if (parsed.isMultiEpisode) {

@@ -1,15 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:drift/drift.dart' show DatabaseConnection;
+import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:reelva/app/theme/reelva_theme.dart';
+import 'package:reelva/app/router.dart';
+import 'package:reelva/core/database/app_database.dart';
+import 'package:reelva/features/library/infrastructure/media_library_repository.dart';
 import 'package:reelva/features/library/domain/library_work.dart';
 import 'package:reelva/features/library/library_page.dart';
 import 'package:reelva/features/library/presentation/work_details_page.dart';
+import 'package:reelva/features/library/presentation/manual_match_page.dart';
 import 'package:reelva/features/metadata/application/metadata_providers.dart';
 import 'package:reelva/features/metadata/presentation/metadata_status_card.dart';
+import 'package:reelva/features/metadata/domain/tmdb_models.dart';
+import 'package:reelva/features/sources/domain/source_models.dart';
 import 'package:reelva/features/player/domain/playback_resource.dart';
 import 'package:reelva/features/sources/application/source_providers.dart';
+
+import '../metadata/metadata_service_test.dart' show FakeTmdbClient;
 
 const _movie = LibraryWork(id: 1, type: 'movie', title: '黑客帝国', year: 1999);
 const _series = LibraryWork(id: 2, type: 'series', title: '剧集收藏', year: 2024);
@@ -73,6 +83,19 @@ class _ProgressMetadataController extends _IdleMetadataController {
   MetadataTaskState build() => const MetadataTaskState(running: true);
 
   void report(MetadataTaskState progress) => state = progress;
+}
+
+class _ReviewMetadataController extends _IdleMetadataController {
+  int refreshCount = 0;
+
+  @override
+  MetadataTaskState build() =>
+      const MetadataTaskState(result: MetadataRefreshResult(needsReview: 1065));
+
+  @override
+  Future<void> refresh() async {
+    refreshCount++;
+  }
 }
 
 class _RecordingSourceController extends SourceController {
@@ -156,6 +179,149 @@ Future<void> _pumpDetails(
 }
 
 void main() {
+  testWidgets('整理结果可进入待匹配列表和手动匹配，处理后实时移出列表', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 900);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final db = AppDatabase(
+      executor: DatabaseConnection(
+        NativeDatabase.memory(),
+        closeStreamsSynchronously: true,
+      ),
+    );
+    final repo = MediaLibraryRepository(db);
+    final source = await repo.upsertSource(
+      kind: 'local',
+      rootLocator: 'C:/Review',
+      name: '剧集文件',
+    );
+    final files = await repo.indexSourceFiles(source.id, [
+      for (final name in ['01.mkv', '02.mkv', 'Matched.2024.mkv'])
+        MediaEntry(
+          externalId: name,
+          locator: name,
+          name: name,
+          isDirectory: false,
+        ),
+    ]);
+    final matchedId = await repo.applyMetadataToFiles({
+      files['Matched.2024.mkv']!: null,
+    }, const TmdbWork(id: 1, type: 'movie', title: '已匹配作品'));
+    final pending = (await tester.runAsync(
+      () => repo.watchWorks(unmatchedOnly: true).first,
+    ))!;
+    final metadata = _ReviewMetadataController();
+    final client = FakeTmdbClient();
+    client.searchTvHandler = (query, year) => const [
+      TmdbWork(id: 2, type: 'series', title: '待确认剧集'),
+    ];
+    client.getTvSeasonEpisodesHandler = (id, season) => [
+      for (final number in [1, 2])
+        TmdbEpisode(seasonNumber: season, episodeNumber: number),
+    ];
+    final router = createRouter(initialLocation: '/sources');
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      router.dispose();
+      await db.close();
+    });
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(db),
+          mediaLibraryRepositoryProvider.overrideWithValue(repo),
+          metadataControllerProvider.overrideWith(() => metadata),
+          tmdbClientProvider.overrideWithValue(client),
+        ],
+        child: MaterialApp.router(
+          theme: ReelvaTheme.light,
+          routerConfig: router,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('本次整理：已匹配 0 个条目 · 1065 个未自动匹配'), findsOneWidget);
+    await _tapVisible(tester, find.byKey(const Key('metadata_review_button')));
+    expect(
+      tester.widget<LibraryPage>(find.byType(LibraryPage)).unmatchedOnly,
+      isTrue,
+    );
+    expect(
+      tester
+          .widget<FilterChip>(find.byKey(const Key('library_filter_unmatched')))
+          .selected,
+      isTrue,
+    );
+    expect(find.byKey(Key('library_work_card_$matchedId')), findsNothing);
+    expect(metadata.refreshCount, 0);
+    await _tapVisible(
+      tester,
+      find.byKey(Key('library_work_card_${pending.first.id}')),
+    );
+    expect(find.byType(ManualMatchPage), findsOneWidget);
+    await _tapVisible(
+      tester,
+      find.byKey(const Key('manual_match_search_button')),
+    );
+    await _tapVisible(
+      tester,
+      find.byKey(const Key('manual_match_select_button_series_2')),
+    );
+    final fileId = files['01.mkv']!;
+    expect(
+      tester
+          .widget<TextFormField>(
+            find.byKey(ValueKey('manual_match_season_${fileId}_0')),
+          )
+          .initialValue,
+      '1',
+    );
+    expect(
+      tester
+          .widget<TextFormField>(
+            find.byKey(ValueKey('manual_match_episode_$fileId')),
+          )
+          .initialValue,
+      '1',
+    );
+    await _tapVisible(
+      tester,
+      find.byKey(const Key('manual_match_apply_button')),
+    );
+    expect(find.byType(ManualMatchPage), findsNothing);
+    expect(
+      tester.widget<LibraryPage>(find.byType(LibraryPage)).unmatchedOnly,
+      isTrue,
+    );
+    expect(
+      find.byKey(Key('library_work_card_${pending.first.id}')),
+      findsNothing,
+    );
+    await _tapVisible(
+      tester,
+      find.byKey(Key('library_work_card_${pending.last.id}')),
+    );
+    await _tapVisible(
+      tester,
+      find.byKey(const Key('manual_match_search_button')),
+    );
+    await _tapVisible(
+      tester,
+      find.byKey(const Key('manual_match_select_button_series_2')),
+    );
+    await _tapVisible(
+      tester,
+      find.byKey(const Key('manual_match_apply_button')),
+    );
+    expect(find.byType(ManualMatchPage), findsNothing);
+    expect(
+      find.byKey(const Key('library_unmatched_empty_view')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('后台识别显示阶段与实际进度，已有作品持续可见', (tester) async {
     final controller = _ProgressMetadataController();
     await tester.pumpWidget(
@@ -184,7 +350,7 @@ void main() {
     );
     await tester.pump();
     expect(find.text('正在补充海报与简介'), findsOneWidget);
-    expect(find.text('已处理 2 / 5 部作品'), findsOneWidget);
+    expect(find.text('已处理 2 / 5 个条目'), findsOneWidget);
     expect(find.byKey(const Key('library_work_card_1')), findsOneWidget);
 
     controller.report(
@@ -194,7 +360,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('媒体库整理完成'), findsOneWidget);
-    expect(find.text('已匹配 4 部 · 1 部需核对'), findsOneWidget);
+    expect(find.text('本次整理：已匹配 4 个条目 · 1 个未自动匹配'), findsOneWidget);
     expect(find.byKey(const Key('library_work_card_1')), findsOneWidget);
   });
 
@@ -228,7 +394,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('已处理 2 / 5 部作品'), findsOneWidget);
+    expect(find.text('已处理 2 / 5 个条目'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -250,6 +416,7 @@ void main() {
       search: 'Dune',
       type: null,
       recentlyAdded: false,
+      unmatchedOnly: false,
     ));
     expect(find.byKey(const Key('library_work_card_105')), findsOneWidget);
     expect(find.byKey(const Key('library_work_card_1')), findsNothing);

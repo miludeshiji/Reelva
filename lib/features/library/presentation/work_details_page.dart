@@ -8,7 +8,6 @@ import '../../../shared/widgets/empty_state_view.dart';
 import '../../../shared/widgets/glass_widgets.dart';
 import '../../../shared/widgets/poster_image.dart';
 import '../../metadata/application/metadata_providers.dart';
-import '../../metadata/domain/matching_file.dart';
 import '../../sources/application/source_providers.dart';
 import '../../sources/domain/source_models.dart';
 import '../domain/library_work.dart';
@@ -89,20 +88,7 @@ class _WorkDetailsPageState extends ConsumerState<WorkDetailsPage> {
         .read(mediaLibraryRepositoryProvider)
         .getWorkDetails(work.id);
     if (!mounted || details == null) return;
-    final canonicalId = await ManualMatchPage.show(
-      context,
-      files: [
-        for (final version in details.versions)
-          MatchingFile(
-            fileId: version.fileId,
-            name: version.fileName,
-            seasonNumber: version.seasonNumber,
-            episodeNumber: version.episodeNumber,
-          ),
-      ],
-      initialTitle: work.title,
-      initialYear: work.year,
-    );
+    final canonicalId = await ManualMatchPage.showForWork(context, details);
 
     if (!mounted || canonicalId == null) return;
 

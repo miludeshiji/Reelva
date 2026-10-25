@@ -184,6 +184,7 @@ typedef LibraryWorksFilter = ({
   String search,
   String? type,
   bool recentlyAdded,
+  bool unmatchedOnly,
 });
 
 final filteredLibraryWorksProvider = StreamProvider.autoDispose
@@ -194,6 +195,7 @@ final filteredLibraryWorksProvider = StreamProvider.autoDispose
         search: filter.search,
         type: filter.type,
         recentlyAdded: filter.recentlyAdded,
+        unmatchedOnly: filter.unmatchedOnly,
       );
     });
 

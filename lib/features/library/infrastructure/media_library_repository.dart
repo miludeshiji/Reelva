@@ -1026,6 +1026,7 @@ class MediaLibraryRepository {
     String search = '',
     String? type,
     bool recentlyAdded = false,
+    bool unmatchedOnly = false,
   }) async* {
     await recognizePendingFiles();
     yield* _watchWorksInternal(
@@ -1033,6 +1034,7 @@ class MediaLibraryRepository {
       search: search,
       type: type,
       recentlyAdded: recentlyAdded,
+      unmatchedOnly: unmatchedOnly,
     );
   }
 
@@ -1104,9 +1106,13 @@ class MediaLibraryRepository {
     required String search,
     required String? type,
     required bool recentlyAdded,
+    required bool unmatchedOnly,
   }) {
     final variables = <Variable<Object>>[];
     var filters = '';
+    if (unmatchedOnly) {
+      filters += " AND w.metadata_source = 'local' AND w.metadata_locked = 0";
+    }
     if (search.isNotEmpty) {
       final pattern =
           '%${search.replaceAll(r'\', r'\\').replaceAll('%', r'\%').replaceAll('_', r'\_')}%';

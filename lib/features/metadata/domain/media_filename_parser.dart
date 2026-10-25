@@ -309,14 +309,14 @@ class MediaFilenameParser {
         r'(?<![a-zA-Z0-9])ep?(?<episode>\d{1,3})(?!\d)(?:[ ._-]*(?:e|[-~])(?<end>\d{1,3})(?!\d))?',
         caseSensitive: false,
       ).firstMatch(nameWithoutExt);
-      final numericMatch =
-          directoryNames.any((name) => seasonFromName(name) != null)
+      final numericMatch = directoryNames.isNotEmpty
           ? RegExp(r'^(?<episode>\d{1,3})$').firstMatch(nameWithoutExt)
           : null;
       final match = episodeMatch ?? numericMatch;
       if (match != null) {
         isSeries = true;
         episodeNumber = int.parse(match.namedGroup('episode')!);
+        if (episodeMatch == null) seasonNumber = 1;
         episodeNumbers.add(episodeNumber);
         if (episodeMatch != null) {
           final end = int.tryParse(episodeMatch.namedGroup('end') ?? '');

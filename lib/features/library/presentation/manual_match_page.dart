@@ -7,6 +7,7 @@ import '../../../shared/widgets/poster_image.dart';
 import '../../metadata/application/metadata_providers.dart';
 import '../../metadata/domain/matching_file.dart';
 import '../../metadata/domain/tmdb_models.dart';
+import '../domain/library_work.dart';
 
 class ManualMatchPage extends ConsumerStatefulWidget {
   const ManualMatchPage({
@@ -35,6 +36,22 @@ class ManualMatchPage extends ConsumerStatefulWidget {
     ),
   );
 
+  static Future<int?> showForWork(BuildContext context, WorkDetails details) =>
+      show(
+        context,
+        files: [
+          for (final version in details.versions)
+            MatchingFile(
+              fileId: version.fileId,
+              name: version.fileName,
+              seasonNumber: version.seasonNumber,
+              episodeNumber: version.episodeNumber,
+            ),
+        ],
+        initialTitle: details.work.title,
+        initialYear: details.work.year,
+      );
+
   @override
   ConsumerState<ManualMatchPage> createState() => _ManualMatchPageState();
 }
@@ -62,12 +79,8 @@ class _ManualMatchPageState extends ConsumerState<ManualMatchPage> {
   void initState() {
     super.initState();
     for (final file in widget.files) {
-      final parsed = file.parsed;
       _included.add(file.fileId);
-      _numbers[file.fileId] = (
-        season: parsed.seasonNumber ?? file.seasonNumber,
-        episode: parsed.episodeNumber ?? file.episodeNumber,
-      );
+      _numbers[file.fileId] = file.seriesNumbers;
     }
   }
 

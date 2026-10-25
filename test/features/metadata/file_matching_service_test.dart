@@ -88,6 +88,55 @@ void main() {
     expect(results.map((work) => work.type).toSet(), {'movie', 'series'});
   });
 
+  test('无季号的纯数字剧集默认第一季，并保留明确季号和人工清空', () async {
+    final requested = <int>[];
+    client.getTvSeasonEpisodesHandler = (id, season) {
+      requested.add(season);
+      return [
+        for (final number in [1, 2])
+          TmdbEpisode(seasonNumber: season, episodeNumber: number),
+      ];
+    };
+    const files = [
+      MatchingFile(fileId: 1, name: '01.mkv', directoryNames: ['Show']),
+      MatchingFile(fileId: 2, name: '02.mp4'),
+      MatchingFile(fileId: 3, name: '01.mkv', directoryNames: ['Show', 'S02']),
+      MatchingFile(
+        fileId: 4,
+        name: '02.mkv',
+        directoryNames: ['Show'],
+        seasonNumber: 3,
+      ),
+    ];
+    final plans = await service.prepareFileMatches(
+      files,
+      const TmdbWork(id: 1, type: 'series', title: 'Show'),
+    );
+    expect(plans.map((plan) => (plan.seasonNumber, plan.episodeNumber)), [
+      (1, 1),
+      (1, 2),
+      (2, 1),
+      (3, 2),
+    ]);
+    expect(plans.every((plan) => plan.error == null), isTrue);
+    expect(requested, [1, 2, 3]);
+    final cleared = await service.prepareFileMatches(
+      [files.first],
+      const TmdbWork(id: 1, type: 'series', title: 'Show'),
+      overrides: {1: (season: null, episode: 1)},
+    );
+    expect(cleared.single.error, '请选择所属季');
+    final numeric = MediaFilenameParser.parse(
+      '02.mkv',
+      directoryNames: ['Show'],
+    );
+    expect(
+      (numeric.type, numeric.seasonNumber, numeric.episodeNumber),
+      ('series', 1, 2),
+    );
+    expect(MediaFilenameParser.parse('300.mkv').type, isNull);
+  });
+
   test('批量预览从各自目录读取季号，只请求所需季并标明异常文件', () async {
     final requested = <int>[];
     client.getTvSeasonEpisodesHandler = (id, season) {
