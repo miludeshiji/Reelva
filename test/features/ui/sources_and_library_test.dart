@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -185,7 +186,12 @@ void main() {
     late FakeTmdbTokenStore fakeTokenStore;
 
     setUp(() {
-      memoryDb = AppDatabase(executor: NativeDatabase.memory());
+      memoryDb = AppDatabase(
+        executor: DatabaseConnection(
+          NativeDatabase.memory(),
+          closeStreamsSynchronously: true,
+        ),
+      );
       repository = MediaLibraryRepository(memoryDb);
       fakePlayerEngine = FakePlayerEngine();
       fakeTokenStore = FakeTmdbTokenStore();

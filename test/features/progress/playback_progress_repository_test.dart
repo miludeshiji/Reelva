@@ -104,6 +104,64 @@ void main() {
     });
 
     test(
+      'watchHistory includes completed and short records beyond the home limit',
+      () async {
+        await repository.saveProgress(
+          fileId: 1,
+          position: const Duration(seconds: 110),
+          duration: const Duration(seconds: 120),
+        );
+        for (var index = 0; index < 22; index++) {
+          final workId = await db
+              .into(db.works)
+              .insert(
+                WorksCompanion.insert(
+                  title: '旧记录 $index',
+                  type: const Value('movie'),
+                ),
+              );
+          await db
+              .into(db.playbackProgresses)
+              .insert(
+                PlaybackProgressesCompanion.insert(
+                  targetType: 'work',
+                  targetId: workId,
+                  workId: Value(workId),
+                  positionMs: const Value(1000),
+                  durationMs: const Value(120000),
+                  updatedAt: Value(now.subtract(Duration(minutes: index + 1))),
+                ),
+              );
+        }
+        final updates = StreamIterator(repository.watchHistory());
+        try {
+          expect(await updates.moveNext(), isTrue);
+          final history = updates.current;
+          expect(history, hasLength(23));
+          expect(history.first.entry.workId, 1);
+          expect(history.first.entry.fileId, 1);
+          expect(history.first.completed, isTrue);
+          expect(history.first.updatedAt, now);
+          expect(history.first.entry.position, const Duration(seconds: 110));
+          expect(history.first.entry.available, isTrue);
+          expect(history.last.entry.title, '旧记录 21');
+          expect(history.last.entry.fileId, isNull);
+          expect(history.last.entry.available, isFalse);
+          expect(history.last.entry.position, const Duration(seconds: 1));
+
+          await (db.update(db.mediaSources)
+                ..where((source) => source.id.equals(1)))
+              .write(const MediaSourcesCompanion(enabled: Value(false)));
+          expect(await updates.moveNext(), isTrue);
+          expect(updates.current, hasLength(23));
+          expect(updates.current.first.entry.available, isFalse);
+        } finally {
+          await updates.cancel();
+        }
+      },
+    );
+
+    test(
       'saveProgress automatically marks completed when position >= 90%',
       () async {
         await repository.saveProgress(
@@ -491,6 +549,19 @@ void main() {
         expect(severanceEntries.first.seasonNumber, 1);
         expect(severanceEntries.first.episodeNumber, 2);
         expect(severanceEntries.first.position, const Duration(minutes: 20));
+
+        now = DateTime(2026, 1, 1, 16);
+        await repository.saveProgress(
+          fileId: 51,
+          position: const Duration(minutes: 50),
+          duration: const Duration(minutes: 50),
+        );
+        final history = await repository.watchHistory().first;
+        expect(history, hasLength(2));
+        expect(history.map((record) => record.entry.episodeNumber), [1, 2]);
+        expect(history.first.completed, isTrue);
+        expect(history.first.updatedAt, now);
+        expect(history.last.completed, isFalse);
       },
     );
 

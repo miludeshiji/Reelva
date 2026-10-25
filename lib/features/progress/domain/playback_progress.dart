@@ -244,3 +244,19 @@ class ContinueWatchingEntry {
       'fileId: $fileId, pos: $position, dur: $duration, '
       'S: $seasonNumber, E: $episodeNumber, available: $available)';
 }
+
+/// 单部电影或单集最近一次保存的观看记录。
+@immutable
+class WatchHistoryEntry {
+  const WatchHistoryEntry({
+    required this.id,
+    required this.entry,
+    required this.completed,
+    required this.updatedAt,
+  });
+
+  final int id;
+  final ContinueWatchingEntry entry;
+  final bool completed;
+  final DateTime updatedAt;
+}

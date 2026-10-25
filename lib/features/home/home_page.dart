@@ -286,6 +286,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                     context,
                     title: '继续观看',
                     actionLabel: '查看全部',
+                    onAction: () => context.go('/history'),
                   ),
                 ),
               ),
@@ -354,6 +355,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                     context,
                     title: '最近添加',
                     actionLabel: '全部作品',
+                    onAction: () => context.go('/library'),
                   ),
                 ),
               ),
@@ -746,9 +748,10 @@ class _HomePageState extends ConsumerState<HomePage> {
     BuildContext context, {
     required String title,
     required String actionLabel,
+    required VoidCallback onAction,
   }) {
     final action = TextButton(
-      onPressed: () => context.go('/library'),
+      onPressed: onAction,
       style: TextButton.styleFrom(
         foregroundColor: ReelvaDesign.accent,
         padding: const EdgeInsets.symmetric(horizontal: ReelvaDesign.space4),

@@ -23,3 +23,9 @@ final continueWatchingProvider = StreamProvider<List<ContinueWatchingEntry>>((
   final repo = ref.watch(playbackProgressRepositoryProvider);
   return repo.watchContinueWatching(limit: 20);
 });
+
+final watchHistoryProvider =
+    StreamProvider.autoDispose<List<WatchHistoryEntry>>((ref) {
+      final repo = ref.watch(playbackProgressRepositoryProvider);
+      return repo.watchHistory();
+    });

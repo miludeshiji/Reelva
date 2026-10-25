@@ -5,7 +5,7 @@ import '../domain/playback_progress.dart';
 
 /// 播放进度仓储实现
 ///
-/// 负责持久化与查询媒体播放进度，以及首页 Continue Watching 展架聚合。
+/// 负责持久化与查询媒体播放进度、观看历史及首页 Continue Watching 展架聚合。
 /// 保存时在事务内基于真实 `fileId` 实时解析所属目标，防止后台元数据刷新合并导致旧 ID 失效。
 class PlaybackProgressRepository {
   PlaybackProgressRepository({required this.db, DateTime Function()? clock})
@@ -149,17 +149,35 @@ class PlaybackProgressRepository {
   Future<List<ContinueWatchingEntry>> getContinueWatching({
     int limit = 20,
   }) async {
-    return (await _continueWatchingQuery(
-      limit,
+    return (await _progressEntriesQuery(
+      limit: limit,
     ).get()).map(_continueEntry).toList();
   }
 
   Stream<List<ContinueWatchingEntry>> watchContinueWatching({int limit = 20}) =>
-      _continueWatchingQuery(limit)
+      _progressEntriesQuery(limit: limit)
           .watch()
           .map((rows) => rows.map(_continueEntry).toList());
 
-  Selectable<QueryRow> _continueWatchingQuery(int limit) => db.customSelect(
+  /// 按最近观看时间返回全部电影与分集记录，包含已完播及当前不可用的媒体。
+  Stream<List<WatchHistoryEntry>> watchHistory() =>
+      _progressEntriesQuery(continueWatchingOnly: false).watch().map(
+        (rows) => rows
+            .map(
+              (row) => WatchHistoryEntry(
+                id: row.read<int>('id'),
+                entry: _continueEntry(row),
+                completed: row.read<int>('completed') == 1,
+                updatedAt: row.read<DateTime>('updated_at'),
+              ),
+            )
+            .toList(),
+      );
+
+  Selectable<QueryRow> _progressEntriesQuery({
+    int? limit,
+    bool continueWatchingOnly = true,
+  }) => db.customSelect(
     '''
     WITH ranked_progress AS (
       SELECT p.*, w.id AS library_work_id, w.title, w.poster_path,
@@ -171,11 +189,14 @@ class PlaybackProgressRepository {
       LEFT JOIN episodes e ON e.id = p.episode_id
       LEFT JOIN seasons s ON s.id = e.season_id
       JOIN works w ON w.id = p.work_id OR w.id = s.series_id
+      ${continueWatchingOnly ? '''
       WHERE p.completed = 0 AND p.position_ms >= 5000
         AND (p.duration_ms <= 0 OR p.position_ms < p.duration_ms * 0.9)
+      ''' : ''}
     ), recent AS (
-      SELECT * FROM ranked_progress WHERE work_rank = 1
-      ORDER BY updated_at DESC, id DESC LIMIT ?
+      SELECT * FROM ranked_progress
+      ${continueWatchingOnly ? 'WHERE work_rank = 1' : ''}
+      ORDER BY updated_at DESC, id DESC ${limit == null ? '' : 'LIMIT ?'}
     ), ranked_files AS (
       SELECT r.id AS progress_id, mf.id AS file_id,
         (me.available = 1 AND ms.enabled = 1 AND me.is_directory = 0) AS is_available,
@@ -196,7 +217,7 @@ class PlaybackProgressRepository {
     LEFT JOIN ranked_files f ON f.progress_id = r.id AND f.file_rank = 1
     ORDER BY r.updated_at DESC, r.id DESC
     ''',
-    variables: [Variable.withInt(limit)],
+    variables: [if (limit != null) Variable.withInt(limit)],
     readsFrom: {
       db.playbackProgresses,
       db.works,

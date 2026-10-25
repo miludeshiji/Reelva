@@ -18,6 +18,7 @@ import 'package:reelva/features/player/application/player_providers.dart';
 import 'package:reelva/features/player/domain/playback_resource.dart';
 import 'package:reelva/features/player/presentation/player_page.dart';
 import 'package:reelva/features/progress/application/progress_providers.dart';
+import 'package:reelva/features/progress/presentation/watch_history_page.dart';
 import 'package:reelva/features/sources/application/source_providers.dart';
 import 'package:reelva/features/sources/domain/media_source_adapter.dart';
 import 'package:reelva/features/sources/domain/source_models.dart';
@@ -203,6 +204,92 @@ void main() {
         await _cleanUpTestWidgets(tester, router: router, db: db);
       }
     });
+
+    testWidgets(
+      'Continue watching view all opens history and returns with home state intact',
+      (tester) async {
+        tester.view.physicalSize = const Size(390, 844);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final db = AppDatabase(executor: NativeDatabase.memory());
+        final router = createRouter();
+        var continueWatchingLoads = 0;
+        const entry = ContinueWatchingEntry(
+          workId: 1,
+          title: '测试观看记录',
+          fileId: 1,
+          position: Duration(minutes: 10),
+          duration: Duration(hours: 1),
+        );
+        try {
+          await tester.pumpWidget(
+            createHomeTestApp(
+              db: db,
+              router: router,
+              overrides: [
+                continueWatchingProvider.overrideWith((ref) {
+                  continueWatchingLoads++;
+                  return Stream.value(const [entry]);
+                }),
+                recentWorksProvider.overrideWith(
+                  (ref) => Stream.value(const []),
+                ),
+                watchHistoryProvider.overrideWith(
+                  (ref) => Stream.value([
+                    WatchHistoryEntry(
+                      id: 1,
+                      entry: entry,
+                      completed: false,
+                      updatedAt: DateTime(2026, 10, 26, 12),
+                    ),
+                  ]),
+                ),
+              ],
+            ),
+          );
+          await tester.pumpAndSettle();
+          final homeState = tester.state(find.byType(HomePage));
+          final viewAll = find.widgetWithText(TextButton, '查看全部');
+          await tester.ensureVisible(viewAll);
+          await tester.pumpAndSettle();
+          final scrollable = tester.state<ScrollableState>(
+            find.descendant(
+              of: find.byType(HomePage),
+              matching: find.byWidgetPredicate(
+                (widget) =>
+                    widget is Scrollable &&
+                    widget.axisDirection == AxisDirection.down,
+              ),
+            ),
+          );
+          final offset = scrollable.position.pixels;
+          await tester.tap(viewAll);
+          await tester.pumpAndSettle();
+
+          expect(router.routeInformationProvider.value.uri.path, '/history');
+          expect(find.byType(WatchHistoryPage), findsOneWidget);
+          expect(
+            find.byKey(const Key('watch_history_entry_1')),
+            findsOneWidget,
+          );
+          expect(
+            find.byKey(const ValueKey('navigation_destination_library')),
+            findsNothing,
+          );
+
+          await tester.tap(find.byKey(const Key('watch_history_back_button')));
+          await tester.pumpAndSettle();
+          expect(router.routeInformationProvider.value.uri.path, '/');
+          expect(tester.state(find.byType(HomePage)), same(homeState));
+          expect(scrollable.position.pixels, closeTo(offset, 0.1));
+          expect(continueWatchingLoads, 1);
+          expect(tester.takeException(), isNull);
+        } finally {
+          await _cleanUpTestWidgets(tester, router: router, db: db);
+        }
+      },
+    );
 
     testWidgets(
       'Continue watching card shows progress and plays correct fileId into /player',
