@@ -9,7 +9,7 @@ import 'package:reelva/core/database/app_database.dart';
 import 'package:reelva/features/library/infrastructure/media_library_repository.dart';
 import 'package:reelva/features/library/library_page.dart';
 import 'package:reelva/features/library/presentation/work_details_page.dart';
-import 'package:reelva/features/library/presentation/manual_match_dialog.dart';
+import 'package:reelva/features/library/presentation/manual_match_page.dart';
 import 'package:reelva/features/metadata/application/metadata_providers.dart';
 import 'package:reelva/features/metadata/domain/tmdb_models.dart';
 import 'package:reelva/features/metadata/infrastructure/tmdb_client.dart';
@@ -272,6 +272,14 @@ void main() {
 
           // 媒体源列表中呈现了新导入的媒体源
           expect(find.text('本地电影'), findsOneWidget);
+          expect(find.text('媒体源已保存，扫描与识别进度可在列表查看'), findsOneWidget);
+          await tester.tap(
+            find.descendant(
+              of: find.byType(SnackBar),
+              matching: find.byIcon(Icons.close),
+            ),
+          );
+          await tester.pumpAndSettle();
 
           // 3. 切换至 LibraryPage（呈现逻辑作品海报墙：两个画质聚合成一张卡片）
           testRouter.go('/library');
@@ -611,7 +619,7 @@ void main() {
           await tester.tap(matchButton);
           await tester.pumpAndSettle();
 
-          expect(find.byType(ManualMatchDialog), findsOneWidget);
+          expect(find.byType(ManualMatchPage), findsOneWidget);
 
           // 5. 验证错误年份输入校验（格式错误未发出有效搜索，列表未渲染）
           final yearInput = find.byKey(const Key('manual_match_year_input'));
@@ -640,7 +648,7 @@ void main() {
             findsOneWidget,
           );
           final selectButton = find.byKey(
-            const Key('manual_match_select_button_157336'),
+            const Key('manual_match_select_button_movie_157336'),
           );
           expect(selectButton, findsOneWidget);
 
@@ -648,9 +656,12 @@ void main() {
           await tester.tap(selectButton);
           await tester.pumpAndSettle();
 
+          await tester.tap(find.byKey(const Key('manual_match_apply_button')));
+          await tester.pumpAndSettle();
+
           // 7. 观测端到端行为：
           // (a) 弹窗关闭，路由自动切换并导航至规范作品详情页（/library/work/$canonicalId）
-          expect(find.byType(ManualMatchDialog), findsNothing);
+          expect(find.byType(ManualMatchPage), findsNothing);
           expect(find.byType(WorkDetailsPage), findsOneWidget);
 
           // (b) 两个版本文件完整保留于 canonical 作品下
@@ -778,11 +789,10 @@ void main() {
           await tester.tap(matchButton);
           await tester.pumpAndSettle();
 
-          expect(find.byType(ManualMatchDialog), findsOneWidget);
+          expect(find.byType(ManualMatchPage), findsOneWidget);
 
-          // 4. 切换为剧集类型并搜索 Show
-          await tester.tap(find.text('剧集'));
-          await tester.pumpAndSettle();
+          // 聚合搜索同时包含电影与剧集，不再切换类型。
+          expect(find.byType(SegmentedButton<String>), findsNothing);
 
           final queryInput = find.byKey(const Key('manual_match_query_input'));
           await tester.enterText(queryInput, 'Show');
@@ -797,35 +807,22 @@ void main() {
             findsOneWidget,
           );
           final selectButton = find.byKey(
-            const Key('manual_match_select_button_115036'),
+            const Key('manual_match_select_button_series_115036'),
           );
           expect(selectButton, findsOneWidget);
 
-          // 5. 点击选定匹配，由于未确立剧集身份，触发私有分集确认框
+          // 5. 选择剧集进入文件对应预览，确认前不写入关联。
           await tester.tap(selectButton);
           await tester.pumpAndSettle();
 
           expect(
-            find.byKey(const Key('manual_match_season_input')),
+            find.byKey(const ValueKey('manual_match_season_1_0')),
             findsOneWidget,
           );
           expect(
-            find.byKey(const Key('manual_match_episode_input')),
+            find.byKey(const ValueKey('manual_match_episode_1')),
             findsOneWidget,
           );
-
-          // 先取消并证明数据库无锁定或身份修改
-          final cancelButton = find.byKey(
-            const Key('manual_match_episode_cancel_button'),
-          );
-          await tester.tap(cancelButton);
-          await tester.pumpAndSettle();
-
-          expect(
-            find.byKey(const Key('manual_match_season_input')),
-            findsNothing,
-          );
-          expect(find.byType(ManualMatchDialog), findsOneWidget);
 
           final workAfterCancel = await tester.runAsync(
             () => repository.getWorkDetails(initialWork.id),
@@ -834,31 +831,24 @@ void main() {
           expect(workAfterCancel!.work.type, isNull);
           expect(workAfterCancel.work.metadataLocked, isFalse);
 
-          // 6. 再次选择、填写真实 API fixture 中的季/集 (2/3)
-          await tester.tap(selectButton);
-          await tester.pumpAndSettle();
-
-          expect(
-            find.byKey(const Key('manual_match_season_input')),
-            findsOneWidget,
-          );
+          // 6. 填写真实 API fixture 中的季/集 (2/3)。
           await tester.enterText(
-            find.byKey(const Key('manual_match_season_input')),
+            find.byKey(const ValueKey('manual_match_season_1_0')),
             '2',
           );
           await tester.enterText(
-            find.byKey(const Key('manual_match_episode_input')),
+            find.byKey(const ValueKey('manual_match_episode_1')),
             '3',
           );
 
           final confirmButton = find.byKey(
-            const Key('manual_match_episode_confirm_button'),
+            const Key('manual_match_apply_button'),
           );
           await tester.tap(confirmButton);
           await tester.pumpAndSettle();
 
           // 7. 观测对话框关闭并展示 canonical 详情、分集、锁定与版本
-          expect(find.byType(ManualMatchDialog), findsNothing);
+          expect(find.byType(ManualMatchPage), findsNothing);
           expect(find.byType(WorkDetailsPage), findsOneWidget);
           expect(find.byKey(const Key('work_locked_badge')), findsOneWidget);
 

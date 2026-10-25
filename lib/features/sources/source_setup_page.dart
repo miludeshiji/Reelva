@@ -130,7 +130,17 @@ class _SourceSetupPageState extends ConsumerState<SourceSetupPage> {
               : excluded,
         );
       }
-      if (mounted) context.go('/sources');
+      if (mounted) {
+        final messenger = ScaffoldMessenger.of(context);
+        context.go('/sources');
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('媒体源已保存，扫描与识别进度可在列表查看'),
+            duration: Duration(seconds: 2),
+            showCloseIcon: true,
+          ),
+        );
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -338,7 +348,11 @@ class _SourceSetupPageState extends ConsumerState<SourceSetupPage> {
                                                         : Icons.add,
                                                   ),
                                             label: Text(
-                                              _isLocal ? '选择目录并添加' : '添加媒体源',
+                                              _isSubmitting
+                                                  ? '正在保存…'
+                                                  : _isLocal
+                                                  ? '选择目录并添加'
+                                                  : '添加媒体源',
                                             ),
                                           );
                                           if (constraints.maxWidth < 360 ||

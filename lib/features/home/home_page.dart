@@ -22,7 +22,7 @@ import 'application/home_providers.dart';
 /// 4. 最近添加展示创建时间倒序的作品（去重多版本，一作品一卡片），点击跳转作品详情；
 /// 5. 媒体库全空时保留前往媒体源的 CTA 引导；
 /// 6. 单项展架失败时内联展示安全可重试状态，不遮挡已有有效展架；
-/// 7. 有内容时在页头提供播放器入口。
+/// 7. 始终显示固定页头，提供播放器与搜索入口。
 class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
 
@@ -107,12 +107,41 @@ class _HomePageState extends ConsumerState<HomePage> {
   Widget build(BuildContext context) {
     final continueWatchingAsync = ref.watch(continueWatchingProvider);
     final recentWorksAsync = ref.watch(recentWorksProvider);
+    final isDesktop =
+        MediaQuery.sizeOf(context).width >= ReelvaDesign.desktopBreakpoint;
     return Scaffold(
       backgroundColor: ReelvaDesign.background,
       body: GlassBackground(
         child: SafeArea(
           bottom: false,
-          child: _buildBody(context, continueWatchingAsync, recentWorksAsync),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: isDesktop
+                      ? ReelvaDesign.space32
+                      : ReelvaDesign.space24,
+                  vertical: ReelvaDesign.space12,
+                ),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxWidth: ReelvaDesign.contentMaxWidth,
+                    ),
+                    child: _buildHeader(context, isDesktop: isDesktop),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: _buildBody(
+                  context,
+                  continueWatchingAsync,
+                  recentWorksAsync,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -225,7 +254,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                 : 0) +
             ReelvaDesign.space4;
 
-        final content = RefreshIndicator(
+        return RefreshIndicator(
           onRefresh: () async {
             _retryAll();
           },
@@ -382,21 +411,6 @@ class _HomePageState extends ConsumerState<HomePage> {
               ),
             ],
           ),
-        );
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                inset,
-                ReelvaDesign.space12,
-                inset,
-                ReelvaDesign.space12,
-              ),
-              child: _buildHeader(context, isDesktop: isDesktop),
-            ),
-            Expanded(child: content),
-          ],
         );
       },
     );

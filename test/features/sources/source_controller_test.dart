@@ -28,6 +28,7 @@ class FakeMediaSourceAdapter implements MediaSourceAdapter {
   final Map<String, List<MediaEntry>> entriesByDir;
   Object? listError;
   Duration? delayPerEntry;
+  Completer<void>? scanGate;
 
   int listEntriesCallCount = 0;
   final List<String> requestedDirectories = [];
@@ -44,6 +45,7 @@ class FakeMediaSourceAdapter implements MediaSourceAdapter {
   ) async* {
     listEntriesCallCount++;
     requestedDirectories.add(directoryId);
+    if (scanGate != null) await scanGate!.future;
 
     if (listError != null) {
       throw listError!;
@@ -126,42 +128,53 @@ void main() {
       expect(container.read(sourceControllerProvider), isEmpty);
     });
 
-    test('addDirectory creates source and triggers initial scan', () async {
-      fakeAdapter.directorySelection = const DirectorySelection(
-        kind: 'local',
-        rootLocator: '/movies',
-        name: 'Movies',
-      );
-      fakeAdapter.entriesByDir['/movies'] = [
-        const MediaEntry(
-          externalId: 'avatar.mp4',
-          locator: 'Avatar.mp4',
-          name: 'Avatar.mp4',
-          isDirectory: false,
-          size: 2000,
-        ),
-      ];
+    test(
+      'addDirectory saves and returns while the initial scan is pending',
+      () async {
+        fakeAdapter.scanGate = Completer<void>();
+        fakeAdapter.directorySelection = const DirectorySelection(
+          kind: 'local',
+          rootLocator: '/movies',
+          name: 'Movies',
+        );
+        fakeAdapter.entriesByDir['/movies'] = [
+          const MediaEntry(
+            externalId: 'avatar.mp4',
+            locator: 'Avatar.mp4',
+            name: 'Avatar.mp4',
+            isDirectory: false,
+            size: 2000,
+          ),
+        ];
 
-      final controller = container.read(sourceControllerProvider.notifier);
-      final created = await controller.addDirectory();
+        final controller = container.read(sourceControllerProvider.notifier);
+        final created = await controller.addDirectory();
 
-      final sources = await repo.watchSources().first;
-      expect(sources.length, 1);
-      final source = sources.first;
-      expect(created?.id, source.id);
-      expect(source.name, 'Movies');
-      expect(source.rootLocator, '/movies');
+        final sources = await repo.watchSources().first;
+        expect(sources.length, 1);
+        final source = sources.first;
+        expect(created?.id, source.id);
+        expect(source.name, 'Movies');
+        expect(source.rootLocator, '/movies');
 
-      final progress = container.read(sourceControllerProvider)[source.id];
-      expect(progress, isNotNull);
-      expect(progress!.running, isFalse);
-      expect(progress.videos, 1);
-      expect(progress.visited, 1);
+        expect(
+          container.read(sourceControllerProvider)[source.id]!.running,
+          isTrue,
+        );
+        fakeAdapter.scanGate!.complete();
+        await controller.refreshSource(source.id);
 
-      final videos = await repo.watchLibrary().first;
-      expect(videos.length, 1);
-      expect(videos.first.fileName, 'Avatar.mp4');
-    });
+        final progress = container.read(sourceControllerProvider)[source.id];
+        expect(progress, isNotNull);
+        expect(progress!.running, isFalse);
+        expect(progress.videos, 1);
+        expect(progress.visited, 1);
+
+        final videos = await repo.watchLibrary().first;
+        expect(videos.length, 1);
+        expect(videos.first.fileName, 'Avatar.mp4');
+      },
+    );
 
     test(
       'refreshSource deduplicates concurrent calls (single flight)',

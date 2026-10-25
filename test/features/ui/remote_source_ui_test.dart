@@ -1,11 +1,16 @@
+import 'dart:async';
+
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:reelva/app/router.dart';
 import 'package:reelva/app/theme/reelva_theme.dart';
 import 'package:reelva/core/database/app_database.dart';
 import 'package:reelva/features/library/infrastructure/media_library_repository.dart';
+import 'package:reelva/features/metadata/application/metadata_providers.dart';
+import 'package:reelva/features/metadata/infrastructure/tmdb_token_store.dart';
 import 'package:reelva/features/player/domain/playback_resource.dart';
 import 'package:reelva/features/sources/application/source_providers.dart';
 import 'package:reelva/features/sources/add_source_page.dart';
@@ -19,9 +24,14 @@ import 'package:reelva/features/sources/sources_page.dart';
 import '../sources/infrastructure/remote_credentials_store_test.dart';
 
 class _FakeStubAdapter implements MediaSourceAdapter {
-  const _FakeStubAdapter(this.kind, {this.cancelDirectorySelection = false});
+  const _FakeStubAdapter(
+    this.kind, {
+    this.cancelDirectorySelection = false,
+    this.scanEntries,
+  });
 
   final bool cancelDirectorySelection;
+  final Stream<MediaEntry>? scanEntries;
 
   @override
   final String kind;
@@ -42,7 +52,7 @@ class _FakeStubAdapter implements MediaSourceAdapter {
   Stream<MediaEntry> listEntries(
     MediaSourceConfig source,
     String directoryId,
-  ) => const Stream.empty();
+  ) => scanEntries ?? const Stream.empty();
 
   @override
   Future<MediaStat> stat(MediaSourceConfig source, String entryId) async =>
@@ -74,7 +84,10 @@ void main() {
     await db.close();
   });
 
-  Widget buildTestApp({bool cancelDirectorySelection = false}) {
+  Widget buildTestApp({
+    bool cancelDirectorySelection = false,
+    Stream<MediaEntry>? scanEntries,
+  }) {
     final router = createRouter(initialLocation: '/sources');
     addTearDown(router.dispose);
     return ProviderScope(
@@ -83,10 +96,14 @@ void main() {
         appDatabaseProvider.overrideWithValue(db),
         mediaLibraryRepositoryProvider.overrideWithValue(repo),
         remoteCredentialsStoreProvider.overrideWithValue(credStore),
+        tmdbTokenStoreProvider.overrideWithValue(
+          TmdbTokenStore(storage: fakeStorage),
+        ),
         sourceAdaptersProvider.overrideWithValue({
           'local': _FakeStubAdapter(
             'local',
             cancelDirectorySelection: cancelDirectorySelection,
+            scanEntries: scanEntries,
           ),
           'androidSaf': const _FakeStubAdapter('androidSaf'),
           'webdav': const _FakeStubAdapter('webdav'),
@@ -97,6 +114,57 @@ void main() {
       child: MaterialApp.router(theme: ReelvaTheme.light, routerConfig: router),
     );
   }
+
+  testWidgets('首次扫描未完成时立即返回，可切换页面并查看后续处理结果', (tester) async {
+    final scan = StreamController<MediaEntry>();
+    try {
+      await tester.pumpWidget(buildTestApp(scanEntries: scan.stream));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('sources_add_appbar_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('add_source_type_local')));
+      await tester.pumpAndSettle();
+      final confirm = find.byKey(const Key('add_source_confirm_button'));
+      await tester.ensureVisible(confirm);
+      await tester.tap(confirm);
+      for (var i = 0; i < 20; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+        if (find
+            .byKey(const Key('source_progress_bar_1'))
+            .evaluate()
+            .isNotEmpty) {
+          break;
+        }
+      }
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.byType(SourceSetupPage), findsNothing);
+      expect(find.byType(SourcesPage), findsOneWidget);
+      expect(find.text('媒体源已保存，扫描与识别进度可在列表查看'), findsOneWidget);
+      expect(find.byKey(const Key('source_progress_bar_1')), findsOneWidget);
+
+      final router = GoRouter.of(tester.element(find.byType(SourcesPage)));
+      router.go('/library');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.byKey(const Key('library_building_view')), findsOneWidget);
+      expect(find.byKey(const Key('library_empty_view')), findsNothing);
+
+      router.go('/sources');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.byKey(const Key('source_progress_bar_1')), findsOneWidget);
+      await scan.close();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('source_progress_bar_1')), findsNothing);
+      expect(find.text('已完成本地识别'), findsOneWidget);
+      expect(find.byKey(const Key('metadata_error_banner')), findsNothing);
+    } finally {
+      if (!scan.isClosed) await scan.close();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(Duration.zero);
+    }
+  });
 
   testWidgets('列表卡片选择本地目录后在独立配置页添加并返回媒体源', (tester) async {
     try {

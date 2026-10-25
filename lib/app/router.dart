@@ -13,6 +13,7 @@ import 'package:reelva/features/settings/settings_subpages.dart';
 import 'package:reelva/features/sources/add_source_page.dart';
 import 'package:reelva/features/sources/source_setup_page.dart';
 import 'package:reelva/features/sources/sources_page.dart';
+import 'package:reelva/features/sources/source_files_page.dart';
 import 'package:reelva/shared/widgets/empty_state_view.dart';
 
 GoRouter createRouter({String initialLocation = '/'}) {
@@ -92,6 +93,16 @@ GoRouter createRouter({String initialLocation = '/'}) {
                         ),
                       ),
                     ],
+                  ),
+                  GoRoute(
+                    path: ':id/files',
+                    pageBuilder: (context, state) => _buildMaterialPage(
+                      state,
+                      SourceFilesPage(
+                        sourceId:
+                            int.tryParse(state.pathParameters['id'] ?? '') ?? 0,
+                      ),
+                    ),
                   ),
                 ],
               ),

@@ -79,7 +79,7 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
       excludedDirectories: excludedDirectories,
     );
 
-    await refreshSource(source.id);
+    unawaited(refreshSource(source.id));
     return source;
   }
 
@@ -140,7 +140,7 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
         excludedDirectories: excludedDirectories,
       );
 
-      await refreshSource(updated.id);
+      unawaited(refreshSource(updated.id));
       return updated;
     } else {
       String? credRef;
@@ -161,7 +161,7 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
           excludedDirectories: excludedDirectories,
         );
 
-        await refreshSource(created.id);
+        unawaited(refreshSource(created.id));
         return created;
       } catch (e) {
         if (createdInStore && credRef != null) {
@@ -464,6 +464,12 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
 
         final currentDirId = queue.removeFirst();
         visitedCount++;
+        _safeSetState(
+          (s) => {
+            ...s,
+            id: s[id]!.copyWith(visited: visitedCount, videos: videoCount),
+          },
+        );
 
         final stream = adapter.listEntries(source, currentDirId);
         await for (final entry in stream) {
@@ -510,6 +516,12 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
             );
           }
         }
+        _safeSetState(
+          (s) => {
+            ...s,
+            id: s[id]!.copyWith(visited: visitedCount, videos: videoCount),
+          },
+        );
       }
 
       if (_cancellations[id] == true) {

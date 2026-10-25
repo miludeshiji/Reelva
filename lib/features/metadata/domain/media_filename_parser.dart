@@ -195,7 +195,10 @@ class MediaFilenameParser {
   );
 
   /// 解析媒体文件名
-  static ParsedMediaFilename parse(String rawName) {
+  static ParsedMediaFilename parse(
+    String rawName, {
+    List<String> directoryNames = const [],
+  }) {
     var nameWithoutExt = rawName.replaceAll(_extRegex, '').trim();
 
     // 1. 提取分辨率
@@ -300,6 +303,37 @@ class MediaFilenameParser {
       }
     }
 
+    // 单独的 E01 / EP01，季号可由目录上下文提供。
+    if (!isSeries) {
+      final episodeMatch = RegExp(
+        r'(?<![a-zA-Z0-9])ep?(?<episode>\d{1,3})(?!\d)(?:[ ._-]*(?:e|[-~])(?<end>\d{1,3})(?!\d))?',
+        caseSensitive: false,
+      ).firstMatch(nameWithoutExt);
+      final numericMatch =
+          directoryNames.any((name) => seasonFromName(name) != null)
+          ? RegExp(r'^(?<episode>\d{1,3})$').firstMatch(nameWithoutExt)
+          : null;
+      final match = episodeMatch ?? numericMatch;
+      if (match != null) {
+        isSeries = true;
+        episodeNumber = int.parse(match.namedGroup('episode')!);
+        episodeNumbers.add(episodeNumber);
+        if (episodeMatch != null) {
+          final end = int.tryParse(episodeMatch.namedGroup('end') ?? '');
+          if (end != null && end > episodeNumber) {
+            episodeNumbers.addAll([
+              for (var number = episodeNumber + 1; number <= end; number++)
+                number,
+            ]);
+            episodeNumber = null;
+            isMultiEpisode = true;
+          }
+        }
+        cutIndex = match.start;
+        epEndIndex = match.end;
+      }
+    }
+
     // SP / OVA 模式
     if (!isSeries) {
       final spMatch = _spOvaRegex.firstMatch(nameWithoutExt);
@@ -376,12 +410,42 @@ class MediaFilenameParser {
         cutIndex = earliestJunk;
       }
     }
+    if (isSeries &&
+        sxxMatch == null &&
+        !_xxExxRegex.hasMatch(nameWithoutExt) &&
+        !isSpecialOrOva) {
+      seasonNumber =
+          seasonFromName(nameWithoutExt) ??
+          directoryNames.reversed
+              .map(seasonFromName)
+              .whereType<int>()
+              .firstOrNull ??
+          seasonNumber;
+    }
+
     // 5. 提取标题
     final rawTitlePart = nameWithoutExt.substring(0, cutIndex).trim();
     final cleanedTitle = _cleanTitle(rawTitlePart);
 
     // 提取可能的次要标题（如中文 + 英文组合）
-    final (mainTitle, secTitle) = _extractDualTitles(cleanedTitle);
+    var (mainTitle, secTitle) = _extractDualTitles(cleanedTitle);
+    if (isSeries && mainTitle.isEmpty) {
+      for (final directory in directoryNames.reversed) {
+        if (seasonFromName(directory) != null) continue;
+        final parent = parse(directory);
+        if (parent.title.isEmpty) continue;
+        mainTitle = parent.title;
+        secTitle = parent.secondaryTitle;
+        year ??= parent.year;
+        break;
+      }
+    }
+    if (year == null) {
+      for (final directory in directoryNames.reversed) {
+        year = parse(directory).year;
+        if (year != null) break;
+      }
+    }
 
     // 6. 提取剧集的分集标题 (Episode Title)
     if (isSeries && epEndIndex > 0 && epEndIndex < nameWithoutExt.length) {
@@ -464,6 +528,14 @@ class MediaFilenameParser {
         .replaceAll(RegExp(r'\s{2,}'), ' ')
         .trim();
     return s;
+  }
+
+  static int? seasonFromName(String name) {
+    final match = RegExp(
+      r'(?<![a-zA-Z0-9])(?:s|season[ ._-]*)(\d{1,2})(?!\d)|第[ ._-]*(\d{1,2})[ ._-]*季',
+      caseSensitive: false,
+    ).firstMatch(name);
+    return match == null ? null : int.parse(match.group(1) ?? match.group(2)!);
   }
 
   static (String, String?) _extractDualTitles(String title) {

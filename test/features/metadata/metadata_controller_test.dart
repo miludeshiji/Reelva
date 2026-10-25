@@ -65,9 +65,14 @@ class FakeMetadataService implements MetadataService {
   Object? errorToThrow;
   Future<MetadataRefreshResult> Function()? customRefreshHandler;
   int refreshCallCount = 0;
+  void Function(MetadataPhase phase, int processed, int? total)?
+  progressCallback;
 
   @override
-  Future<MetadataRefreshResult> refresh() async {
+  Future<MetadataRefreshResult> refresh({
+    void Function(MetadataPhase phase, int processed, int? total)? onProgress,
+  }) async {
+    progressCallback = onProgress;
     refreshCallCount++;
     if (customRefreshHandler != null) {
       return customRefreshHandler!();
@@ -169,5 +174,32 @@ void main() {
       expect(finalState.result?.matched, equals(7));
       expect(fakeService.refreshCallCount, equals(2));
     });
+
+    test(
+      'progress survives reads and resets before the next refresh',
+      () async {
+        final completer = Completer<MetadataRefreshResult>();
+        fakeService.customRefreshHandler = () => completer.future;
+        final notifier = container.read(metadataControllerProvider.notifier);
+        final refresh = notifier.refresh();
+        fakeService.progressCallback!(MetadataPhase.matching, 2, 5);
+
+        final progress = container.read(metadataControllerProvider);
+        expect(progress.running, isTrue);
+        expect(progress.phase, MetadataPhase.matching);
+        expect(progress.processed, 2);
+        expect(progress.total, 5);
+
+        completer.complete(const MetadataRefreshResult(matched: 2));
+        await refresh;
+        final nextRefresh = notifier.refresh();
+        final nextState = container.read(metadataControllerProvider);
+        expect(nextState.phase, MetadataPhase.recognizing);
+        expect(nextState.processed, 0);
+        expect(nextState.total, isNull);
+        expect(nextState.result, isNull);
+        await nextRefresh;
+      },
+    );
   });
 }

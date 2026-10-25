@@ -8,11 +8,12 @@ import '../../../shared/widgets/empty_state_view.dart';
 import '../../../shared/widgets/glass_widgets.dart';
 import '../../../shared/widgets/poster_image.dart';
 import '../../metadata/application/metadata_providers.dart';
+import '../../metadata/domain/matching_file.dart';
 import '../../sources/application/source_providers.dart';
 import '../../sources/domain/source_models.dart';
 import '../domain/library_work.dart';
 import 'local_edit_dialog.dart';
-import 'manual_match_dialog.dart';
+import 'manual_match_page.dart';
 
 /// 作品详情页面
 ///
@@ -84,12 +85,23 @@ class _WorkDetailsPageState extends ConsumerState<WorkDetailsPage> {
   }
 
   Future<void> _openManualMatch(LibraryWork work) async {
-    final canonicalId = await ManualMatchDialog.show(
+    final details = await ref
+        .read(mediaLibraryRepositoryProvider)
+        .getWorkDetails(work.id);
+    if (!mounted || details == null) return;
+    final canonicalId = await ManualMatchPage.show(
       context,
-      workId: work.id,
-      currentTitle: work.title,
-      currentType: work.type,
-      currentYear: work.year,
+      files: [
+        for (final version in details.versions)
+          MatchingFile(
+            fileId: version.fileId,
+            name: version.fileName,
+            seasonNumber: version.seasonNumber,
+            episodeNumber: version.episodeNumber,
+          ),
+      ],
+      initialTitle: work.title,
+      initialYear: work.year,
     );
 
     if (!mounted || canonicalId == null) return;

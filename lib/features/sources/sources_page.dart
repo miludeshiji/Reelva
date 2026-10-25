@@ -11,6 +11,8 @@ import 'package:reelva/shared/widgets/glass_widgets.dart'
         ReelvaDesign;
 
 import '../../shared/widgets/empty_state_view.dart';
+import '../metadata/application/metadata_providers.dart';
+import '../metadata/presentation/metadata_status_card.dart';
 import 'application/source_providers.dart';
 import 'domain/source_models.dart';
 import 'remote_source_dialog.dart';
@@ -26,6 +28,7 @@ class SourcesPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final sourcesAsync = ref.watch(mediaSourcesProvider);
     final scanProgressMap = ref.watch(sourceControllerProvider);
+    final metadataState = ref.watch(metadataControllerProvider);
 
     return Scaffold(
       backgroundColor: ReelvaDesign.background,
@@ -86,36 +89,46 @@ class SourcesPage extends ConsumerWidget {
                         ],
                       ),
                       data: (sources) {
+                        final connectedHeader = Row(
+                          children: [
+                            const Expanded(
+                              child: GlassSectionTitle(title: '已连接'),
+                            ),
+                            const SizedBox(width: ReelvaDesign.space12),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: ReelvaDesign.space12,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEFF4FB),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                '共 ${sources.length} 个',
+                                style: const TextStyle(
+                                  color: ReelvaDesign.muted,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
                         final sourceList = Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Row(
-                              children: [
-                                const Expanded(
-                                  child: GlassSectionTitle(title: '已连接'),
-                                ),
-                                const SizedBox(width: ReelvaDesign.space12),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: ReelvaDesign.space12,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFEFF4FB),
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: Text(
-                                    '共 ${sources.length} 个',
-                                    style: const TextStyle(
-                                      color: ReelvaDesign.muted,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: ReelvaDesign.space20),
+                            if (metadataState.running ||
+                                metadataState.result != null ||
+                                metadataState.error != null) ...[
+                              MetadataStatusCard(
+                                state: metadataState,
+                                onRetry: () => ref
+                                    .read(metadataControllerProvider.notifier)
+                                    .refresh(),
+                              ),
+                              const SizedBox(height: ReelvaDesign.space12),
+                            ],
                             if (sources.isEmpty)
                               EmptyStateView(
                                 key: const Key('sources_empty_view'),
@@ -146,25 +159,38 @@ class SourcesPage extends ConsumerWidget {
                         );
 
                         if (isDesktop) {
-                          return Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          const managementWidth = 300.0;
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              SizedBox(
-                                width: 300,
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    addCard,
-                                    const SizedBox(
-                                      height: ReelvaDesign.space20,
-                                    ),
-                                    summary,
-                                  ],
+                              Padding(
+                                padding: const EdgeInsets.only(
+                                  left: managementWidth + ReelvaDesign.space32,
                                 ),
+                                child: connectedHeader,
                               ),
-                              const SizedBox(width: ReelvaDesign.space32),
-                              Expanded(child: sourceList),
+                              const SizedBox(height: ReelvaDesign.space20),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  SizedBox(
+                                    width: managementWidth,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        addCard,
+                                        const SizedBox(
+                                          height: ReelvaDesign.space20,
+                                        ),
+                                        summary,
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: ReelvaDesign.space32),
+                                  Expanded(child: sourceList),
+                                ],
+                              ),
                             ],
                           );
                         }
@@ -174,6 +200,8 @@ class SourcesPage extends ConsumerWidget {
                           children: [
                             addCard,
                             const SizedBox(height: ReelvaDesign.space32),
+                            connectedHeader,
+                            const SizedBox(height: ReelvaDesign.space20),
                             sourceList,
                             const SizedBox(height: ReelvaDesign.space24),
                             summary,
@@ -442,6 +470,8 @@ class _SourceCard extends ConsumerWidget {
         : kindColor;
 
     return GlassCard(
+      key: Key('source_card_${source.id}'),
+      onTap: () => context.push('/sources/${source.id}/files'),
       color: Colors.white.withValues(alpha: 0.88),
       borderRadius: BorderRadius.circular(22),
       padding: const EdgeInsets.all(ReelvaDesign.space16),
@@ -664,10 +694,25 @@ class _SourceCard extends ConsumerWidget {
                   ),
                   const SizedBox(width: ReelvaDesign.space8),
                   Expanded(
-                    child: Text(
-                      activeError,
-                      key: Key('source_error_text_${source.id}'),
-                      style: TextStyle(color: colorScheme.error, fontSize: 11),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '媒体源已保存，扫描未完成',
+                          style: TextStyle(
+                            color: colorScheme.error,
+                            fontSize: 11,
+                          ),
+                        ),
+                        Text(
+                          activeError,
+                          key: Key('source_error_text_${source.id}'),
+                          style: TextStyle(
+                            color: colorScheme.error,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],

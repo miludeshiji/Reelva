@@ -20,19 +20,35 @@ class MetadataTaskState {
   final bool running;
   final MetadataRefreshResult? result;
   final String? error;
+  final MetadataPhase phase;
+  final int processed;
+  final int? total;
 
-  const MetadataTaskState({this.running = false, this.result, this.error});
+  const MetadataTaskState({
+    this.running = false,
+    this.result,
+    this.error,
+    this.phase = MetadataPhase.recognizing,
+    this.processed = 0,
+    this.total,
+  });
 
   MetadataTaskState copyWith({
     bool? running,
     MetadataRefreshResult? result,
     String? error,
     bool clearError = false,
+    MetadataPhase? phase,
+    int? processed,
+    int? total,
   }) {
     return MetadataTaskState(
       running: running ?? this.running,
       result: result ?? this.result,
       error: clearError ? null : (error ?? this.error),
+      phase: phase ?? this.phase,
+      processed: processed ?? this.processed,
+      total: total ?? this.total,
     );
   }
 
@@ -43,10 +59,14 @@ class MetadataTaskState {
           runtimeType == other.runtimeType &&
           running == other.running &&
           result == other.result &&
-          error == other.error;
+          error == other.error &&
+          phase == other.phase &&
+          processed == other.processed &&
+          total == other.total;
 
   @override
-  int get hashCode => Object.hash(running, result, error);
+  int get hashCode =>
+      Object.hash(running, result, error, phase, processed, total);
 
   @override
   String toString() =>
@@ -109,11 +129,20 @@ class MetadataController extends Notifier<MetadataTaskState> {
     do {
       _hasQueuedRefresh = false;
       if (!ref.mounted) return;
-      state = state.copyWith(running: true, clearError: true);
+      state = const MetadataTaskState(running: true);
 
       try {
         final service = ref.read(metadataServiceProvider);
-        final res = await service.refresh();
+        final res = await service.refresh(
+          onProgress: (phase, processed, total) {
+            if (!ref.mounted) return;
+            state = state.copyWith(
+              phase: phase,
+              processed: processed,
+              total: total,
+            );
+          },
+        );
         if (!ref.mounted) return;
 
         // 成功完成时刷新凭据配置缓存状态

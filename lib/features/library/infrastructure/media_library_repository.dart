@@ -119,6 +119,295 @@ class MediaLibraryRepository {
     );
   }
 
+  /// 为浏览器中实际选中的文件补齐索引，不等待整个媒体源扫描结束。
+  Future<Map<String, int>> indexSourceFiles(
+    int sourceId,
+    List<MediaEntry> entries,
+  ) => db.transaction(() async {
+    final source = await getSource(sourceId);
+    if (!source.enabled) {
+      throw const MediaSourceException('媒体源已停用');
+    }
+    await applyScanBatch(sourceId, source.scanRevision, entries);
+    final rows =
+        await (db.select(db.mediaEntries).join([
+              innerJoin(
+                db.mediaFiles,
+                db.mediaFiles.entryId.equalsExp(db.mediaEntries.id),
+              ),
+            ])..where(
+              db.mediaEntries.sourceId.equals(sourceId) &
+                  db.mediaEntries.externalEntryId.isIn(
+                    entries.map((e) => e.externalId),
+                  ),
+            ))
+            .get();
+    return {
+      for (final row in rows)
+        row.readTable(db.mediaEntries).externalEntryId: row
+            .readTable(db.mediaFiles)
+            .id,
+    };
+  });
+
+  Future<WorkData?> _assignedWork(MediaAssignmentData assignment) async {
+    if (assignment.workId != null) {
+      return (db.select(
+        db.works,
+      )..where((w) => w.id.equals(assignment.workId!))).getSingleOrNull();
+    }
+    final row = await (db.select(db.works).join([
+      innerJoin(db.seasons, db.seasons.seriesId.equalsExp(db.works.id)),
+      innerJoin(db.episodes, db.episodes.seasonId.equalsExp(db.seasons.id)),
+    ])..where(db.episodes.id.equals(assignment.episodeId!))).getSingleOrNull();
+    return row?.readTable(db.works);
+  }
+
+  Future<bool> isFileMetadataLocked(int fileId) async {
+    final assignment = await (db.select(
+      db.mediaAssignments,
+    )..where((a) => a.fileId.equals(fileId))).getSingleOrNull();
+    if (assignment == null) {
+      throw const MetadataException('所选文件不存在，请刷新目录后重试');
+    }
+    return (await _assignedWork(assignment))?.metadataLocked ?? false;
+  }
+
+  /// 仅重绑明确选中的文件，保留其他版本、季集关联与观看历史。
+  Future<int?> applyMetadataToFiles(
+    Map<int, TmdbEpisode?> files,
+    TmdbWork metadata, {
+    bool manual = true,
+  }) => db.transaction(() async {
+    final assignments = <int, MediaAssignmentData>{};
+    for (final fileId in files.keys) {
+      final row =
+          await (db.select(db.mediaAssignments).join([
+                innerJoin(
+                  db.mediaFiles,
+                  db.mediaFiles.id.equalsExp(db.mediaAssignments.fileId),
+                ),
+                innerJoin(
+                  db.mediaEntries,
+                  db.mediaEntries.id.equalsExp(db.mediaFiles.entryId),
+                ),
+                innerJoin(
+                  db.mediaSources,
+                  db.mediaSources.id.equalsExp(db.mediaEntries.sourceId),
+                ),
+              ])..where(
+                db.mediaAssignments.fileId.equals(fileId) &
+                    db.mediaSources.enabled.equals(true),
+              ))
+              .getSingleOrNull();
+      if (row == null) {
+        throw const MetadataException('所选文件已不可用，请刷新目录后重试');
+      }
+      final assignment = row.readTable(db.mediaAssignments);
+      if (!manual &&
+          ((await _assignedWork(assignment))?.metadataLocked ?? false)) {
+        continue;
+      }
+      final episode = files[fileId];
+      if (metadata.type == 'series' &&
+          (episode == null ||
+              episode.seasonNumber < 0 ||
+              episode.episodeNumber < 1)) {
+        throw const MetadataException('请为所选文件确认正确的季号和集号');
+      }
+      assignments[fileId] = assignment;
+    }
+    if (assignments.isEmpty) return null;
+
+    var workId = await _getWorkIdByExternalId(
+      'tmdb',
+      '${metadata.type}:${metadata.id}',
+    );
+    workId ??= await db
+        .into(db.works)
+        .insert(
+          WorksCompanion.insert(
+            title: metadata.title,
+            type: Value(metadata.type),
+          ),
+        );
+    workId = await applyMetadata(workId, metadata, manual: manual);
+    final targetEpisodes = <(int, int), int>{};
+    final targets = <int, int?>{};
+    for (final fileId in assignments.keys) {
+      final episode = metadata.type == 'series' ? files[fileId] : null;
+      int? episodeId;
+      if (episode != null) {
+        final key = (episode.seasonNumber, episode.episodeNumber);
+        episodeId = targetEpisodes[key];
+        if (episodeId == null) {
+          var season =
+              await (db.select(db.seasons)..where(
+                    (s) =>
+                        s.seriesId.equals(workId!) &
+                        s.seasonNumber.equals(episode.seasonNumber),
+                  ))
+                  .getSingleOrNull();
+          final seasonId =
+              season?.id ??
+              await db
+                  .into(db.seasons)
+                  .insert(
+                    SeasonsCompanion.insert(
+                      seriesId: workId,
+                      seasonNumber: episode.seasonNumber,
+                    ),
+                  );
+          final existing =
+              await (db.select(db.episodes)..where(
+                    (e) =>
+                        e.seasonId.equals(seasonId) &
+                        e.episodeNumber.equals(episode.episodeNumber),
+                  ))
+                  .getSingleOrNull();
+          episodeId =
+              existing?.id ??
+              await db
+                  .into(db.episodes)
+                  .insert(
+                    EpisodesCompanion.insert(
+                      seasonId: seasonId,
+                      episodeNumber: episode.episodeNumber,
+                      title: Value(episode.title),
+                      overview: Value(episode.overview),
+                      airDate: Value(episode.airDate),
+                    ),
+                  );
+          targetEpisodes[key] = episodeId;
+        }
+      }
+      targets[fileId] = episodeId;
+      await (db.update(
+        db.mediaAssignments,
+      )..where((a) => a.fileId.equals(fileId))).write(
+        MediaAssignmentsCompanion(
+          workId: Value(episodeId == null ? workId : null),
+          episodeId: Value(episodeId),
+        ),
+      );
+      await (db.update(db.mediaFiles)..where((f) => f.id.equals(fileId))).write(
+        MediaFilesCompanion(
+          parseState: const Value('parsed'),
+          candidateType: Value(metadata.type),
+          candidateSeasonNumber: Value(episode?.seasonNumber),
+          candidateEpisodeNumber: Value(episode?.episodeNumber),
+          candidateDetails: const Value(null),
+        ),
+      );
+    }
+    if (metadata.type == 'series') {
+      await applyEpisodeMetadata(
+        workId,
+        files.values.whereType<TmdbEpisode>().toList(),
+        manual: manual,
+      );
+    }
+    for (final assignment in assignments.values) {
+      await _copyMatchingProgress(
+        assignment,
+        workId: workId,
+        episodeId: targets[assignment.fileId],
+      );
+    }
+    for (final assignment in assignments.values) {
+      await _cleanMatchingOrphan(assignment);
+    }
+    return workId;
+  });
+
+  Future<void> _copyMatchingProgress(
+    MediaAssignmentData previous, {
+    required int workId,
+    required int? episodeId,
+  }) async {
+    final oldType = previous.workId != null ? 'work' : 'episode';
+    final oldId = previous.workId ?? previous.episodeId!;
+    final newType = episodeId == null ? 'work' : 'episode';
+    final newId = episodeId ?? workId;
+    if (oldType == newType && oldId == newId) return;
+    final progress =
+        await (db.select(db.playbackProgresses)..where(
+              (p) => p.targetType.equals(oldType) & p.targetId.equals(oldId),
+            ))
+            .getSingleOrNull();
+    if (progress == null || progress.lastFileId != previous.fileId) return;
+    final target =
+        await (db.select(db.playbackProgresses)..where(
+              (p) => p.targetType.equals(newType) & p.targetId.equals(newId),
+            ))
+            .getSingleOrNull();
+    if (target == null || progress.updatedAt.isAfter(target.updatedAt)) {
+      await db
+          .into(db.playbackProgresses)
+          .insertOnConflictUpdate(
+            progress
+                .toCompanion(true)
+                .copyWith(
+                  id: const Value.absent(),
+                  targetType: Value(newType),
+                  targetId: Value(newId),
+                  workId: Value(episodeId == null ? workId : null),
+                  episodeId: Value(episodeId),
+                ),
+          );
+    }
+    final remaining =
+        await (db.select(db.mediaAssignments)..where(
+              (a) => oldType == 'work'
+                  ? a.workId.equals(oldId)
+                  : a.episodeId.equals(oldId),
+            ))
+            .get();
+    if (remaining.isEmpty) {
+      await (db.delete(
+        db.playbackProgresses,
+      )..where((p) => p.id.equals(progress.id))).go();
+    }
+  }
+
+  Future<void> _cleanMatchingOrphan(MediaAssignmentData previous) async {
+    var oldWorkId = previous.workId;
+    if (previous.episodeId != null) {
+      final episode = await (db.select(
+        db.episodes,
+      )..where((e) => e.id.equals(previous.episodeId!))).getSingleOrNull();
+      if (episode == null) return;
+      final assignments = await (db.select(
+        db.mediaAssignments,
+      )..where((a) => a.episodeId.equals(episode.id))).get();
+      final history = await (db.select(
+        db.playbackProgresses,
+      )..where((p) => p.episodeId.equals(episode.id))).get();
+      if (assignments.isNotEmpty || history.isNotEmpty) return;
+      final season = await (db.select(
+        db.seasons,
+      )..where((s) => s.id.equals(episode.seasonId))).getSingle();
+      oldWorkId = season.seriesId;
+      await (db.delete(
+        db.episodes,
+      )..where((e) => e.id.equals(episode.id))).go();
+      final episodes = await (db.select(
+        db.episodes,
+      )..where((e) => e.seasonId.equals(season.id))).get();
+      if (episodes.isEmpty) {
+        await (db.delete(
+          db.seasons,
+        )..where((s) => s.id.equals(season.id))).go();
+      }
+    }
+    if (oldWorkId != null) {
+      final history = await (db.select(
+        db.playbackProgresses,
+      )..where((p) => p.workId.equals(oldWorkId!))).get();
+      if (history.isEmpty) await _deleteWorkIfOrphan(oldWorkId);
+    }
+  }
+
   Future<void> disableSource(int id) async {
     await (db.update(db.mediaSources)..where((s) => s.id.equals(id))).write(
       const MediaSourcesCompanion(enabled: Value(false)),
@@ -463,24 +752,24 @@ class MediaLibraryRepository {
   /// 保留用户已锁定或非本地来源的既有匹配；对于高置信度的电影自动归并版本，
   /// 对于高置信度的剧集建立季集层级；对于多集、未知集号或结构模糊的文件显式保留待审查状态。
   Future<void> recognizePendingFiles() async {
-    final pendingFiles = await (db.select(db.mediaFiles).join([
-      innerJoin(
-        db.mediaEntries,
-        db.mediaEntries.id.equalsExp(db.mediaFiles.entryId),
-      ),
-      innerJoin(
-        db.mediaAssignments,
-        db.mediaAssignments.fileId.equalsExp(db.mediaFiles.id),
-      ),
-      leftOuterJoin(
-        db.works,
-        db.works.id.equalsExp(db.mediaAssignments.workId),
-      ),
-    ])..where(db.mediaFiles.parseState.equals('pending'))).get();
-
-    if (pendingFiles.isEmpty) return;
-
     await db.transaction(() async {
+      final pendingFiles = await (db.select(db.mediaFiles).join([
+        innerJoin(
+          db.mediaEntries,
+          db.mediaEntries.id.equalsExp(db.mediaFiles.entryId),
+        ),
+        innerJoin(
+          db.mediaAssignments,
+          db.mediaAssignments.fileId.equalsExp(db.mediaFiles.id),
+        ),
+        leftOuterJoin(
+          db.works,
+          db.works.id.equalsExp(db.mediaAssignments.workId),
+        ),
+      ])..where(db.mediaFiles.parseState.equals('pending'))).get();
+
+      if (pendingFiles.isEmpty) return;
+
       for (final row in pendingFiles) {
         final file = row.readTable(db.mediaFiles);
         final entry = row.readTable(db.mediaEntries);
@@ -1113,7 +1402,7 @@ class MediaLibraryRepository {
         db.works,
       )..where((w) => w.id.equals(workId))).getSingleOrNull();
       if (currentWork == null) {
-        throw ArgumentError('Work with id $workId not found');
+        throw const MetadataException('作品已被更新，请重新加载', code: 'work_not_found');
       }
 
       // 锁定状态下的自动调用（含异步迟到结果）绝不覆盖

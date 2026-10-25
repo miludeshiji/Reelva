@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,6 +21,8 @@ class FakeRemoteSourceAdapter implements MediaSourceAdapter {
 
   PlaybackResource? playbackToReturn;
   int resolveCount = 0;
+  Completer<void>? scanGate;
+  Object? listError;
 
   @override
   Future<DirectorySelection?> pickDirectory({String? initialLocator}) async {
@@ -29,7 +33,10 @@ class FakeRemoteSourceAdapter implements MediaSourceAdapter {
   Stream<MediaEntry> listEntries(
     MediaSourceConfig source,
     String directoryId,
-  ) async* {}
+  ) async* {
+    if (scanGate != null) await scanGate!.future;
+    if (listError != null) throw listError!;
+  }
 
   @override
   Future<MediaStat> stat(MediaSourceConfig source, String entryId) async {
@@ -78,11 +85,45 @@ void main() {
   });
 
   tearDown(() async {
+    final controller = container.read(sourceControllerProvider.notifier);
+    final runningIds = container
+        .read(sourceControllerProvider)
+        .entries
+        .where((entry) => entry.value.running)
+        .map((entry) => entry.key)
+        .toList();
+    for (final id in runningIds) {
+      await controller.refreshSource(id);
+    }
     container.dispose();
     await db.close();
   });
 
   group('SourceController 远程媒体源管理', () {
+    test('远程源保存后立即返回，首次扫描失败保留媒体源与安全凭据', () async {
+      webdavAdapter.scanGate = Completer<void>();
+      webdavAdapter.listError = const MediaSourceException('目录访问失败');
+      final controller = container.read(sourceControllerProvider.notifier);
+      final source = await controller.addRemoteSource(
+        kind: 'webdav',
+        rootUrl: 'https://nas.example.com/media/',
+        credentials: const RemoteCredentials(username: 'user', password: 'pwd'),
+      );
+      expect(
+        container.read(sourceControllerProvider)[source.id]!.running,
+        isTrue,
+      );
+      expect((await repo.getSource(source.id)).enabled, isTrue);
+      webdavAdapter.scanGate!.complete();
+      await controller.refreshSource(source.id);
+
+      expect(
+        container.read(sourceControllerProvider)[source.id]!.error,
+        '目录访问失败',
+      );
+      expect((await repo.getSource(source.id)).enabled, isTrue);
+      expect((await credStore.read(source.credentialRef)).username, 'user');
+    });
     test('addRemoteSource 创建 WebDAV 源并安全持久化凭据', () async {
       final controller = container.read(sourceControllerProvider.notifier);
 

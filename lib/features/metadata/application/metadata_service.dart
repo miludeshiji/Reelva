@@ -5,9 +5,12 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/logging/app_logger.dart';
 import '../../library/infrastructure/media_library_repository.dart';
+import '../domain/matching_file.dart';
 import '../domain/tmdb_models.dart';
 import '../infrastructure/tmdb_client.dart';
 import '../infrastructure/tmdb_token_store.dart';
+
+enum MetadataPhase { recognizing, matching }
 
 /// 元数据批量刷新执行结果统计
 @immutable
@@ -16,12 +19,14 @@ class MetadataRefreshResult {
   final int needsReview;
   final int skipped;
   final List<String> errors;
+  final bool localOnly;
 
   const MetadataRefreshResult({
     this.matched = 0,
     this.needsReview = 0,
     this.skipped = 0,
     this.errors = const [],
+    this.localOnly = false,
   });
 
   @override
@@ -52,19 +57,21 @@ class MetadataService {
   });
 
   /// 搜索 TMDB 影视条目，按置信度排序返回候选列表
-  Future<List<TmdbWork>> search(
-    String query, {
-    required String type,
-    int? year,
-  }) async {
+  Future<List<TmdbWork>> search(String query, {String? type, int? year}) async {
     final cleanQuery = query.trim();
     if (cleanQuery.isEmpty) return const [];
 
     List<TmdbWork> rawCandidates;
     if (type == 'movie') {
       rawCandidates = await tmdbClient.searchMovie(cleanQuery, year: year);
-    } else {
+    } else if (type == 'series') {
       rawCandidates = await tmdbClient.searchTv(cleanQuery, year: year);
+    } else {
+      final groups = await Future.wait([
+        tmdbClient.searchMovie(cleanQuery, year: year),
+        tmdbClient.searchTv(cleanQuery, year: year),
+      ]);
+      rawCandidates = groups.expand((group) => group).toSet().toList();
     }
 
     if (rawCandidates.isEmpty) return const [];
@@ -81,6 +88,181 @@ class MetadataService {
 
     scored.sort((a, b) => b.value.compareTo(a.value));
     return scored.map((e) => e.key).toList();
+  }
+
+  Future<List<PreparedFileMatch>> prepareFileMatches(
+    List<MatchingFile> files,
+    TmdbWork candidate, {
+    Map<int, ({int? season, int? episode})> overrides = const {},
+  }) async {
+    final seasons = <int, List<TmdbEpisode>>{};
+    final prepared = <PreparedFileMatch>[];
+    for (final file in files) {
+      if (candidate.type == 'movie') {
+        prepared.add(PreparedFileMatch(file: file));
+        continue;
+      }
+      final parsed = file.parsed;
+      final numbers = overrides[file.fileId];
+      final season = numbers != null
+          ? numbers.season
+          : parsed.seasonNumber ?? file.seasonNumber;
+      final number = numbers != null
+          ? numbers.episode
+          : parsed.episodeNumber ?? file.episodeNumber;
+      String? error;
+      TmdbEpisode? episode;
+      if (parsed.isMultiEpisode) {
+        error = '此文件包含多集，请取消勾选后单独处理';
+      } else if (season == null || season < 0) {
+        error = '请选择所属季';
+      } else if (number == null || number < 1) {
+        error = '请填写集号';
+      } else {
+        final episodes = seasons[season] ??= await tmdbClient
+            .getTvSeasonEpisodes(candidate.id, season);
+        episode = episodes.where((e) => e.episodeNumber == number).firstOrNull;
+        if (episode == null) error = 'TMDB 中没有第 $season 季第 $number 集';
+      }
+      prepared.add(
+        PreparedFileMatch(
+          file: file,
+          seasonNumber: season,
+          episodeNumber: number,
+          episode: episode,
+          error: error,
+        ),
+      );
+    }
+    return prepared;
+  }
+
+  Future<int> matchFilesManually(
+    List<PreparedFileMatch> files,
+    TmdbWork candidate,
+  ) async {
+    if (files.isEmpty || files.any((file) => file.error != null)) {
+      throw const MetadataException('请先确认所选文件的匹配信息');
+    }
+    final metadata = candidate.type == 'movie'
+        ? await tmdbClient.getMovieDetails(candidate.id)
+        : await tmdbClient.getTvDetails(candidate.id);
+    final workId = await mediaLibraryRepository.applyMetadataToFiles({
+      for (final file in files) file.file.fileId: file.episode,
+    }, metadata);
+    if (workId == null) throw const MetadataException('没有可匹配的文件');
+    return workId;
+  }
+
+  Future<MetadataRefreshResult> matchFilesAutomatically(
+    List<MatchingFile> files, {
+    void Function(int processed, int total)? onProgress,
+  }) async {
+    if (!await tokenStore.isConfigured()) {
+      return const MetadataRefreshResult(errors: ['请先配置 TMDB 凭据后再自动匹配']);
+    }
+    var matched = 0;
+    var needsReview = 0;
+    var skipped = 0;
+    final errors = <String>[];
+    final searches = <(String, String, int), List<TmdbWork>>{};
+    final details = <TmdbWork, TmdbWork>{};
+    final episodes = <(int, int), List<TmdbEpisode>>{};
+    onProgress?.call(0, files.length);
+    for (final (index, file) in files.indexed) {
+      try {
+        if (await mediaLibraryRepository.isFileMetadataLocked(file.fileId)) {
+          skipped++;
+          continue;
+        }
+        final parsed = file.parsed;
+        if (parsed.type == null ||
+            parsed.year == null ||
+            parsed.isMultiEpisode ||
+            (parsed.type == 'series' &&
+                (parsed.seasonNumber == null ||
+                    parsed.episodeNumber == null))) {
+          needsReview++;
+          continue;
+        }
+        final key = (parsed.type!, parsed.title, parsed.year!);
+        final candidates = searches[key] ??= await search(
+          parsed.title,
+          type: parsed.type,
+          year: parsed.year,
+        );
+        if (candidates.isEmpty) {
+          needsReview++;
+          continue;
+        }
+        final top = candidates.first;
+        final score = computeMatchScore(
+          query: parsed.title,
+          targetYear: parsed.year,
+          candidate: top,
+        );
+        final second = candidates.length < 2
+            ? 0.0
+            : computeMatchScore(
+                query: parsed.title,
+                targetYear: parsed.year,
+                candidate: candidates[1],
+              );
+        if (top.year == null ||
+            (top.year! - parsed.year!).abs() > 1 ||
+            score < 0.85 ||
+            (candidates.length > 1 && score - second < 0.15)) {
+          needsReview++;
+          continue;
+        }
+        final metadata = details[top] ??= top.type == 'movie'
+            ? await tmdbClient.getMovieDetails(top.id)
+            : await tmdbClient.getTvDetails(top.id);
+        TmdbEpisode? episode;
+        if (top.type == 'series') {
+          final key = (top.id, parsed.seasonNumber!);
+          final season = episodes[key] ??= await tmdbClient.getTvSeasonEpisodes(
+            top.id,
+            key.$2,
+          );
+          episode = season
+              .where((e) => e.episodeNumber == parsed.episodeNumber)
+              .firstOrNull;
+          if (episode == null) {
+            needsReview++;
+            continue;
+          }
+        }
+        final workId = await mediaLibraryRepository.applyMetadataToFiles(
+          {file.fileId: episode},
+          metadata,
+          manual: false,
+        );
+        if (workId == null) {
+          skipped++;
+        } else {
+          matched++;
+        }
+      } on MetadataException catch (error) {
+        errors.add('${file.name}：${error.message}');
+        if (error.code == 'unauthorized' || error.code == 'rate_limit') break;
+      } catch (error, stackTrace) {
+        AppLogger.instance.error(
+          '所选文件自动匹配失败',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        errors.add('${file.name}：匹配失败');
+      } finally {
+        onProgress?.call(index + 1, files.length);
+      }
+    }
+    return MetadataRefreshResult(
+      matched: matched,
+      needsReview: needsReview,
+      skipped: skipped,
+      errors: errors,
+    );
   }
 
   /// 手动绑定元数据
@@ -210,23 +392,28 @@ class MetadataService {
   ///
   /// 先执行未识别待定文件提取，再对未锁定本地作品按高置信度保守自动匹配。
   /// 缺少密钥或离线不擦除已有数据与缓存。
-  Future<MetadataRefreshResult> refresh() {
+  Future<MetadataRefreshResult> refresh({
+    void Function(MetadataPhase phase, int processed, int? total)? onProgress,
+  }) {
     if (_inFlightRefresh != null) {
       return _inFlightRefresh!;
     }
-    _inFlightRefresh = _doRefresh().whenComplete(() {
+    _inFlightRefresh = _doRefresh(onProgress: onProgress).whenComplete(() {
       _inFlightRefresh = null;
     });
     return _inFlightRefresh!;
   }
 
-  Future<MetadataRefreshResult> _doRefresh() async {
+  Future<MetadataRefreshResult> _doRefresh({
+    void Function(MetadataPhase phase, int processed, int? total)? onProgress,
+  }) async {
     int matched = 0;
     int needsReview = 0;
     int skipped = 0;
     final List<String> errors = [];
 
     // 1. 率先迁移未解析文件生成候选条目（失败显式传播）
+    onProgress?.call(MetadataPhase.recognizing, 0, null);
     try {
       await mediaLibraryRepository.recognizePendingFiles();
     } catch (e, st) {
@@ -241,7 +428,7 @@ class MetadataService {
       return MetadataRefreshResult(
         skipped: skipped,
         needsReview: needsReview,
-        errors: const ['未配置 TMDB API 密钥，仅完成本地识别'],
+        localOnly: true,
       );
     }
 
@@ -251,7 +438,10 @@ class MetadataService {
       return const MetadataRefreshResult();
     }
 
+    var processed = 0;
     for (final work in pendingWorks) {
+      onProgress?.call(MetadataPhase.matching, processed, pendingWorks.length);
+      processed++;
       if (work.metadataLocked) {
         skipped++;
         continue;
@@ -351,6 +541,10 @@ class MetadataService {
           needsReview++;
         }
       } on MetadataException catch (metaErr) {
+        if (metaErr.code == 'work_not_found') {
+          skipped++;
+          continue;
+        }
         if (metaErr.code == 'unauthorized') {
           errors.add(metaErr.message);
           // 凭据无效直接中止后续请求
@@ -365,6 +559,7 @@ class MetadataService {
         errors.add('${work.title}: 匹配异常');
       }
     }
+    onProgress?.call(MetadataPhase.matching, processed, pendingWorks.length);
     return MetadataRefreshResult(
       matched: matched,
       needsReview: needsReview,

@@ -7,6 +7,8 @@ import '../../shared/widgets/empty_state_view.dart';
 import '../../shared/widgets/glass_widgets.dart';
 import '../../shared/widgets/poster_image.dart';
 import '../metadata/application/metadata_providers.dart';
+import '../metadata/presentation/metadata_status_card.dart';
+import '../sources/application/source_providers.dart';
 import 'domain/library_work.dart';
 
 /// 以逻辑作品组织海报，搜索与类型筛选在数据库分页之前执行。
@@ -100,6 +102,12 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
         ? ref.watch(filteredLibraryWorksProvider(query))
         : ref.watch(libraryWorksProvider(_limit));
     final metaTaskState = ref.watch(metadataControllerProvider);
+    final isScanning = ref.watch(
+      sourceControllerProvider.select(
+        (progress) => progress.values.any((scan) => scan.running),
+      ),
+    );
+    final isBuildingLibrary = isScanning || metaTaskState.running;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -203,16 +211,30 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                                 ],
                               ),
                             ),
-                            _buildMetadataStatusBar(context, metaTaskState),
+                            MetadataStatusCard(
+                              state: metaTaskState,
+                              onRetry: _triggerRefresh,
+                              margin: const EdgeInsets.fromLTRB(24, 0, 24, 20),
+                            ),
                           ],
                         ),
                       ),
                       worksAsync.when(
-                        loading: () => const SliverFillRemaining(
+                        loading: () => SliverFillRemaining(
                           hasScrollBody: false,
                           child: Center(
-                            key: Key('library_loading_indicator'),
-                            child: CircularProgressIndicator(),
+                            key: const Key('library_loading_indicator'),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const CircularProgressIndicator(),
+                                const SizedBox(height: ReelvaDesign.space12),
+                                Text(
+                                  isBuildingLibrary ? '正在建立影视库…' : '正在加载影视库…',
+                                ),
+                                const Text('可切换页面，处理完成后会自动更新'),
+                              ],
+                            ),
                           ),
                         ),
                         error: (error, stack) => SliverFillRemaining(
@@ -261,6 +283,17 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                                       message: '试试其他关键词，或清空搜索和筛选后查看全部作品。',
                                       actionLabel: '清空搜索和筛选',
                                       onAction: _clearFilters,
+                                    )
+                                  : isBuildingLibrary
+                                  ? EmptyStateView(
+                                      key: const Key('library_building_view'),
+                                      icon: Icons.manage_search_outlined,
+                                      title: '正在建立影视库',
+                                      message: isScanning
+                                          ? '正在扫描媒体源中的视频，可切换页面继续使用。'
+                                          : '正在整理影片与剧集，完成后会自动显示。',
+                                      actionLabel: '查看媒体源',
+                                      onAction: () => context.go('/sources'),
                                     )
                                   : EmptyStateView(
                                       key: const Key('library_empty_view'),
@@ -384,115 +417,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
         ),
       ),
     );
-  }
-
-  Widget _buildMetadataStatusBar(
-    BuildContext context,
-    MetadataTaskState state,
-  ) {
-    final scheme = Theme.of(context).colorScheme;
-    const margin = EdgeInsets.fromLTRB(24, 0, 24, 20);
-
-    if (state.running) {
-      return const GlassCard(
-        key: Key('library_metadata_running_banner'),
-        margin: margin,
-        padding: EdgeInsets.all(ReelvaDesign.space12),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-            SizedBox(width: ReelvaDesign.space12),
-            Expanded(child: Text('正在匹配影视元数据与海报...')),
-          ],
-        ),
-      );
-    }
-
-    if (state.error != null) {
-      return GlassCard(
-        key: const Key('library_metadata_error_banner'),
-        margin: margin,
-        padding: const EdgeInsets.all(ReelvaDesign.space12),
-        color: scheme.errorContainer.withValues(alpha: 0.65),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.error_outline, size: 20, color: scheme.error),
-                const SizedBox(width: ReelvaDesign.space8),
-                Expanded(
-                  child: Text(
-                    state.error!,
-                    style: TextStyle(color: scheme.onErrorContainer),
-                  ),
-                ),
-              ],
-            ),
-            Wrap(
-              spacing: ReelvaDesign.space8,
-              runSpacing: ReelvaDesign.space4,
-              children: [
-                TextButton.icon(
-                  key: const Key('library_metadata_retry_button'),
-                  onPressed: _triggerRefresh,
-                  icon: const Icon(Icons.refresh_rounded, size: 18),
-                  label: const Text('重试'),
-                ),
-                TextButton.icon(
-                  key: const Key('library_metadata_settings_button'),
-                  onPressed: () => context.go('/settings'),
-                  icon: const Icon(Icons.settings_outlined, size: 18),
-                  label: const Text('设置凭据'),
-                ),
-              ],
-            ),
-          ],
-        ),
-      );
-    }
-
-    final result = state.result;
-    if (result != null && result.errors.isNotEmpty) {
-      final hasNoKey = result.errors.any((e) => e.contains('未配置 TMDB API 密钥'));
-      return GlassCard(
-        key: const Key('library_metadata_result_banner'),
-        margin: margin,
-        padding: const EdgeInsets.all(ReelvaDesign.space12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.info_outline, size: 20, color: scheme.primary),
-                const SizedBox(width: ReelvaDesign.space8),
-                Expanded(
-                  child: Text(
-                    hasNoKey
-                        ? '未配置 TMDB 凭据，仅完成本地识别'
-                        : '元数据刷新完成（${result.matched} 匹配，${result.needsReview} 需核对）',
-                  ),
-                ),
-              ],
-            ),
-            if (hasNoKey)
-              TextButton(
-                key: const Key('library_metadata_configure_button'),
-                onPressed: () => context.go('/settings'),
-                child: const Text('配置 TMDB'),
-              ),
-          ],
-        ),
-      );
-    }
-
-    return const SizedBox.shrink();
   }
 }
 

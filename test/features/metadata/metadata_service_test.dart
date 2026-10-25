@@ -282,6 +282,66 @@ void main() {
     );
 
     test(
+      'refresh without credentials completes local recognition without error',
+      () async {
+        await tokenStore.delete();
+        final result = await service.refresh();
+        expect(fakeRepo.recognizePendingCalls, 1);
+        expect(result.localOnly, isTrue);
+        expect(result.errors, isEmpty);
+      },
+    );
+
+    test(
+      'refresh reports actual progress including work needing review',
+      () async {
+        fakeRepo.unmatched = const [
+          LibraryWork(id: 1, title: 'Unknown year', type: 'movie'),
+          LibraryWork(
+            id: 2,
+            title: 'Unmatched movie',
+            type: 'movie',
+            year: 2024,
+          ),
+        ];
+        final progress = <(MetadataPhase, int, int?)>[];
+        final result = await service.refresh(
+          onProgress: (phase, processed, total) {
+            progress.add((phase, processed, total));
+          },
+        );
+        expect(progress, [
+          (MetadataPhase.recognizing, 0, null),
+          (MetadataPhase.matching, 0, 2),
+          (MetadataPhase.matching, 1, 2),
+          (MetadataPhase.matching, 2, 2),
+        ]);
+        expect(result.needsReview, 2);
+      },
+    );
+
+    test(
+      'refresh stops progress at the failed work when credentials are invalid',
+      () async {
+        fakeRepo.unmatched = const [
+          LibraryWork(id: 1, title: 'First movie', type: 'movie', year: 2024),
+          LibraryWork(id: 2, title: 'Second movie', type: 'movie', year: 2024),
+        ];
+        fakeClient.searchMovieHandler = (query, year) {
+          throw const MetadataException('TMDB 凭据无效', code: 'unauthorized');
+        };
+        final progress = <(MetadataPhase, int, int?)>[];
+        final result = await service.refresh(
+          onProgress: (phase, processed, total) {
+            progress.add((phase, processed, total));
+          },
+        );
+        expect(progress.last, (MetadataPhase.matching, 1, 2));
+        expect(result.errors, ['TMDB 凭据无效']);
+      },
+    );
+
+    test(
       'refresh auto-matches high confidence candidate and skips low confidence',
       () async {
         fakeRepo.unmatched = [

@@ -7,6 +7,7 @@ import 'package:reelva/features/library/domain/library_work.dart';
 import 'package:reelva/features/library/library_page.dart';
 import 'package:reelva/features/library/presentation/work_details_page.dart';
 import 'package:reelva/features/metadata/application/metadata_providers.dart';
+import 'package:reelva/features/metadata/presentation/metadata_status_card.dart';
 import 'package:reelva/features/player/domain/playback_resource.dart';
 import 'package:reelva/features/sources/application/source_providers.dart';
 
@@ -65,6 +66,13 @@ const _details = WorkDetails(
 class _IdleMetadataController extends MetadataController {
   @override
   Future<void> refresh() async {}
+}
+
+class _ProgressMetadataController extends _IdleMetadataController {
+  @override
+  MetadataTaskState build() => const MetadataTaskState(running: true);
+
+  void report(MetadataTaskState progress) => state = progress;
 }
 
 class _RecordingSourceController extends SourceController {
@@ -148,6 +156,82 @@ Future<void> _pumpDetails(
 }
 
 void main() {
+  testWidgets('后台识别显示阶段与实际进度，已有作品持续可见', (tester) async {
+    final controller = _ProgressMetadataController();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          metadataControllerProvider.overrideWith(() => controller),
+          libraryWorksProvider.overrideWith(
+            (ref, limit) => Stream.value(const [_movie, _series]),
+          ),
+        ],
+        child: MaterialApp(theme: ReelvaTheme.light, home: const LibraryPage()),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('正在整理影片与剧集'), findsOneWidget);
+    expect(find.byKey(const Key('library_work_card_1')), findsOneWidget);
+
+    controller.report(
+      const MetadataTaskState(
+        running: true,
+        phase: MetadataPhase.matching,
+        processed: 2,
+        total: 5,
+      ),
+    );
+    await tester.pump();
+    expect(find.text('正在补充海报与简介'), findsOneWidget);
+    expect(find.text('已处理 2 / 5 部作品'), findsOneWidget);
+    expect(find.byKey(const Key('library_work_card_1')), findsOneWidget);
+
+    controller.report(
+      const MetadataTaskState(
+        result: MetadataRefreshResult(matched: 4, needsReview: 1),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('媒体库整理完成'), findsOneWidget);
+    expect(find.text('已匹配 4 部 · 1 部需核对'), findsOneWidget);
+    expect(find.byKey(const Key('library_work_card_1')), findsOneWidget);
+  });
+
+  testWidgets('识别进度卡片在窄屏大字号下正常换行', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 568);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ReelvaTheme.light,
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: const TextScaler.linear(1.5)),
+          child: child!,
+        ),
+        home: Scaffold(
+          body: Center(
+            child: MetadataStatusCard(
+              state: const MetadataTaskState(
+                running: true,
+                phase: MetadataPhase.matching,
+                processed: 2,
+                total: 5,
+              ),
+              onRetry: () {},
+              margin: const EdgeInsets.all(24),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('已处理 2 / 5 部作品'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('搜索请求全库查询，清空搜索恢复原作品列表', (tester) async {
     final requests = <LibraryWorksFilter>[];
     await _pumpLibrary(
