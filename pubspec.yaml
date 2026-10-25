@@ -24,6 +24,7 @@ dependencies:
   media_kit_video: ^2.0.1
   window_manager: ^0.5.2
   path: ^1.9.1
+  path_provider: ^2.1.6
   xml: ^7.0.1
   dart_smb2: ^0.2.3
 

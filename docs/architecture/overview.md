@@ -29,7 +29,7 @@ Reelva 是客户端优先的跨平台影视库与播放器，首批目标平台�
 
 ## 数据库与观看进度
 
-数据库使用 Drift Schema v3（SQLite），保留 v1/v2 的升级路径、媒体索引、元数据缓存、人工锁定与观看历史，并新增同步状态，不重建既有数据库。Windows 数据库默认保存在用户 `Documents/reelva.sqlite`，Android 位于应用内部文档目录。
+数据库使用 Drift Schema v3（SQLite），保留 v1/v2 的升级路径、媒体索引、元数据缓存、人工锁定与观看历史，并新增同步状态，不重建既有数据库。Windows 数据库默认保存在 `%APPDATA%\com.github.miludeshiji\Reelva\reelva.sqlite`，播放器设置与加密凭据也保存在该目录，不自动迁移旧目录数据。Android 数据库位于应用内部文档目录。
 
 - 观看进度按电影作品或具体剧集保存，不依赖文件路径；同一目标切换文件版本时共享进度。保存事务重新确认文件当前关联，兼容后台元数据合并；移除媒体源仍保留历史。
 - 播放中约每 10 秒异步保存一次；暂停、定位、停止、切换视频、退出页面及进入后台时保存变化。重开后，未完成且至少 5 秒的进度自动续播，不足 5 秒或达到总时长 90% 的记录从头播放。
@@ -69,7 +69,7 @@ Reelva 是客户端优先的跨平台影视库与播放器，首批目标平台�
 | 平台 | 配置与依赖事实 |
 | --- | --- |
 | Windows | Flutter 支持 Windows 10/11；锁定的 `media_kit_libs_windows_video` 1.0.11 使用 x86_64 原生库，目标为 Windows x64；工程使用 CMake 3.14+ 和 C++17 |
-| Android | Flutter 模板默认 minSdk 24、compileSdk/targetSdk 36、NDK 28.2.13676358；安全存储插件要求 minSdk 23，项目满足版本条件；AGP 9.1.0、Gradle 9.3.1、Kotlin 2.4.0，Java 目标版本 17，应用 ID `dev.reelva.reelva` |
+| Android | Flutter 模板默认 minSdk 24、compileSdk/targetSdk 36、NDK 28.2.13676358；安全存储插件要求 minSdk 23，项目满足版本条件；AGP 9.1.0、Gradle 9.3.1、Kotlin 2.4.0，Java 目标版本 17，应用 ID `com.github.miludeshiji.reelva` |
 | Linux / macOS / iOS / Web | 未创建这些平台的工程 |
 
 Android 备份规则仅排除安全存储使用的 SharedPreferences，保留普通数据库备份规则。应用内标识、Windows 多尺寸 ICO 与 Android 普通/自适应启动图标均以 `assets/Reelva.svg` 为唯一图形来源；图标重新生成见 [开发检查](../development/build.md)。

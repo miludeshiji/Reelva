@@ -1,4 +1,4 @@
-package dev.reelva.reelva
+package com.github.miludeshiji.reelva
 
 import android.app.Activity
 import android.content.Intent
