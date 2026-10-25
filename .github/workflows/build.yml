@@ -199,11 +199,25 @@ jobs:
             echo "::error::预期收集 3 个 APK，实际为 $apk_count 个"
             exit 1
           fi
-      - name: 上传 Android APK 产物
+      - name: 上传 Android arm64-v8a APK
         uses: actions/upload-artifact@v7
         with:
-          name: android-apks
-          path: dist/android/*.apk
+          name: android-arm64-v8a
+          path: dist/android/*-android-arm64-v8a*.apk
+          if-no-files-found: error
+          retention-days: 7
+      - name: 上传 Android armeabi-v7a APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-armeabi-v7a
+          path: dist/android/*-android-armeabi-v7a*.apk
+          if-no-files-found: error
+          retention-days: 7
+      - name: 上传 Android x86_64 APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-x86_64
+          path: dist/android/*-android-x86_64*.apk
           if-no-files-found: error
           retention-days: 7
 

@@ -60,10 +60,11 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
-      - name: 下载 Android 构件
+      - name: 下载 Android 分架构构件
         uses: actions/download-artifact@v8
         with:
-          name: android-apks
+          pattern: android-*
+          merge-multiple: true
           path: artifacts/android
       - name: 下载 Windows 构件
         uses: actions/download-artifact@v8

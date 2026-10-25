@@ -7,7 +7,7 @@ Reelva 通过 GitHub Actions 提供 3 个工作流，覆盖质量分析、跨平
 | 工作流 | 文件 | 触发条件 | 产物（保留期） |
 | --- | --- | --- | --- |
 | 代码分析 | `.github/workflows/analyze.yml` | Pull Request、`main` 分支推送、被发布工作流调用（`workflow_call`） | `dart-coverage` 覆盖率（14 天） |
-| 跨平台构建 | `.github/workflows/build.yml` | Pull Request（覆盖源码、资源、配置及脚本等关键路径）、手动触发（`workflow_dispatch`）、被发布工作流调用（`workflow_call`） | `android-apks`、`windows-x64`（各 7 天） |
+| 跨平台构建 | `.github/workflows/build.yml` | Pull Request（覆盖源码、资源、配置及脚本等关键路径）、手动触发（`workflow_dispatch`）、被发布工作流调用（`workflow_call`） | `android-arm64-v8a`、`android-armeabi-v7a`、`android-x86_64`、`windows-x64`（各 7 天） |
 | 版本发布 | `.github/workflows/release.yml` | 仅推送版本标签 `v*` | `release-notes` 发布日志（1 天）与 GitHub Release 附件 |
 
 - **代码分析**：检查锁定依赖（`flutter pub get --enforce-lockfile`）、全项目 Dart 格式、静态分析、单元与部件测试及覆盖率，并运行发布元数据校验脚本的标准单元测试。PR 与常规推送可取消旧运行；被发布流程调用时禁止取消。
@@ -26,7 +26,7 @@ Reelva 通过 GitHub Actions 提供 3 个工作流，覆盖质量分析、跨平
 Debug 构建（`release: false`，含 PR 与手动调试）只生成 3 个 `-debug.apk` 与 1 个 `Reelva-{version}-windows-x64-debug.zip`，不生成 Debug 安装包；Debug 包仅供编译与开发测试用途，不附带且不分发不可再分发的调试 CRT。
 
 - Windows 安装程序基于 `windows/installer.iss`，使用 Inno Setup 内置默认语言编译，无代码签名；支持系统标准安装目录与可选当前用户安装模式，创建开始菜单快捷方式、可选桌面快捷方式及系统标准卸载入口（卸载不删除用户应用数据），支持 `/VERYSILENT` 静默安装；静默安装后不自动启动应用，交互安装可选择完成后启动。
-- Android APK 按分架构拆分（`--split-per-abi`），目标平台为 arm、arm64、x64。
+- Android APK 按分架构拆分（`--split-per-abi`），目标平台为 arm、arm64、x64。Actions 产物按架构独立上传，每个下载项只包含对应架构的 APK；正式发布时收集这三个产物，并分别上传为 Release 附件。
 
 ## Android 签名
 
