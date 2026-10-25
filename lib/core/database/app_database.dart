@@ -32,8 +32,7 @@ class AppDatabase extends _$AppDatabase {
         executor ??
             driftDatabase(
               name: 'reelva',
-              native:
-                  !kIsWeb && defaultTargetPlatform == TargetPlatform.windows
+              native: !kIsWeb && defaultTargetPlatform == TargetPlatform.windows
                   ? const DriftNativeOptions(
                       databaseDirectory: getApplicationSupportDirectory,
                     )
