@@ -179,10 +179,7 @@ class _SidebarLabel extends StatelessWidget {
         switchOutCurve: Curves.easeInOutCubic,
         layoutBuilder: (currentChild, previousChildren) => Stack(
           alignment: Alignment.centerLeft,
-          children: [
-            ...previousChildren,
-            if (currentChild != null) currentChild,
-          ],
+          children: [...previousChildren, ?currentChild],
         ),
         child: visible ? child : const SizedBox.shrink(),
       ),
