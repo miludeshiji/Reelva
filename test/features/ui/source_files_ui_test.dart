@@ -37,8 +37,10 @@ void main() {
     final font = ByteData.sublistView(
       await File('C:/Windows/Fonts/msyh.ttc').readAsBytes(),
     );
-    final loader = FontLoader('Microsoft YaHei')..addFont(Future.value(font));
-    await loader.load();
+    for (final family in const ['Microsoft YaHei', 'Roboto']) {
+      final loader = FontLoader(family)..addFont(Future.value(font));
+      await loader.load();
+    }
     final icons = FontLoader('MaterialIcons')
       ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
     await icons.load();
@@ -181,6 +183,19 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('已选 3 个视频'), findsOneWidget);
       await _capture(tester, boundary, 'source-files-${viewport.name}.png');
+
+      if (viewport.name == 'landscape') {
+        client.searchTvHandler = (query, year) {
+          throw const MetadataException('暂时无法连接 TMDB，请检查网络后重试');
+        };
+        await tester.tap(
+          find.byKey(const Key('source_files_auto_match_button')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('已选 3 个视频'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        client.searchTvHandler = (query, year) => [series];
+      }
 
       await tester.tap(
         find.byKey(const Key('source_files_manual_match_button')),

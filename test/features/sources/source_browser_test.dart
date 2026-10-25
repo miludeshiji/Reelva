@@ -60,6 +60,15 @@ void main() {
       ),
       adapter: adapter,
     );
+    expect(
+      browser.cachedFileIdsUnder('season-token', ancestors: ['root-token']),
+      isNull,
+    );
+    await browser.listDirectory('season-token');
+    expect(
+      browser.cachedFileIdsUnder('season-token', ancestors: ['root-token']),
+      {'episode-token'},
+    );
     final files = await browser.collectFiles(
       directoryIds: ['root-token', 'season-token'],
       directoryNames: ['Show', 'S02'],

@@ -26,7 +26,6 @@ class _SourceFilesPageState extends ConsumerState<SourceFilesPage> {
   SourceBrowser? _browser;
   final _path = <({String id, String name})>[];
   final _selected = <String, BrowsedMediaFile>{};
-  final _folderFiles = <String, Set<String>>{};
   Future<List<MediaEntry>>? _entries;
   String? _error;
   String? _result;
@@ -99,7 +98,10 @@ class _SourceFilesPageState extends ConsumerState<SourceFilesPage> {
 
   bool? _selectionState(MediaEntry entry) {
     if (!entry.isDirectory) return _selected.containsKey(entry.externalId);
-    final files = _folderFiles[entry.externalId];
+    final files = _browser!.cachedFileIdsUnder(
+      entry.externalId,
+      ancestors: _path.map((part) => part.id),
+    );
     if (files != null &&
         files.isNotEmpty &&
         files.every(_selected.containsKey)) {
@@ -143,9 +145,6 @@ class _SourceFilesPageState extends ConsumerState<SourceFilesPage> {
       );
       if (!mounted) return;
       setState(() {
-        _folderFiles[entry.externalId] = files
-            .map((file) => file.entry.externalId)
-            .toSet();
         for (final file in files) {
           if (select) {
             _selected[file.entry.externalId] = file;
@@ -335,28 +334,39 @@ class _SourceFilesPageState extends ConsumerState<SourceFilesPage> {
                         ),
                       ),
                     if (_error != null || _result != null || _matching)
-                      GlassCard(
-                        margin: const EdgeInsets.fromLTRB(24, 8, 24, 12),
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (_matching) ...[
-                              LinearProgressIndicator(
-                                value: _total > 0 ? _processed / _total : null,
-                              ),
-                              const SizedBox(height: 8),
-                              Text('正在匹配：已处理 $_processed / $_total 个视频'),
-                            ],
-                            if (_result != null) Text(_result!),
-                            if (_error != null)
-                              Text(
-                                _error!,
-                                style: TextStyle(
-                                  color: Theme.of(context).colorScheme.error,
-                                ),
-                              ),
-                          ],
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.sizeOf(context).height * 0.25,
+                        ),
+                        child: SingleChildScrollView(
+                          child: GlassCard(
+                            margin: const EdgeInsets.fromLTRB(24, 8, 24, 12),
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (_matching) ...[
+                                  LinearProgressIndicator(
+                                    value: _total > 0
+                                        ? _processed / _total
+                                        : null,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text('正在匹配：已处理 $_processed / $_total 个视频'),
+                                ],
+                                if (_result != null) Text(_result!),
+                                if (_error != null)
+                                  Text(
+                                    _error!,
+                                    style: TextStyle(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .error,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
                     Expanded(

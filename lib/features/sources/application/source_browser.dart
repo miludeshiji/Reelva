@@ -22,6 +22,7 @@ class SourceBrowser {
   final MediaSourceConfig source;
   final MediaSourceAdapter adapter;
   final Map<String, Future<List<MediaEntry>>> _directories = {};
+  final Map<String, List<MediaEntry>> _completedDirectories = {};
 
   Future<List<MediaEntry>> listDirectory(String id) async {
     try {
@@ -32,7 +33,34 @@ class SourceBrowser {
     }
   }
 
-  void refreshDirectory(String id) => _directories.remove(id);
+  void refreshDirectory(String id) {
+    _directories.remove(id);
+    _completedDirectories.remove(id);
+  }
+
+  /// 目录均已读取时返回真实文件集合，供父目录计算全选与部分选中。
+  Set<String>? cachedFileIdsUnder(
+    String id, {
+    Iterable<String> ancestors = const [],
+  }) {
+    final visited = ancestors.toSet();
+    final queue = [id];
+    final files = <String>{};
+    for (var index = 0; index < queue.length; index++) {
+      final directory = queue[index];
+      if (!visited.add(directory)) continue;
+      final entries = _completedDirectories[directory];
+      if (entries == null) return null;
+      for (final entry in entries) {
+        if (entry.isDirectory) {
+          queue.add(entry.externalId);
+        } else {
+          files.add(entry.externalId);
+        }
+      }
+    }
+    return files;
+  }
 
   Future<List<MediaEntry>> _readDirectory(String id) async {
     try {
@@ -55,6 +83,7 @@ class SourceBrowser {
         if (a.isDirectory != b.isDirectory) return a.isDirectory ? -1 : 1;
         return a.name.toLowerCase().compareTo(b.name.toLowerCase());
       });
+      _completedDirectories[id] = entries;
       return entries;
     } catch (_) {
       _directories.remove(id);

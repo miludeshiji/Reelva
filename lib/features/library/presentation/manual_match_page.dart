@@ -585,6 +585,13 @@ class _ManualMatchPageState extends ConsumerState<ManualMatchPage> {
               ),
             ],
           ),
+          if (file.directoryNames.isNotEmpty)
+            Text(
+              file.directoryNames.join(' / '),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: ReelvaDesign.muted, fontSize: 12),
+            ),
           if (_candidate!.type == 'series') ...[
             const SizedBox(height: 8),
             Row(
