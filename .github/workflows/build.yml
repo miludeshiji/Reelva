@@ -27,15 +27,15 @@ on:
       build_android:
         type: boolean
         default: true
-        description: '是否构建 Android 安装包'
+        description: '构建 Android'
       build_windows:
         type: boolean
         default: true
-        description: '是否构建 Windows 安装包'
+        description: '构建 Windows'
       release:
         type: boolean
-        default: false
-        description: '是否正式构建（Android 正式签名，打包发布版）'
+        default: true
+        description: '正式构建'
   pull_request:
     paths:
       - 'lib/**'

@@ -11,7 +11,7 @@ Reelva 通过 GitHub Actions 提供 3 个工作流，覆盖质量分析、跨平
 | 版本发布 | `.github/workflows/release.yml` | 仅推送版本标签 `v*` | `release-notes` 发布日志（1 天）与 GitHub Release 附件 |
 
 - **代码分析**：检查锁定依赖（`flutter pub get --enforce-lockfile`）、全项目 Dart 格式、静态分析、单元与部件测试及覆盖率，并运行发布元数据校验脚本的标准单元测试。PR 与常规推送可取消旧运行；被发布流程调用时禁止取消。
-- **跨平台构建**：输入参数 `build_android`（布尔，默认 `true`）、`build_windows`（布尔，默认 `true`）、`release`（布尔，手动默认 `false`）。构建平台不可全部关闭。PR 冒烟构建无条件执行 Debug 模式，严禁注入或读取正式签名 Secrets。
+- **跨平台构建**：输入参数 `build_android`（布尔，默认 `true`）、`build_windows`（布尔，默认 `true`）、`release`（布尔，手动默认 `true`）。手动运行默认生成 Release 安装包，取消勾选 `release` 可生成 Debug 包。构建平台不可全部关闭。PR 冒烟构建无条件执行 Debug 模式，严禁注入或读取正式签名 Secrets。
 
 ### 构建产物命名（`{version}` 为 `pubspec.yaml` 去除 `+build` 后的版本名）
 
