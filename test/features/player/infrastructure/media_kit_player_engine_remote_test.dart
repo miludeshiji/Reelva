@@ -263,7 +263,13 @@ void main() {
       await engine.open(resource);
       expect(engine.snapshot.status, isNot(PlaybackStatus.error));
 
+      platformPlayer.emitError('Could not open codec');
+      await pumpEventQueue();
       errorsController.add('网络媒体流传输异常，已断开连接');
+      await pumpEventQueue();
+
+      platformPlayer.emitPosition(const Duration(seconds: 1));
+      platformPlayer.emitBuffering(false);
       await pumpEventQueue();
 
       expect(engine.snapshot.status, PlaybackStatus.error);

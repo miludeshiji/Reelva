@@ -63,6 +63,8 @@ class PlaybackSnapshot {
     this.buffered = Duration.zero,
     this.volume = 100.0,
     this.rate = 1.0,
+    this.videoWidth = 0,
+    this.videoHeight = 0,
     this.errorMessage,
     this.audioTracks = const [],
     this.subtitleTracks = const [],
@@ -88,6 +90,10 @@ class PlaybackSnapshot {
 
   /// 播放倍速，默认 1.0
   final double rate;
+
+  /// 按像素比例和旋转信息修正后的视频显示尺寸；未知时为 0。
+  final int videoWidth;
+  final int videoHeight;
 
   /// 用户友好的安全中文错误信息（不包含敏感凭据或裸 URL）
   final String? errorMessage;
@@ -122,6 +128,8 @@ class PlaybackSnapshot {
     Duration? buffered,
     double? volume,
     double? rate,
+    int? videoWidth,
+    int? videoHeight,
     String? Function()? errorMessage,
     List<PlaybackTrack>? audioTracks,
     List<PlaybackTrack>? subtitleTracks,
@@ -136,6 +144,8 @@ class PlaybackSnapshot {
       buffered: buffered ?? this.buffered,
       volume: volume ?? this.volume,
       rate: rate ?? this.rate,
+      videoWidth: videoWidth ?? this.videoWidth,
+      videoHeight: videoHeight ?? this.videoHeight,
       errorMessage: errorMessage != null ? errorMessage() : this.errorMessage,
       audioTracks: audioTracks ?? this.audioTracks,
       subtitleTracks: subtitleTracks ?? this.subtitleTracks,
@@ -172,6 +182,8 @@ class PlaybackSnapshot {
           buffered == other.buffered &&
           volume == other.volume &&
           rate == other.rate &&
+          videoWidth == other.videoWidth &&
+          videoHeight == other.videoHeight &&
           errorMessage == other.errorMessage &&
           listEquals(audioTracks, other.audioTracks) &&
           listEquals(subtitleTracks, other.subtitleTracks) &&
@@ -187,6 +199,8 @@ class PlaybackSnapshot {
     buffered,
     volume,
     rate,
+    videoWidth,
+    videoHeight,
     errorMessage,
     Object.hashAll(audioTracks),
     Object.hashAll(subtitleTracks),

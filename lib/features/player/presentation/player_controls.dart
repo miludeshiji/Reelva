@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../../app/theme/reelva_theme.dart';
-import '../../../shared/widgets/glass_widgets.dart';
 import '../domain/playback_snapshot.dart';
 import '../domain/player_engine.dart';
 
@@ -15,7 +14,7 @@ String formatDuration(Duration d) {
   return '$minutes:$seconds';
 }
 
-/// 视频内使用深色玻璃浮层，视频下方使用与首页一致的浅色玻璃卡片。
+/// 透明悬浮播放控件；窄屏将字幕、音轨和音量等选项收入设置面板。
 class PlayerControls extends StatefulWidget {
   const PlayerControls({
     super.key,
@@ -23,8 +22,6 @@ class PlayerControls extends StatefulWidget {
     required this.engine,
     required this.isFullscreen,
     required this.onToggleFullscreen,
-    this.title,
-    this.subtitle,
     this.overlay = false,
     this.onInteractionChanged,
   });
@@ -33,8 +30,6 @@ class PlayerControls extends StatefulWidget {
   final PlayerEngine engine;
   final bool isFullscreen;
   final VoidCallback onToggleFullscreen;
-  final String? title;
-  final String? subtitle;
   final bool overlay;
   final ValueChanged<bool>? onInteractionChanged;
 
@@ -82,9 +77,8 @@ class _PlayerControlsState extends State<PlayerControls> {
   ) {
     final scheme = Theme.of(context).colorScheme;
     final style = IconButton.styleFrom(
-      backgroundColor: scheme.primary,
-      foregroundColor: scheme.onPrimary,
-      disabledBackgroundColor: scheme.primary.withValues(alpha: 0.12),
+      backgroundColor: Colors.transparent,
+      foregroundColor: scheme.onSurface,
       disabledForegroundColor: scheme.onSurface.withValues(alpha: 0.38),
       fixedSize: const Size(48, 44),
       iconSize: 26,
@@ -159,7 +153,11 @@ class _PlayerControlsState extends State<PlayerControls> {
       data: isOverlay ? ReelvaTheme.player : ReelvaTheme.light,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final controls = _buildControls(context, constraints.maxWidth < 640);
+          final controls = _buildControls(
+            context,
+            constraints.maxWidth <
+                700 * MediaQuery.textScalerOf(context).scale(1),
+          );
           return constraints.hasBoundedHeight
               ? SingleChildScrollView(child: controls)
               : controls;
@@ -172,7 +170,6 @@ class _PlayerControlsState extends State<PlayerControls> {
     final theme = Theme.of(context);
     final snapshot = widget.snapshot;
     final engine = widget.engine;
-    final isOverlay = widget.overlay || widget.isFullscreen;
     final hasKnownDuration = snapshot.duration > Duration.zero;
     final totalDurationMs = hasKnownDuration
         ? snapshot.duration.inMilliseconds.toDouble()
@@ -289,8 +286,125 @@ class _PlayerControlsState extends State<PlayerControls> {
       tooltip: widget.isFullscreen ? '退出全屏' : '全屏',
       onPressed: widget.onToggleFullscreen,
     );
+    final more = IconButton(
+      key: const Key('player_more_button'),
+      icon: const Icon(Icons.more_horiz_rounded),
+      tooltip: '播放设置',
+      onPressed: () async {
+        final onInteractionChanged = widget.onInteractionChanged;
+        onInteractionChanged?.call(true);
+        try {
+          await showModalBottomSheet<void>(
+            context: context,
+            backgroundColor: theme.colorScheme.surface,
+            showDragHandle: true,
+            builder: (context) => Theme(
+              data: theme,
+              child: SafeArea(
+                top: false,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                  child: StreamBuilder<PlaybackSnapshot>(
+                    stream: engine.snapshots,
+                    initialData: engine.snapshot,
+                    builder: (context, state) => _buildSettings(
+                      context,
+                      state.data ?? snapshot,
+                      closeOnStop: true,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        } finally {
+          onInteractionChanged?.call(false);
+        }
+      },
+    );
+
+    return IconButtonTheme(
+      data: IconButtonThemeData(
+        style: IconButton.styleFrom(
+          foregroundColor: theme.colorScheme.onSurface,
+          minimumSize: const Size(40, 40),
+          padding: const EdgeInsets.all(8),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          iconSize: 22,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(ReelvaDesign.radiusSmall),
+          ),
+        ),
+      ),
+      child: SliderTheme(
+        data: SliderTheme.of(context).copyWith(
+          trackHeight: 3,
+          activeTrackColor: theme.colorScheme.primary,
+          inactiveTrackColor: theme.colorScheme.onSurface.withValues(
+            alpha: 0.16,
+          ),
+          secondaryActiveTrackColor: theme.colorScheme.primary.withValues(
+            alpha: 0.32,
+          ),
+          thumbColor: theme.colorScheme.primary,
+          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+          overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (snapshot.progressErrorMessage?.isNotEmpty ?? false)
+                Padding(
+                  key: const Key('player_progress_error_banner'),
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    snapshot.progressErrorMessage!,
+                    key: const Key('player_progress_error_text'),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.error,
+                    ),
+                  ),
+                ),
+              if (compact) ...[
+                seekSlider,
+                timeDisplay,
+              ] else
+                Row(
+                  children: [
+                    Expanded(child: seekSlider),
+                    timeDisplay,
+                    const SizedBox(width: 16),
+                    bufferDisplay,
+                  ],
+                ),
+              Row(
+                children: [
+                  transport,
+                  const Spacer(),
+                  if (compact) more else _buildSettings(context, snapshot),
+                  mute,
+                  fullscreen,
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSettings(
+    BuildContext context,
+    PlaybackSnapshot snapshot, {
+    bool closeOnStop = false,
+  }) {
+    final theme = Theme.of(context);
+    final engine = widget.engine;
     final volume = SizedBox(
-      width: compact ? 136 : 144,
+      width: 144,
       child: Row(
         children: [
           Expanded(
@@ -313,7 +427,7 @@ class _PlayerControlsState extends State<PlayerControls> {
         ],
       ),
     );
-    final tools = Wrap(
+    return Wrap(
       spacing: ReelvaDesign.space4,
       runSpacing: ReelvaDesign.space4,
       crossAxisAlignment: WrapCrossAlignment.center,
@@ -365,151 +479,19 @@ class _PlayerControlsState extends State<PlayerControls> {
             ),
           ),
         ),
-        if (!compact) mute,
         IconButton(
           key: const Key('player_stop_button'),
           icon: const Icon(Icons.stop_rounded),
           tooltip: '停止',
           onPressed: snapshot.status == PlaybackStatus.idle
               ? null
-              : engine.stop,
+              : () {
+                  if (closeOnStop) Navigator.of(context).pop();
+                  engine.stop();
+                },
         ),
         volume,
-        if (!compact) fullscreen,
       ],
-    );
-
-    return IconButtonTheme(
-      data: IconButtonThemeData(
-        style: IconButton.styleFrom(
-          foregroundColor: theme.colorScheme.onSurface,
-          minimumSize: const Size(40, 40),
-          padding: const EdgeInsets.all(8),
-          iconSize: 22,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(ReelvaDesign.radiusSmall),
-          ),
-        ),
-      ),
-      child: SliderTheme(
-        data: SliderTheme.of(context).copyWith(
-          trackHeight: 3,
-          activeTrackColor: theme.colorScheme.primary,
-          inactiveTrackColor: theme.colorScheme.onSurface.withValues(
-            alpha: 0.16,
-          ),
-          secondaryActiveTrackColor: theme.colorScheme.primary.withValues(
-            alpha: 0.32,
-          ),
-          thumbColor: theme.colorScheme.primary,
-          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
-          overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-        ),
-        child: GlassCard(
-          blur: true,
-          color: isOverlay
-              ? ReelvaDesign.playerBackground.withValues(alpha: 0.64)
-              : Colors.white.withValues(alpha: 0.84),
-          borderRadius: BorderRadius.circular(22),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (snapshot.progressErrorMessage != null &&
-                  snapshot.progressErrorMessage!.isNotEmpty)
-                Container(
-                  key: const Key('player_progress_error_banner'),
-                  margin: const EdgeInsets.only(bottom: ReelvaDesign.space12),
-                  padding: const EdgeInsets.all(ReelvaDesign.space12),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.errorContainer,
-                    borderRadius: BorderRadius.circular(
-                      ReelvaDesign.radiusSmall,
-                    ),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.warning_amber_rounded,
-                        size: 20,
-                        color: theme.colorScheme.onErrorContainer,
-                      ),
-                      const SizedBox(width: ReelvaDesign.space8),
-                      Expanded(
-                        child: Text(
-                          snapshot.progressErrorMessage!,
-                          key: const Key('player_progress_error_text'),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onErrorContainer,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              if (widget.title != null) ...[
-                Text(
-                  '当前播放',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: ReelvaDesign.space8),
-                RichText(
-                  key: const Key('player_now_playing_title'),
-                  textScaler: MediaQuery.textScalerOf(context),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  text: TextSpan(
-                    text: widget.title,
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      color: theme.colorScheme.onSurface,
-                    ),
-                  ),
-                ),
-                if (widget.subtitle != null) ...[
-                  const SizedBox(height: ReelvaDesign.space4),
-                  Text(
-                    widget.subtitle!,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: ReelvaDesign.space16),
-              ],
-              if (compact) ...[
-                seekSlider,
-                Wrap(
-                  alignment: WrapAlignment.spaceBetween,
-                  spacing: ReelvaDesign.space12,
-                  runSpacing: ReelvaDesign.space4,
-                  children: [timeDisplay, bufferDisplay],
-                ),
-              ] else
-                Row(
-                  children: [
-                    Expanded(child: seekSlider),
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [timeDisplay, bufferDisplay],
-                    ),
-                  ],
-                ),
-              const SizedBox(height: ReelvaDesign.space4),
-              if (compact) ...[
-                Row(children: [transport, const Spacer(), mute, fullscreen]),
-                const SizedBox(height: ReelvaDesign.space4),
-                tools,
-              ] else
-                Row(children: [transport, const Spacer(), tools]),
-            ],
-          ),
-        ),
-      ),
     );
   }
 

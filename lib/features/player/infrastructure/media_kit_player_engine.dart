@@ -63,6 +63,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
   bool _disposed = false;
   bool _isOpening = false;
   Duration? _pendingResumeAt;
+  Duration? _recoverableErrorPosition;
   Future<void>? _disposeFuture;
   Future<void> _operationQueue = Future<void>.value();
 
@@ -135,10 +136,36 @@ class MediaKitPlayerEngine implements PlayerEngine {
     _subscriptions.add(_player.stream.playing.listen((_) => _syncStatus()));
     _subscriptions.add(_player.stream.buffering.listen((_) => _syncStatus()));
     _subscriptions.add(_player.stream.completed.listen((_) => _syncStatus()));
+    _subscriptions.add(_player.stream.videoParams.listen(_syncVideoSize));
 
     _subscriptions.add(
       _player.stream.position.listen((pos) {
-        if (_isEventIgnored || _isOpening) return;
+        if (_disposed || _isOpening) return;
+        final errorPosition = _recoverableErrorPosition;
+        // media_kit 的错误流也包含可恢复的解码日志，实际进度推进才能证明恢复。
+        if (_snapshot.status == PlaybackStatus.error &&
+            errorPosition != null &&
+            pos > errorPosition &&
+            pos == _player.state.position &&
+            _player.state.playing &&
+            !_player.state.buffering &&
+            !_player.state.completed) {
+          _recoverableErrorPosition = null;
+          _updateSnapshot(
+            _snapshot.copyWith(
+              status: _computeActiveStatus(),
+              position: pos,
+              duration: _player.state.duration,
+              buffered: _player.state.buffer,
+              errorMessage: () => null,
+            ),
+          );
+          _syncTracks(_player.state.tracks, _player.state.track);
+          _syncVideoSize(_player.state.videoParams);
+          _checkResumeRange(_player.state.duration);
+          return;
+        }
+        if (_isEventIgnored) return;
         _updateSnapshot(
           _snapshot.copyWith(status: _computeActiveStatus(), position: pos),
         );
@@ -194,12 +221,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
       _player.stream.error.listen((err) {
         if (_isEventIgnored) return;
         AppLogger.instance.error('底层播放异常', error: err);
-        _updateSnapshot(
-          _snapshot.copyWith(
-            status: PlaybackStatus.error,
-            errorMessage: () => _safeErrorMessage(err),
-          ),
-        );
+        _setPlaybackError(_safeErrorMessage(err), recoverable: true);
       }),
     );
   }
@@ -213,6 +235,20 @@ class MediaKitPlayerEngine implements PlayerEngine {
         seek(Duration.zero);
       }
     }
+  }
+
+  void _syncVideoSize(VideoParams params) {
+    if (_isEventIgnored || _isOpening) return;
+    final width = params.dw ?? params.w ?? 0;
+    final height = params.dh ?? params.h ?? 0;
+    if (width <= 0 || height <= 0) return;
+    final rotated = (params.rotate ?? 0) % 180 == 90;
+    _updateSnapshot(
+      _snapshot.copyWith(
+        videoWidth: rotated ? height : width,
+        videoHeight: rotated ? width : height,
+      ),
+    );
   }
 
   void _syncTracks(Tracks tracks, Track track) {
@@ -271,6 +307,18 @@ class MediaKitPlayerEngine implements PlayerEngine {
     }
   }
 
+  void _setPlaybackError(String message, {bool recoverable = false}) {
+    _recoverableErrorPosition = recoverable
+        ? (_isOpening ? _snapshot.position : _player.state.position)
+        : null;
+    _updateSnapshot(
+      _snapshot.copyWith(
+        status: PlaybackStatus.error,
+        errorMessage: () => message,
+      ),
+    );
+  }
+
   Future<void> _closeDescriptor(int fd) async {
     try {
       await _documents.close(fd);
@@ -320,6 +368,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
     final epoch = ++_openEpoch;
     _isOpening = true;
     _pendingResumeAt = resumeAt;
+    _recoverableErrorPosition = null;
 
     final isResolving =
         resource.uri.isScheme('content') || resource.prepare != null;
@@ -331,6 +380,8 @@ class MediaKitPlayerEngine implements PlayerEngine {
         position: resumeAt ?? Duration.zero,
         duration: Duration.zero,
         buffered: Duration.zero,
+        videoWidth: 0,
+        videoHeight: 0,
         errorMessage: () => null,
         audioTracks: const [],
         subtitleTracks: const [],
@@ -367,12 +418,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
           _isOpening = false;
           if (_disposed || epoch != _openEpoch) return;
           AppLogger.instance.error('准备播放资源失败', error: e, stackTrace: st);
-          _updateSnapshot(
-            _snapshot.copyWith(
-              status: PlaybackStatus.error,
-              errorMessage: () => _safeErrorMessage(e),
-            ),
-          );
+          _setPlaybackError(_safeErrorMessage(e));
           return;
         }
       }
@@ -394,12 +440,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
           await _releaseLease(effectiveResource);
           if (_disposed || epoch != _openEpoch) return;
           AppLogger.instance.error('打开媒体描述符失败', error: e, stackTrace: st);
-          _updateSnapshot(
-            _snapshot.copyWith(
-              status: PlaybackStatus.error,
-              errorMessage: () => _safeErrorMessage(e),
-            ),
-          );
+          _setPlaybackError(_safeErrorMessage(e));
           return;
         }
 
@@ -456,12 +497,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
         if (_disposed || epoch != _openEpoch) {
           return;
         }
-        _updateSnapshot(
-          _snapshot.copyWith(
-            status: PlaybackStatus.error,
-            errorMessage: () => _safeErrorMessage(e),
-          ),
-        );
+        _setPlaybackError(_safeErrorMessage(e));
         return;
       }
 
@@ -486,12 +522,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
       if (effectiveResource.errors != null) {
         _resourceErrorSub = effectiveResource.errors!.listen((err) {
           AppLogger.instance.error('播放资源错误流通知: $err');
-          _updateSnapshot(
-            _snapshot.copyWith(
-              status: PlaybackStatus.error,
-              errorMessage: () => err.isNotEmpty ? err : '媒体流传输异常',
-            ),
-          );
+          _setPlaybackError(err.isNotEmpty ? err : '媒体流传输异常');
         });
       }
       _isOpening = false;
@@ -510,16 +541,12 @@ class MediaKitPlayerEngine implements PlayerEngine {
         }
         await _closeActiveDescriptor();
         await _releaseActiveLease();
-        _updateSnapshot(
-          _snapshot.copyWith(
-            status: PlaybackStatus.error,
-            errorMessage: () => _safeErrorMessage(e),
-          ),
-        );
+        _setPlaybackError(_safeErrorMessage(e));
         return;
       }
       _syncStatus();
       _syncTracks(_player.state.tracks, _player.state.track);
+      _syncVideoSize(_player.state.videoParams);
       _checkResumeRange(_player.state.duration);
     });
   }
@@ -535,12 +562,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
         await _player.play();
       } catch (e, st) {
         AppLogger.instance.error('底层恢复播放异常', error: e, stackTrace: st);
-        _updateSnapshot(
-          _snapshot.copyWith(
-            status: PlaybackStatus.error,
-            errorMessage: () => _safeErrorMessage(e),
-          ),
-        );
+        _setPlaybackError(_safeErrorMessage(e));
       }
     });
   }
@@ -556,12 +578,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
         await _player.pause();
       } catch (e, st) {
         AppLogger.instance.error('底层暂停播放异常', error: e, stackTrace: st);
-        _updateSnapshot(
-          _snapshot.copyWith(
-            status: PlaybackStatus.error,
-            errorMessage: () => _safeErrorMessage(e),
-          ),
-        );
+        _setPlaybackError(_safeErrorMessage(e));
       }
     });
   }
@@ -577,12 +594,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
         await _player.seek(position);
       } catch (e, st) {
         AppLogger.instance.error('底层跳转进度异常', error: e, stackTrace: st);
-        _updateSnapshot(
-          _snapshot.copyWith(
-            status: PlaybackStatus.error,
-            errorMessage: () => _safeErrorMessage(e),
-          ),
-        );
+        _setPlaybackError(_safeErrorMessage(e));
       }
     });
   }
@@ -596,12 +608,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
         await _player.setRate(rate);
       } catch (e, st) {
         AppLogger.instance.error('底层设置倍速异常', error: e, stackTrace: st);
-        _updateSnapshot(
-          _snapshot.copyWith(
-            status: PlaybackStatus.error,
-            errorMessage: () => _safeErrorMessage(e),
-          ),
-        );
+        _setPlaybackError(_safeErrorMessage(e));
       }
     });
   }
@@ -615,12 +622,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
         await _player.setVolume(volume);
       } catch (e, st) {
         AppLogger.instance.error('底层设置音量异常', error: e, stackTrace: st);
-        _updateSnapshot(
-          _snapshot.copyWith(
-            status: PlaybackStatus.error,
-            errorMessage: () => _safeErrorMessage(e),
-          ),
-        );
+        _setPlaybackError(_safeErrorMessage(e));
       }
     });
   }
@@ -645,12 +647,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
         await _player.setAudioTrack(track);
       } catch (e, st) {
         AppLogger.instance.error('底层设置音频轨道异常', error: e, stackTrace: st);
-        _updateSnapshot(
-          _snapshot.copyWith(
-            status: PlaybackStatus.error,
-            errorMessage: () => _safeErrorMessage(e),
-          ),
-        );
+        _setPlaybackError(_safeErrorMessage(e));
       }
     });
   }
@@ -675,12 +672,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
         await _player.setSubtitleTrack(track);
       } catch (e, st) {
         AppLogger.instance.error('底层设置字幕轨道异常', error: e, stackTrace: st);
-        _updateSnapshot(
-          _snapshot.copyWith(
-            status: PlaybackStatus.error,
-            errorMessage: () => _safeErrorMessage(e),
-          ),
-        );
+        _setPlaybackError(_safeErrorMessage(e));
       }
     });
   }
@@ -691,6 +683,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
     _openEpoch++;
     _isOpening = false;
     _pendingResumeAt = null;
+    _recoverableErrorPosition = null;
     _updateSnapshot(
       PlaybackSnapshot(
         status: PlaybackStatus.idle,
@@ -718,6 +711,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
     _disposed = true;
     _isOpening = false;
     _pendingResumeAt = null;
+    _recoverableErrorPosition = null;
     _openEpoch++;
 
     _disposeFuture = _enqueue(() async {

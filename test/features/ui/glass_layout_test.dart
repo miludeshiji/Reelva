@@ -255,7 +255,9 @@ void main() {
 
           final capture =
               _captureDir.isNotEmpty &&
-              (viewport.name == 'mobile' || viewport.name == 'desktop');
+              (viewport.name == 'mobile' ||
+                  viewport.name == 'desktop' ||
+                  (page == _Page.player && viewport.name == 'landscape'));
           final lightTheme = ReelvaTheme.light;
           final darkTheme = ReelvaTheme.player;
           await tester.pumpWidget(
@@ -497,6 +499,11 @@ Future<void> _exerciseContent(WidgetTester tester, _Page page) async {
         slider.max,
         const Duration(hours: 2, minutes: 16).inMilliseconds.toDouble(),
       );
+      final more = find.byKey(const Key('player_more_button'));
+      if (more.evaluate().isNotEmpty) {
+        await tester.tap(more);
+        await tester.pumpAndSettle();
+      }
       await _reveal(
         tester,
         page,

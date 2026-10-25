@@ -35,6 +35,38 @@ void main() {
   });
 
   group('MediaKitPlayerEngine 状态演进与错误管理', () {
+    test('视频显示尺寸包含像素比例与旋转，切换和停止后清除旧尺寸', () async {
+      final resource = PlaybackResource(
+        uri: Uri.parse('file:///video.mp4'),
+        displayName: 'video.mp4',
+      );
+      platformPlayer.onOpen = (_) async {
+        platformPlayer.emitVideoParams(
+          const VideoParams(w: 1440, h: 1080, dw: 1920, dh: 1080),
+        );
+      };
+      await engine.open(resource);
+      expect(engine.snapshot.videoWidth, 1920);
+      expect(engine.snapshot.videoHeight, 1080);
+
+      final rotated = engine.snapshots.firstWhere((s) => s.videoWidth == 1080);
+      platformPlayer.emitVideoParams(
+        const VideoParams(dw: 1920, dh: 1080, rotate: 90),
+      );
+      expect((await rotated).videoHeight, 1920);
+
+      platformPlayer.onOpen = null;
+      await engine.open(resource);
+      expect(engine.snapshot.videoWidth, 0);
+      expect(engine.snapshot.videoHeight, 0);
+      final portrait = engine.snapshots.firstWhere((s) => s.videoWidth == 720);
+      platformPlayer.emitVideoParams(const VideoParams(dw: 720, dh: 1280));
+      expect((await portrait).videoHeight, 1280);
+      await engine.stop();
+      expect(engine.snapshot.videoWidth, 0);
+      expect(engine.snapshot.videoHeight, 0);
+    });
+
     test('open 正确传递 URI 与 httpHeaders，且 resource.toString() 脱敏不漏凭据', () async {
       final resource = PlaybackResource(
         uri: Uri.parse('https://example.com/live/stream.m3u8?token=secret123'),
@@ -95,48 +127,114 @@ void main() {
       },
     );
 
-    test(
-      'loaded-before-error: 播放中发生错误时保留已知时长进度，后续位置/缓冲 tick 绝不覆盖 error',
-      () async {
-        final resource = PlaybackResource(
-          uri: Uri.parse('https://example.com/video.mp4'),
-          displayName: '电影视频',
-        );
+    for (final resumeAt in [null, const Duration(minutes: 3)]) {
+      test(
+        '起播解码错误在${resumeAt == null ? '从头播放' : '断点续播'}恢复后清除并同步媒体信息',
+        () async {
+          final resource = PlaybackResource(
+            uri: Uri.parse('https://example.com/video.mkv'),
+            displayName: '可回退解码的视频',
+          );
+          final nativeError = engine.snapshots.firstWhere(
+            (s) => s.status == PlaybackStatus.error,
+          );
+          platformPlayer.onOpen = (_) async {
+            platformPlayer.emitError(
+              'Could not open codec with hardware decoding',
+            );
+            await nativeError;
+            platformPlayer.emitDuration(const Duration(minutes: 90));
+            platformPlayer.emitVideoParams(
+              const VideoParams(dw: 1920, dh: 1080),
+            );
+            platformPlayer.emitTracks(
+              const Tracks(audio: [AudioTrack('1', '国语', 'chi')]),
+            );
+            platformPlayer.emitTrack(
+              const Track(audio: AudioTrack('1', '国语', 'chi')),
+            );
+          };
 
-        await engine.open(resource);
+          await engine.open(resource, resumeAt: resumeAt);
+          expect(engine.snapshot.status, PlaybackStatus.error);
 
-        platformPlayer.emitDuration(const Duration(minutes: 90));
-        platformPlayer.emitPosition(const Duration(minutes: 12, seconds: 30));
-        platformPlayer.emitBuffering(false);
+          // 播放请求和初始续播位置不代表解码已经恢复。
+          final start = resumeAt ?? Duration.zero;
+          platformPlayer.emitPosition(start);
+          await pumpEventQueue();
+          expect(engine.snapshot.status, PlaybackStatus.error);
 
-        final loadedSnap = await engine.snapshots.firstWhere(
-          (s) =>
-              s.duration == const Duration(minutes: 90) &&
-              s.position == const Duration(minutes: 12, seconds: 30) &&
-              s.status == PlaybackStatus.playing,
-        );
-        expect(loadedSnap.position, const Duration(minutes: 12, seconds: 30));
+          final position = start + const Duration(milliseconds: 200);
+          platformPlayer.emitPosition(position);
+          await pumpEventQueue();
 
-        platformPlayer.emitError(
-          'Server connection reset: 504 Gateway Timeout',
-        );
+          expect(engine.snapshot.status, PlaybackStatus.playing);
+          expect(engine.snapshot.errorMessage, isNull);
+          expect(engine.snapshot.position, position);
+          expect(engine.snapshot.duration, const Duration(minutes: 90));
+          expect(engine.snapshot.videoWidth, 1920);
+          expect(engine.snapshot.videoHeight, 1080);
+          expect(engine.snapshot.audioTracks.single.id, '1');
+          expect(engine.snapshot.audioTrackId, '1');
+        },
+      );
+    }
 
-        final errSnap = await engine.snapshots.firstWhere(
-          (s) => s.status == PlaybackStatus.error,
-        );
-        expect(errSnap.duration, const Duration(minutes: 90));
-        expect(errSnap.position, const Duration(minutes: 12, seconds: 30));
-        expect(errSnap.errorMessage, isNotNull);
+    test('播放中底层错误保留已知进度，只有实际恢复播放才能清除错误', () async {
+      final resource = PlaybackResource(
+        uri: Uri.parse('https://example.com/video.mp4'),
+        displayName: '电影视频',
+      );
 
-        // 验证终态稳定性：后续底层位置或缓冲更新不得将 status 还原
-        platformPlayer.emitPosition(const Duration(minutes: 12, seconds: 31));
-        platformPlayer.emitBuffering(false);
-        await Future<void>.delayed(Duration.zero);
+      await engine.open(resource);
 
-        expect(engine.snapshot.status, PlaybackStatus.error);
-        expect(engine.snapshot.errorMessage, isNotNull);
-      },
-    );
+      platformPlayer.emitDuration(const Duration(minutes: 90));
+      platformPlayer.emitPosition(const Duration(minutes: 12, seconds: 30));
+      platformPlayer.emitBuffering(false);
+
+      final loadedSnap = await engine.snapshots.firstWhere(
+        (s) =>
+            s.duration == const Duration(minutes: 90) &&
+            s.position == const Duration(minutes: 12, seconds: 30) &&
+            s.status == PlaybackStatus.playing,
+      );
+      expect(loadedSnap.position, const Duration(minutes: 12, seconds: 30));
+
+      platformPlayer.emitError('Server connection reset: 504 Gateway Timeout');
+
+      final errSnap = await engine.snapshots.firstWhere(
+        (s) => s.status == PlaybackStatus.error,
+      );
+      expect(errSnap.duration, const Duration(minutes: 90));
+      expect(errSnap.position, const Duration(minutes: 12, seconds: 30));
+      expect(errSnap.errorMessage, isNotNull);
+
+      // 排队的旧进度和普通播放/缓冲通知不能证明已经恢复。
+      platformPlayer.emitQueuedPosition(const Duration(minutes: 80));
+      await player.play();
+      platformPlayer.emitBuffering(false);
+      await pumpEventQueue();
+
+      expect(engine.snapshot.status, PlaybackStatus.error);
+      expect(engine.snapshot.errorMessage, isNotNull);
+
+      platformPlayer.emitBuffering(true);
+      platformPlayer.emitPosition(const Duration(minutes: 12, seconds: 31));
+      await pumpEventQueue();
+      expect(engine.snapshot.status, PlaybackStatus.error);
+
+      platformPlayer.emitBuffering(false);
+      platformPlayer.emitPosition(const Duration(minutes: 12, seconds: 32));
+      await pumpEventQueue();
+
+      expect(engine.snapshot.status, PlaybackStatus.playing);
+      expect(engine.snapshot.errorMessage, isNull);
+      expect(
+        engine.snapshot.position,
+        const Duration(minutes: 12, seconds: 32),
+      );
+      expect(engine.snapshot.duration, const Duration(minutes: 90));
+    });
 
     test('terminal error state stability: 错误状态下 play/pause/seek 不覆盖错误，stop 重置为 idle', () async {
       final resource = PlaybackResource(
@@ -144,15 +242,17 @@ void main() {
         displayName: '损坏文件',
       );
 
-      await engine.open(resource);
-      platformPlayer.emitError(
-        'Demuxer error: Could not find codec parameters',
-      );
-
-      final errSnap = await engine.snapshots.firstWhere(
+      final nativeError = engine.snapshots.firstWhere(
         (s) => s.status == PlaybackStatus.error,
       );
-      expect(errSnap.errorMessage, isNotNull);
+      platformPlayer.onOpen = (_) async {
+        platformPlayer.emitError('Could not open codec');
+        await nativeError;
+        throw Exception('Demuxer error: Could not find codec parameters');
+      };
+      await engine.open(resource);
+      expect(engine.snapshot.status, PlaybackStatus.error);
+      expect(engine.snapshot.errorMessage, isNotNull);
 
       await engine.play();
       expect(engine.snapshot.status, PlaybackStatus.error);
@@ -163,9 +263,36 @@ void main() {
       await engine.seek(const Duration(seconds: 10));
       expect(engine.snapshot.status, PlaybackStatus.error);
 
+      await player.play();
+      platformPlayer.emitPosition(const Duration(seconds: 10));
+      platformPlayer.emitBuffering(false);
+      await pumpEventQueue();
+      expect(engine.snapshot.status, PlaybackStatus.error);
+
       await engine.stop();
       expect(engine.snapshot.status, PlaybackStatus.idle);
       expect(engine.snapshot.errorMessage, isNull);
+    });
+
+    test('底层格式错误且没有实际播放进度时继续显示错误', () async {
+      final resource = PlaybackResource(
+        uri: Uri.parse('https://example.com/broken.mkv'),
+        displayName: '无法解码的视频',
+      );
+      await engine.open(resource);
+      final nativeError = engine.snapshots.firstWhere(
+        (s) => s.status == PlaybackStatus.error,
+      );
+      platformPlayer.emitError('Failed to recognize file format');
+      await nativeError;
+
+      await player.play();
+      platformPlayer.emitPosition(Duration.zero);
+      platformPlayer.emitBuffering(false);
+      await pumpEventQueue();
+
+      expect(engine.snapshot.status, PlaybackStatus.error);
+      expect(engine.snapshot.errorMessage, '媒体格式不受支持或文件已损坏');
     });
 
     test('idle 期间忽略底层错误流，不将 idle 错变为 error', () async {

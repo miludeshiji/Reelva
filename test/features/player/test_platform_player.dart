@@ -39,6 +39,7 @@ class TestPlatformPlayer extends PlatformPlayer {
       position: Duration.zero,
       duration: Duration.zero,
       completed: false,
+      videoParams: const VideoParams(),
     );
     final handler = onOpen;
     if (handler != null) {
@@ -159,6 +160,11 @@ class TestPlatformPlayer extends PlatformPlayer {
     durationController.add(duration);
   }
 
+  void emitVideoParams(VideoParams params) {
+    state = state.copyWith(videoParams: params);
+    videoParamsController.add(params);
+  }
+
   /// 重放旧文件排队的通知，保留当前文件的公开状态。
   void emitQueuedDuration(Duration duration) {
     durationController.add(duration);
@@ -166,6 +172,10 @@ class TestPlatformPlayer extends PlatformPlayer {
 
   void emitPosition(Duration position) {
     state = state.copyWith(position: position);
+    positionController.add(position);
+  }
+
+  void emitQueuedPosition(Duration position) {
     positionController.add(position);
   }
 

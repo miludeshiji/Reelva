@@ -82,26 +82,18 @@ class _GlassSidebarState extends State<GlassSidebar> {
   Widget build(BuildContext context) {
     return SizedBox(
       key: const ValueKey('glass_sidebar'),
-      width: _isCollapsed ? 128 : 248,
+      width: _isCollapsed ? 112 : 248,
       child: Padding(
         padding: const EdgeInsets.all(ReelvaDesign.space16),
         child: _GlassSurface(
           borderRadius: BorderRadius.circular(ReelvaDesign.radiusLarge),
           child: SafeArea(
             child: SingleChildScrollView(
-              padding: EdgeInsets.symmetric(
-                horizontal: _isCollapsed
-                    ? ReelvaDesign.space8
-                    : ReelvaDesign.space16,
-                vertical: ReelvaDesign.space16,
-              ),
+              padding: const EdgeInsets.all(ReelvaDesign.space16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Row(
-                    mainAxisAlignment: _isCollapsed
-                        ? MainAxisAlignment.center
-                        : MainAxisAlignment.start,
                     children: [
                       IconButton(
                         key: const ValueKey('sidebar_toggle'),
@@ -142,7 +134,7 @@ class _GlassSidebarState extends State<GlassSidebar> {
                       index: index,
                       selected: index == widget.selectedIndex,
                       isSidebar: true,
-                      textOnly: _isCollapsed,
+                      iconOnly: _isCollapsed,
                       onTap: () => widget.onDestinationSelected(index),
                     ),
                   ],
@@ -199,14 +191,14 @@ class _NavigationButton extends StatelessWidget {
     required this.selected,
     required this.onTap,
     this.isSidebar = false,
-    this.textOnly = false,
+    this.iconOnly = false,
   });
 
   final int index;
   final bool selected;
   final VoidCallback onTap;
   final bool isSidebar;
-  final bool textOnly;
+  final bool iconOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -216,7 +208,7 @@ class _NavigationButton extends StatelessWidget {
     final icon = Icon(destination.icon, size: 20, color: color);
     final label = Text(
       destination.label,
-      textAlign: isSidebar && !textOnly ? TextAlign.start : TextAlign.center,
+      textAlign: isSidebar && !iconOnly ? TextAlign.start : TextAlign.center,
       style: TextStyle(
         color: color,
         fontSize: isSidebar ? 14 : 11,
@@ -225,7 +217,7 @@ class _NavigationButton extends StatelessWidget {
       ),
     );
 
-    return Semantics(
+    final button = Semantics(
       key: ValueKey('navigation_destination_${destination.id}'),
       label: destination.label,
       selected: selected,
@@ -244,21 +236,16 @@ class _NavigationButton extends StatelessWidget {
             constraints: BoxConstraints(minHeight: isSidebar ? 54 : 62),
             child: Padding(
               padding: EdgeInsets.symmetric(
-                horizontal: isSidebar && !textOnly
-                    ? ReelvaDesign.space16
-                    : ReelvaDesign.space4,
+                horizontal: isSidebar ? 0 : ReelvaDesign.space4,
                 vertical: isSidebar
                     ? ReelvaDesign.space12
                     : ReelvaDesign.space8,
               ),
-              child: textOnly
-                  ? Center(child: label)
-                  : isSidebar
+              child: isSidebar
                   ? Row(
                       children: [
-                        icon,
-                        const SizedBox(width: ReelvaDesign.space12),
-                        Expanded(child: label),
+                        SizedBox(width: 48, child: icon),
+                        if (!iconOnly) Expanded(child: label),
                       ],
                     )
                   : Column(
@@ -271,5 +258,13 @@ class _NavigationButton extends StatelessWidget {
         ),
       ),
     );
+
+    return iconOnly
+        ? Tooltip(
+            message: destination.label,
+            excludeFromSemantics: true,
+            child: button,
+          )
+        : button;
   }
 }

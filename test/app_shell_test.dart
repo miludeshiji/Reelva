@@ -37,7 +37,7 @@ void main() {
     });
 
     testWidgets(
-      'Desktop sidebar collapses to text navigation and preserves state across destinations',
+      'Desktop sidebar collapses to icon navigation and preserves state across destinations',
       (tester) async {
         final db = AppDatabase(executor: NativeDatabase.memory());
         addTearDown(db.close);
@@ -63,7 +63,7 @@ void main() {
 
           await tester.tap(toggle);
           await tester.pumpAndSettle();
-          expect(tester.getSize(sidebar).width, 128);
+          expect(tester.getSize(sidebar).width, 112);
           expect(
             find.descendant(of: sidebar, matching: find.text('Reelva')),
             findsNothing,
@@ -75,11 +75,11 @@ void main() {
           );
           expect(
             find.descendant(of: libraryDest, matching: find.text('影视库')),
-            findsOneWidget,
+            findsNothing,
           );
           expect(
             find.descendant(of: libraryDest, matching: find.byType(Icon)),
-            findsNothing,
+            findsOneWidget,
           );
           await tester.tap(libraryDest);
           await tester.pumpAndSettle();
@@ -112,7 +112,7 @@ void main() {
           await tester.tap(homeDest);
           await tester.pumpAndSettle();
           expect(find.byType(HomePage), findsOneWidget);
-          expect(tester.getSize(sidebar).width, 128);
+          expect(tester.getSize(sidebar).width, 112);
 
           await tester.tap(toggle);
           await tester.pumpAndSettle();
@@ -123,6 +123,10 @@ void main() {
           );
           expect(
             find.descendant(of: libraryDest, matching: find.byType(Icon)),
+            findsOneWidget,
+          );
+          expect(
+            find.descendant(of: libraryDest, matching: find.text('影视库')),
             findsOneWidget,
           );
           expect(tester.takeException(), isNull);

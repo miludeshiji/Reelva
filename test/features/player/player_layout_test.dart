@@ -173,20 +173,21 @@ void main() {
 
           final videoRect = tester.getRect(find.byKey(_videoKey));
           final panelRect = tester.getRect(find.byKey(_panelKey));
-          final wide = viewport.size.width >= ReelvaDesign.desktopBreakpoint;
-          expect(videoRect.width / videoRect.height, closeTo(16 / 9, 0.001));
-          if (wide) {
-            expect(panelRect.top, greaterThan(videoRect.top));
-            expect(panelRect.bottom, lessThan(videoRect.bottom));
-            expect(panelRect.width, lessThanOrEqualTo(1040));
-          } else {
-            expect(panelRect.top, greaterThanOrEqualTo(videoRect.bottom + 12));
-          }
+          expect(videoRect, Offset.zero & viewport.size);
+          expect(panelRect.top, greaterThan(videoRect.top));
+          expect(panelRect.bottom, lessThanOrEqualTo(videoRect.bottom));
+          expect(videoRect.contains(panelRect.topLeft), isTrue);
+          expect(
+            find.byKey(const Key('player_now_playing_title')),
+            findsNothing,
+          );
+          expect(find.text('媒体库视频'), findsNothing);
+          expect(find.byKey(const Key('player_title_text')), findsOneWidget);
           expect(
             Theme.of(
               tester.element(find.byKey(const Key('player_seek_slider'))),
             ).brightness,
-            wide ? Brightness.dark : Brightness.light,
+            Brightness.dark,
           );
           final back = tester.getCenter(
             find.byKey(const Key('player_seek_back_button')),
@@ -251,7 +252,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(
           tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor,
-          ReelvaDesign.background,
+          ReelvaDesign.playerBackground,
         );
         expect(tester.element(find.byKey(_frameKey)), same(originalFrame));
         expect(
@@ -335,7 +336,7 @@ void main() {
   );
 
   testWidgets(
-    'Resizing preserves mute restore state and keeps detached controls visible',
+    'Resizing preserves video and mute state with controls still overlaid',
     (tester) async {
       final engine = FakePlayerEngine(
         initialSnapshot: const PlaybackSnapshot(
@@ -360,7 +361,72 @@ void main() {
       await tester.pump();
       expect(engine.lastVolume, 75);
       await tester.pump(const Duration(seconds: 4));
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(find.byKey(_fullscreenKey).hitTestable(), findsNothing);
+      await tester.tapAt(tester.getCenter(find.byKey(_videoKey)));
+      await tester.pumpAndSettle();
       expect(find.byKey(_fullscreenKey).hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'Mobile controls toggle on tap and settings stay usable while open',
+    (tester) async {
+      final engine = FakePlayerEngine(
+        initialSnapshot: const PlaybackSnapshot(
+          status: PlaybackStatus.playing,
+          duration: Duration(minutes: 20),
+          volume: 75,
+        ),
+      );
+      await _mountPlayer(tester, engine, size: const Size(390, 844));
+      expect(find.byKey(const Key('player_volume_slider')), findsNothing);
+      final center = tester.getCenter(find.byKey(_videoKey));
+      await tester.tapAt(center);
+      await tester.pumpAndSettle();
+      expect(_panelOpacity(tester), 0);
+      await tester.tapAt(center);
+      await tester.pumpAndSettle();
+      expect(_panelOpacity(tester), 1);
+      await tester.tap(find.byKey(const Key('player_more_button')));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 4));
+      expect(_panelOpacity(tester), 1);
+      expect(
+        find.byKey(const Key('player_subtitle_track_button')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('player_rate_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('1.5x'));
+      await tester.pumpAndSettle();
+      expect(engine.lastRate, 1.5);
+      final slider = find.byKey(const Key('player_volume_slider'));
+      await tester.drag(slider, const Offset(-25, 0));
+      await tester.pump();
+      expect(engine.lastVolume, lessThan(75));
+      expect(tester.widget<Slider>(slider).value, engine.lastVolume);
+      await tester.pump(const Duration(seconds: 4));
+      expect(_panelOpacity(tester), 1);
+      await tester.tapAt(const Offset(10, 100));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(_panelOpacity(tester), 0);
+      await tester.tapAt(center);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('player_more_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('player_stop_button')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('player_empty_surface')), findsOneWidget);
+      expect(find.byType(BottomSheet), findsNothing);
+      await tester.tap(find.byKey(const Key('idle_open_file_button')));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(_panelOpacity(tester), 0);
       expect(tester.takeException(), isNull);
     },
   );
