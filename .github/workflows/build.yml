@@ -157,7 +157,8 @@ jobs:
           (
             umask 077
             echo "$KEYSTORE_BASE64" | base64 --decode > android/keystore.jks
-            printf '%s\n' "$KEY_PROPERTIES" > android/key.properties
+            # Properties 按最后一次赋值取值，固定使用 CI 实际恢复的密钥路径。
+            printf '%s\n\nstoreFile=keystore.jks\n' "$KEY_PROPERTIES" > android/key.properties
           )
           if [ ! -s android/keystore.jks ] || [ ! -s android/key.properties ]; then
             echo "::error::签名文件恢复失败或为空"

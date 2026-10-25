@@ -48,7 +48,7 @@ keyPassword=<本地填写真实值>
 正式构建与发布依赖仓库 Secrets，配置时不要在文档、Issue 或日志中粘贴真实秘密：
 
 - **`ANDROID_KEYSTORE`**：正式签名证书库（JKS 文件）的 Base64 编码字符串。CI 在严格权限（`umask 077`）下解码写入临时文件 `android/keystore.jks`，构建完成后清理。
-- **`ANDROID_KEY_PROPERTIES`**：`key.properties` 的原始多行属性配置文本。CI 构建解析路径固定为相对 `android` 目录的 `keystore.jks`：
+- **`ANDROID_KEY_PROPERTIES`**：`key.properties` 的原始多行属性配置文本，包含密钥别名和密码。CI 写入配置时将 `storeFile` 固定为相对 `android` 目录的 `keystore.jks`，与实际恢复的密钥文件一致；可保留 Secret 中原有的本地路径：
 
 ```properties
 storeFile=keystore.jks
