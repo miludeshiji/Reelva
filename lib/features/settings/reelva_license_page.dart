@@ -21,7 +21,8 @@ class ReelvaLicensePage extends StatefulWidget {
 }
 
 class _ReelvaLicensePageState extends State<ReelvaLicensePage> {
-  late final Future<Map<String, List<LicenseEntry>>> _licenses = _loadLicenses();
+  late final Future<Map<String, List<LicenseEntry>>> _licenses =
+      _loadLicenses();
   String? _selectedPackage;
 
   Future<Map<String, List<LicenseEntry>>> _loadLicenses() async {
@@ -129,9 +130,8 @@ class _ReelvaLicensePageState extends State<ReelvaLicensePage> {
                                   ),
                                 ),
                                 selected: package == selectedPackage,
-                                selectedTileColor: Theme.of(
-                                  context,
-                                ).highlightColor,
+                                selectedTileColor: Theme.of(context)
+                                    .highlightColor,
                                 onTap: () => setState(() {
                                   _selectedPackage = package;
                                 }),
