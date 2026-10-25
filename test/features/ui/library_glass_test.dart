@@ -211,6 +211,7 @@ void main() {
     final pending = (await tester.runAsync(
       () => repo.watchWorks(unmatchedOnly: true).first,
     ))!;
+    expect(pending, hasLength(1));
     final metadata = _ReviewMetadataController();
     final client = FakeTmdbClient();
     client.searchTvHandler = (query, year) => const [
@@ -273,6 +274,14 @@ void main() {
     expect(
       tester
           .widget<TextFormField>(
+            find.byKey(ValueKey('manual_match_episode_${files['02.mkv']}')),
+          )
+          .initialValue,
+      '2',
+    );
+    expect(
+      tester
+          .widget<TextFormField>(
             find.byKey(ValueKey('manual_match_season_${fileId}_0')),
           )
           .initialValue,
@@ -299,23 +308,6 @@ void main() {
       find.byKey(Key('library_work_card_${pending.first.id}')),
       findsNothing,
     );
-    await _tapVisible(
-      tester,
-      find.byKey(Key('library_work_card_${pending.last.id}')),
-    );
-    await _tapVisible(
-      tester,
-      find.byKey(const Key('manual_match_search_button')),
-    );
-    await _tapVisible(
-      tester,
-      find.byKey(const Key('manual_match_select_button_series_2')),
-    );
-    await _tapVisible(
-      tester,
-      find.byKey(const Key('manual_match_apply_button')),
-    );
-    expect(find.byType(ManualMatchPage), findsNothing);
     expect(
       find.byKey(const Key('library_unmatched_empty_view')),
       findsOneWidget,

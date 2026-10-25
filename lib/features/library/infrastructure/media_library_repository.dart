@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'package:drift/drift.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../metadata/domain/directory_context_resolver.dart';
+import '../../metadata/domain/matching_file.dart';
+import '../../metadata/domain/match_decision.dart';
 import '../../metadata/domain/media_filename_parser.dart';
 import '../../metadata/domain/tmdb_models.dart';
 import '../../sources/domain/source_models.dart';
@@ -173,6 +176,154 @@ class MediaLibraryRepository {
     return (await _assignedWork(assignment))?.metadataLocked ?? false;
   }
 
+  Future<bool> _isProtectedWork(WorkData? work) async {
+    if (work == null) return false;
+    if (work.metadataLocked || work.metadataSource != 'local') return true;
+    return await (db.select(db.externalIds)
+              ..where(
+                (id) => id.workId.equals(work.id) & id.provider.equals('tmdb'),
+              )
+              ..limit(1))
+            .getSingleOrNull() !=
+        null;
+  }
+
+  Future<bool> isFileMetadataProtected(int fileId) async {
+    final assignment = await (db.select(
+      db.mediaAssignments,
+    )..where((row) => row.fileId.equals(fileId))).getSingleOrNull();
+    return assignment == null ||
+        await _isProtectedWork(await _assignedWork(assignment));
+  }
+
+  /// 直接从索引重新生成证据，已有 needs_review 文件也可使用新规则。
+  Future<List<MatchingFile>> matchingFilesForWork(int workId) async {
+    final rows = await db
+        .customSelect(
+          '''
+      SELECT mf.id, me.name, me.relative_locator, ms.kind, ms.root_locator,
+             s.season_number, ep.episode_number, mf.candidate_details
+      FROM media_assignments ma
+      JOIN media_files mf ON mf.id = ma.file_id
+      JOIN media_entries me ON me.id = mf.entry_id
+      JOIN media_sources ms ON ms.id = me.source_id
+      LEFT JOIN episodes ep ON ep.id = ma.episode_id
+      LEFT JOIN seasons s ON s.id = ep.season_id
+      WHERE ms.enabled = 1 AND me.is_directory = 0
+        AND (ma.work_id = ? OR s.series_id = ?)
+      ORDER BY mf.id
+    ''',
+          variables: [Variable.withInt(workId), Variable.withInt(workId)],
+        )
+        .get();
+    return rows.map((row) {
+      Map<String, dynamic>? review;
+      final raw = row.readNullable<String>('candidate_details');
+      if (raw != null && raw.startsWith('{')) {
+        final value = jsonDecode(raw);
+        if (value is Map<String, dynamic>) review = value;
+      }
+      return MatchingFile(
+        fileId: row.read<int>('id'),
+        name: row.read<String>('name'),
+        directoryNames: DirectoryContextResolver.resolve(
+          kind: row.read<String>('kind'),
+          rootLocator: row.read<String>('root_locator'),
+          locator: row.read<String>('relative_locator'),
+        ),
+        seasonNumber: row.readNullable<int>('season_number'),
+        episodeNumber: row.readNullable<int>('episode_number'),
+        reviewReason: MatchReason.values
+            .where((reason) => reason.name == review?['reason'])
+            .firstOrNull,
+        suggestions: (review?['candidates'] as List<dynamic>? ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .map(TmdbWork.fromJson)
+            .toList(),
+      );
+    }).toList();
+  }
+
+  Future<void> recordMatchingReview(
+    List<int> fileIds,
+    MatchDecision decision,
+  ) => db.transaction(() async {
+    for (final fileId in fileIds) {
+      if (await isFileMetadataProtected(fileId)) continue;
+      await (db.update(
+        db.mediaFiles,
+      )..where((row) => row.id.equals(fileId))).write(
+        MediaFilesCompanion(
+          parseState: decision.reason == MatchReason.extraMedia
+              ? const Value('extra')
+              : const Value.absent(),
+          candidateDetails: Value(
+            jsonEncode({
+              'reason': decision.reason?.name,
+              'candidates': decision.candidates
+                  .take(3)
+                  .map((work) => work.toJson())
+                  .toList(),
+            }),
+          ),
+        ),
+      );
+    }
+  });
+
+  static String _localScope(List<String> directories) {
+    final index = directories.lastIndexWhere(
+      (directory) =>
+          !MediaFilenameParser.isContextDirectory(directory) &&
+          !MediaFilenameParser.isExtraName(directory) &&
+          MediaFilenameParser.seasonFromName(directory) == null,
+    );
+    return directories.take(index + 1).join('/');
+  }
+
+  Future<bool> _sameLocalScope(
+    WorkData candidate,
+    MediaEntryData entry,
+    MediaSourceEntry source,
+  ) async {
+    if (await _isProtectedWork(candidate)) return false;
+    final scope = _localScope(
+      DirectoryContextResolver.resolve(
+        kind: source.kind,
+        rootLocator: source.rootLocator,
+        locator: entry.relativeLocator,
+      ),
+    );
+    final candidates = await db
+        .customSelect(
+          '''
+      SELECT me.relative_locator FROM media_assignments ma
+      JOIN media_files mf ON mf.id = ma.file_id
+      JOIN media_entries me ON me.id = mf.entry_id
+      LEFT JOIN episodes ep ON ep.id = ma.episode_id
+      LEFT JOIN seasons s ON s.id = ep.season_id
+      WHERE me.source_id = ? AND (ma.work_id = ? OR s.series_id = ?)
+    ''',
+          variables: [
+            Variable.withInt(source.id),
+            Variable.withInt(candidate.id),
+            Variable.withInt(candidate.id),
+          ],
+        )
+        .get();
+    return candidates.any(
+      (row) =>
+          _localScope(
+            DirectoryContextResolver.resolve(
+              kind: source.kind,
+              rootLocator: source.rootLocator,
+              locator: row.read<String>('relative_locator'),
+            ),
+          ) ==
+          scope,
+    );
+  }
+
   /// 仅重绑明确选中的文件，保留其他版本、季集关联与观看历史。
   Future<int?> applyMetadataToFiles(
     Map<int, TmdbEpisode?> files,
@@ -204,8 +355,7 @@ class MediaLibraryRepository {
         throw const MetadataException('所选文件已不可用，请刷新目录后重试');
       }
       final assignment = row.readTable(db.mediaAssignments);
-      if (!manual &&
-          ((await _assignedWork(assignment))?.metadataLocked ?? false)) {
+      if (!manual && await _isProtectedWork(await _assignedWork(assignment))) {
         continue;
       }
       final episode = files[fileId];
@@ -766,6 +916,10 @@ class MediaLibraryRepository {
           db.works,
           db.works.id.equalsExp(db.mediaAssignments.workId),
         ),
+        innerJoin(
+          db.mediaSources,
+          db.mediaSources.id.equalsExp(db.mediaEntries.sourceId),
+        ),
       ])..where(db.mediaFiles.parseState.equals('pending'))).get();
 
       if (pendingFiles.isEmpty) return;
@@ -773,29 +927,52 @@ class MediaLibraryRepository {
       for (final row in pendingFiles) {
         final file = row.readTable(db.mediaFiles);
         final entry = row.readTable(db.mediaEntries);
-        final currentWork = row.readTableOrNull(db.works);
+        final currentWork = await _assignedWork(
+          row.readTable(db.mediaAssignments),
+        );
 
         // 如果用户已经锁定或者已有非本地来源匹配，则绝不自动覆盖
-        if (currentWork != null &&
-            (currentWork.metadataLocked ||
-                currentWork.metadataSource != 'local')) {
+        if (await _isProtectedWork(currentWork)) {
           await (db.update(db.mediaFiles)..where((f) => f.id.equals(file.id)))
               .write(const MediaFilesCompanion(parseState: Value('parsed')));
           continue;
         }
 
-        final parsed = MediaFilenameParser.parse(entry.name);
+        final source = row.readTable(db.mediaSources);
+        final parsed = MediaFilenameParser.parse(
+          entry.name,
+          directoryNames: DirectoryContextResolver.resolve(
+            kind: source.kind,
+            rootLocator: source.rootLocator,
+            locator: entry.relativeLocator,
+          ),
+        );
+        if (parsed.isExtra) {
+          await recordMatchingReview([
+            file.id,
+          ], const MatchDecision(reason: MatchReason.extraMedia));
+          continue;
+        }
         // 情况 1: 具备明确季号与单集号的剧集（即便缺少年份，也必须完整建立剧集/季/集层级；缺年份仅影响向 TMDB 自动匹配置信度，不影响本地层级结构）
         if (parsed.type == 'series' &&
             parsed.seasonNumber != null &&
             parsed.episodeNumber != null &&
-            !parsed.isMultiEpisode) {
-          final candidateSeries =
+            !parsed.isMultiEpisode &&
+            !parsed.isSpecialOrOva &&
+            !parsed.isExtra) {
+          final allCandidateSeries =
               await (db.select(db.works)..where(
                     (w) =>
                         w.type.equals('series') & w.title.equals(parsed.title),
                   ))
                   .get();
+
+          final candidateSeries = <WorkData>[];
+          for (final candidate in allCandidateSeries) {
+            if (await _sameLocalScope(candidate, entry, source)) {
+              candidateSeries.add(candidate);
+            }
+          }
 
           WorkData? seriesWork;
           if (parsed.year != null) {
@@ -920,7 +1097,7 @@ class MediaLibraryRepository {
 
         // 情况 2: 高置信度电影（type == 'movie' 且年份明确）
         if (parsed.type == 'movie' && parsed.year != null) {
-          final existingMovies =
+          final allExistingMovies =
               await (db.select(db.works)..where(
                     (w) =>
                         w.type.equals('movie') &
@@ -928,6 +1105,13 @@ class MediaLibraryRepository {
                         w.year.equals(parsed.year!),
                   ))
                   .get();
+
+          final existingMovies = <WorkData>[];
+          for (final candidate in allExistingMovies) {
+            if (await _sameLocalScope(candidate, entry, source)) {
+              existingMovies.add(candidate);
+            }
+          }
 
           // 仅在存在唯一同名同年作品时自动归并多版本
           if (existingMovies.length == 1) {
@@ -954,7 +1138,9 @@ class MediaLibraryRepository {
             await (db.update(db.mediaFiles)..where((f) => f.id.equals(file.id)))
                 .write(const MediaFilesCompanion(parseState: Value('parsed')));
             continue;
-          } else if (existingMovies.isEmpty && currentWork != null) {
+          } else if (existingMovies.isEmpty &&
+              allExistingMovies.length <= 1 &&
+              currentWork != null) {
             await (db.update(
               db.works,
             )..where((w) => w.id.equals(currentWork.id))).write(
@@ -1138,7 +1324,8 @@ class MediaLibraryRepository {
         JOIN media_files mf ON mf.id = ma.file_id
         JOIN media_entries me ON me.id = mf.entry_id
         JOIN media_sources ms ON ms.id = me.source_id
-        WHERE ms.enabled = 1 AND me.is_directory = 0 AND (
+        WHERE ms.enabled = 1 AND me.is_directory = 0
+          ${unmatchedOnly ? "AND mf.parse_state != 'extra'" : ''} AND (
           ma.work_id = w.id OR
           ma.episode_id IN (
             SELECT e2.id FROM episodes e2
@@ -1332,7 +1519,7 @@ class MediaLibraryRepository {
           JOIN media_files mf ON mf.id = ma.file_id
           JOIN media_entries me ON me.id = mf.entry_id
           JOIN media_sources ms ON ms.id = me.source_id
-          WHERE ms.enabled = 1 AND me.is_directory = 0 AND (
+          WHERE ms.enabled = 1 AND me.is_directory = 0 AND mf.parse_state != 'extra' AND (
             ma.work_id = w.id OR
             ma.episode_id IN (
               SELECT e2.id FROM episodes e2
@@ -1364,34 +1551,8 @@ class MediaLibraryRepository {
 
   /// 检查指定作品关联的文件是否包含多集文件。
   Future<bool> hasMultiEpisodeFiles(int workId) async {
-    final directAssignments = await (db.select(
-      db.mediaAssignments,
-    )..where((a) => a.workId.equals(workId))).get();
-    final List<int> fileIds = directAssignments.map((a) => a.fileId).toList();
-
-    final epAssignments = await db
-        .customSelect(
-          '''
-      SELECT ma.file_id 
-      FROM media_assignments ma
-      JOIN episodes ep ON ep.id = ma.episode_id
-      JOIN seasons s ON s.id = ep.season_id
-      WHERE s.series_id = ?
-      ''',
-          variables: [Variable.withInt(workId)],
-        )
-        .get();
-    fileIds.addAll(epAssignments.map((r) => r.read<int>('file_id')));
-
-    if (fileIds.isEmpty) return false;
-
-    final files = await (db.select(
-      db.mediaFiles,
-    )..where((f) => f.id.isIn(fileIds))).get();
-
-    return files.any(
-      (f) => f.candidateDetails?.startsWith('multi_episode') == true,
-    );
+    return (await matchingFilesForWork(workId))
+        .any((file) => file.parsed.isMultiEpisode);
   }
 
   /// 应用作品元数据，自动归并相同 TMDB ID 的作品并正确保留季集与播放进度。

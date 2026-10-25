@@ -95,6 +95,8 @@ class MetadataStatusCard extends StatelessWidget {
               const Text(
                 '标题、年份或季集信息不足，或未找到可靠的 TMDB 结果。可查看待匹配条目，或在媒体源按文件夹批量匹配。',
               ),
+            for (final reason in result.reviewReasons.entries)
+              Text('${reason.key.message}：${reason.value} 个条目'),
           ],
           if (!state.running && (result?.needsReview ?? 0) > 0)
             TextButton.icon(

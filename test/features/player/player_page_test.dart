@@ -10,6 +10,7 @@ import 'package:reelva/features/home/application/home_providers.dart';
 import 'package:reelva/features/home/home_page.dart';
 import 'package:reelva/features/library/domain/library_work.dart';
 import 'package:reelva/features/player/application/player_providers.dart';
+import 'package:reelva/features/player/application/playback_session.dart';
 import 'package:reelva/features/player/domain/playback_resource.dart';
 import 'package:reelva/features/player/domain/playback_snapshot.dart';
 import 'package:reelva/features/player/infrastructure/media_file_picker.dart';
@@ -480,6 +481,36 @@ void main() {
         }
       },
     );
+
+    testWidgets('键盘音量遵循会话上限，可在 200% 范围内调整', (tester) async {
+      final fakeEngine = FakePlayerEngine(
+        initialSnapshot: const PlaybackSnapshot(
+          status: PlaybackStatus.paused,
+          volume: 195,
+        ),
+      );
+      addTearDown(fakeEngine.dispose);
+      final baseSession = createFakeSession(engine: fakeEngine);
+      final session = PlaybackSession(
+        engine: fakeEngine,
+        videoBuilder: baseSession.videoBuilder,
+        maxVolume: 200,
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [playerSessionProvider.overrideWithValue(session)],
+          child: const MaterialApp(home: PlayerPage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pumpAndSettle();
+      expect(fakeEngine.lastVolume, 200);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      expect(fakeEngine.lastVolume, 195);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
 
     testWidgets('Keyboard shortcuts: Space, Arrows, Esc and volume', (
       tester,

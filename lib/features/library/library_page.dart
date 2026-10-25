@@ -64,7 +64,11 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
         .read(mediaLibraryRepositoryProvider)
         .getWorkDetails(work.id);
     if (!mounted || details == null) return;
-    await ManualMatchPage.showForWork(context, details);
+    final files = await ref
+        .read(mediaLibraryRepositoryProvider)
+        .matchingFilesForWork(work.id);
+    if (!mounted) return;
+    await ManualMatchPage.showForWork(context, details, files: files);
   }
 
   void _updateSearch(String value) {

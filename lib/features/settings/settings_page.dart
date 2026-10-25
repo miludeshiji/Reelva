@@ -48,8 +48,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final mediaSection = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Semantics(header: true, child: Text('媒体信息', style: sectionStyle)),
+        Semantics(header: true, child: Text('播放与媒体', style: sectionStyle)),
         const SizedBox(height: ReelvaDesign.space8),
+        _SettingsTile(
+          key: const Key('settings_player_tile'),
+          icon: Icons.tune_rounded,
+          title: '播放器',
+          subtitle: '硬件解码、画质、缓存、音频与字幕',
+          onTap: () => _openPage('/settings/player'),
+        ),
+        const SizedBox(height: ReelvaDesign.space12),
         _SettingsTile(
           key: const Key('settings_tmdb_tile'),
           icon: Icons.verified_user_outlined,

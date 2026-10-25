@@ -1,0 +1,372 @@
+[
+  {
+    "source": "目录2.txt",
+    "line": 63,
+    "name": "[T.H.X&VCB-Studio] Hyouka [01][Ma10p_1080p][x265_flac_aac].mkv",
+    "directories": [
+      "在线",
+      "动漫",
+      "B_冰果"
+    ],
+    "expected": {
+      "title": "冰果",
+      "type": "series",
+      "season": 1,
+      "episode": 1,
+      "queries": [
+        "冰果",
+        "Hyouka"
+      ]
+    }
+  },
+  {
+    "source": "目录1.txt",
+    "line": 421,
+    "name": "[T.H.X&VCB-Studio] Hyouka [11.5][Ma10p_1080p][x265_flac_aac].mkv",
+    "directories": [
+      "在线",
+      "动漫",
+      "B 冰果"
+    ],
+    "expected": {
+      "title": "冰果",
+      "type": "series",
+      "season": 0,
+      "episode": null,
+      "special": true,
+      "raw": "[11.5]"
+    }
+  },
+  {
+    "source": "目录1.txt",
+    "line": 347,
+    "name": "[VCB-Studio] SHIROBAKO [01][Ma10p_1080p][x265_flac_aac].mkv",
+    "directories": [
+      "在线",
+      "动漫",
+      "B 白箱（8.7）",
+      "白箱"
+    ],
+    "expected": {
+      "title": "白箱",
+      "type": "series",
+      "season": 1,
+      "episode": 1,
+      "queries": [
+        "白箱",
+        "SHIROBAKO"
+      ]
+    }
+  },
+  {
+    "source": "目录1.txt",
+    "line": 398,
+    "name": "白箱剧场版 [Ma10p_1080p][x265_flac].mkv",
+    "directories": [
+      "在线",
+      "动漫",
+      "B 白箱（8.7）",
+      "白箱剧场版"
+    ],
+    "expected": {
+      "title": "白箱剧场版",
+      "type": "movie",
+      "season": null,
+      "episode": null
+    }
+  },
+  {
+    "source": "目录1.txt",
+    "line": 658,
+    "name": "[Nekomoe kissaten&VCB-Studio] Dandadan [13][Ma10p_1080p][x265_flac_aac].mkv",
+    "directories": [
+      "在线",
+      "动漫",
+      "D 胆大党",
+      "[Nekomoe kissaten&VCB-Studio] Dandadan S02 [Ma10p_1080p]"
+    ],
+    "expected": {
+      "title": "胆大党",
+      "type": "series",
+      "season": 2,
+      "episode": 13,
+      "absolute": 13
+    }
+  },
+  {
+    "source": "目录1.txt",
+    "line": 622,
+    "name": "[DBD-Raws][CLANNAD AFTER STORY][OVA][另一个世界 杏篇][1080P][BDRip][HEVC-10bit][FLAC].mkv",
+    "directories": [
+      "在线",
+      "动漫",
+      "C CLANNAD",
+      "S02"
+    ],
+    "expected": {
+      "type": "series",
+      "season": 0,
+      "episode": null,
+      "special": true,
+      "queries": [
+        "CLANNAD AFTER STORY"
+      ]
+    }
+  },
+  {
+    "source": "目录1.txt",
+    "line": 317,
+    "name": "[VCB-Studio] White Album [13v2][Hi10p_720p][x264_flac].mkv",
+    "directories": [
+      "在线",
+      "动漫",
+      "B 白色相簿"
+    ],
+    "expected": {
+      "title": "白色相簿",
+      "type": "series",
+      "season": 1,
+      "episode": 13,
+      "revision": 2
+    }
+  },
+  {
+    "source": "目录1.txt",
+    "line": 5,
+    "name": "[Airota&Nekomoe kissaten&LoliHouse] Adachi to Shimamura - 01 [BDRip 1080p HEVC-10bit FLAC].mkv",
+    "directories": [
+      "在线",
+      "动漫",
+      "A 安达与岛村"
+    ],
+    "expected": {
+      "title": "安达与岛村",
+      "type": "series",
+      "season": 1,
+      "episode": 1,
+      "queries": [
+        "Adachi to Shimamura"
+      ]
+    }
+  },
+  {
+    "source": "目录1.txt",
+    "line": 3757,
+    "name": "[VCB-Studio] Fate Zero [01][Ma10p_1080p][x265_flac].mkv",
+    "directories": [
+      "在线",
+      "动漫",
+      "F Fate",
+      "03 命运之夜前传（2011-2012）"
+    ],
+    "expected": {
+      "title": "命运之夜前传",
+      "type": "series",
+      "season": 1,
+      "episode": 1,
+      "queries": [
+        "Fate Zero"
+      ]
+    }
+  },
+  {
+    "source": "目录1.txt",
+    "line": 11004,
+    "name": "[VCB-S]Otorimonogatari[01][Hi10p_1080p][BDRip][x264_2flac].mkv",
+    "directories": [
+      "在线",
+      "动漫",
+      "W 物语系列",
+      "06. 囮物语"
+    ],
+    "expected": {
+      "title": "囮物语",
+      "type": "series",
+      "season": 1,
+      "episode": 1,
+      "queries": [
+        "Otorimonogatari"
+      ]
+    }
+  },
+  {
+    "source": "目录2.txt",
+    "line": 3021,
+    "name": "01.mp4",
+    "directories": [
+      "在线",
+      "影视",
+      "Z_主角"
+    ],
+    "expected": {
+      "title": "主角",
+      "type": "series",
+      "season": 1,
+      "episode": 1,
+      "inferred": true
+    }
+  },
+  {
+    "source": "目录2.txt",
+    "line": 2807,
+    "name": "大明王朝.S01E01.mp4",
+    "directories": [
+      "在线",
+      "影视",
+      "D_大明王朝"
+    ],
+    "expected": {
+      "title": "大明王朝",
+      "type": "series",
+      "season": 1,
+      "episode": 1
+    }
+  },
+  {
+    "source": "目录1.txt",
+    "line": 524,
+    "name": "[Nekomoe kissaten&LoliHouse] Chou Kaguya-hime! - ray MV [WebRip 1080p HEVC-10bit AAC ASSx2].mkv",
+    "directories": [
+      "在线",
+      "动漫",
+      "C 超时空辉夜姬"
+    ],
+    "expected": {
+      "extra": true
+    }
+  },
+  {
+    "source": "目录1.txt",
+    "line": 523,
+    "name": "[Nekomoe kissaten&LoliHouse] Chou Kaguya-hime! - Movie [WebRip 1080p HEVC-10bit AAC EAC3 ASSx2].mkv",
+    "directories": [
+      "在线",
+      "动漫",
+      "C 超时空辉夜姬"
+    ],
+    "expected": {
+      "type": "movie",
+      "extra": false,
+      "queries": [
+        "超时空辉夜姬",
+        "Chou Kaguya-hime!"
+      ]
+    }
+  },
+  {
+    "source": "目录1.txt",
+    "line": 733,
+    "name": "[ANK&VCB-Studio][Code Geass Lelouch of the Rebellion R2][MenuJP1][BDRIP][Hi10P][1920X1080].mkv",
+    "directories": [
+      "在线",
+      "动漫",
+      "F 反叛的鲁路修",
+      "Other",
+      "Bonus"
+    ],
+    "expected": {
+      "extra": true
+    }
+  },
+  {
+    "source": "目录1.txt",
+    "line": 4587,
+    "name": "[BeanSub&VCB-Studio] Shingeki no Kyojin [88-90(Kanketsu-hen Zenpen)][Ma10p_1080p][x265_flac].mkv",
+    "directories": [
+      "在线",
+      "动漫",
+      "J 进击的巨人",
+      "[VCB-Studio] Shingeki no Kyojin The Final Season [Ma10p_1080p]"
+    ],
+    "expected": {
+      "type": "series",
+      "episode": null,
+      "multi": true
+    }
+  },
+  {
+    "source": "目录1.txt",
+    "line": 8834,
+    "name": "[晚街与灯][Re Zero kara Hajimeru Isekai Seikatsu][4th - 01][总第67][WEB-DL Remux][1080P_AVC_AAC][简繁日内封PGS][V2].mkv",
+    "directories": [
+      "在线",
+      "动漫",
+      "R Re：从零开始的异世界生活",
+      "Re：从零开始的异世界生活 S04"
+    ],
+    "expected": {
+      "type": "series",
+      "season": 4,
+      "episode": 1,
+      "absolute": 67
+    }
+  },
+  {
+    "source": "目录2.txt",
+    "line": 2894,
+    "name": "Stranger.Things.S05E01.2025.2160p.NF.WEB-DL.H265.DV.HDR.DDP.5.1.Atmos.mkv",
+    "directories": [
+      "在线",
+      "影视",
+      "G_怪奇物语",
+      "S05",
+      "4K HDR&DV"
+    ],
+    "expected": {
+      "title": "怪奇物语",
+      "type": "series",
+      "season": 5,
+      "episode": 1
+    }
+  },
+  {
+    "source": "目录1.txt",
+    "line": 498,
+    "name": "Vinland Saga S02E01-[1080p][BDRIP][x265.FLAC].mkv",
+    "directories": [
+      "在线",
+      "动漫",
+      "B 冰海战记",
+      "S02"
+    ],
+    "expected": {
+      "title": "冰海战记",
+      "type": "series",
+      "season": 2,
+      "episode": 1
+    }
+  },
+  {
+    "source": "目录1.txt",
+    "line": 13991,
+    "name": "27 4K.mkv",
+    "directories": [
+      "在线",
+      "影视",
+      "T 唐朝诡事录（8.0）",
+      "唐朝诡事录第2季"
+    ],
+    "expected": {
+      "title": "唐朝诡事录",
+      "type": "series",
+      "season": 2,
+      "episode": 27
+    }
+  },
+  {
+    "source": "目录1.txt",
+    "line": 60,
+    "name": "[VCB-Studio] Another [OAD(00)][Ma10p_1080p][x265_flac].mkv",
+    "directories": [
+      "在线",
+      "动漫",
+      "A Another"
+    ],
+    "expected": {
+      "type": "series",
+      "season": 0,
+      "episode": null,
+      "special": true
+    }
+  }
+]

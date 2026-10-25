@@ -85,7 +85,7 @@ class PlaybackSnapshot {
   /// 当前已缓冲时长
   final Duration buffered;
 
-  /// 播放音量，范围 0..100
+  /// 播放音量百分比；上限由播放会话配置决定。
   final double volume;
 
   /// 播放倍速，默认 1.0

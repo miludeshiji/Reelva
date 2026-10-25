@@ -214,6 +214,7 @@ class _SourceFilesPageState extends ConsumerState<SourceFilesPage> {
       } else {
         final result = await service.matchFilesAutomatically(
           files,
+          isCancelled: () => !mounted,
           onProgress: (processed, total) {
             if (mounted) {
               setState(() {
@@ -226,7 +227,8 @@ class _SourceFilesPageState extends ConsumerState<SourceFilesPage> {
         if (!mounted) return;
         setState(() {
           _result =
-              '已匹配 ${result.matched} 个视频 · ${result.needsReview} 个待确认 · ${result.skipped} 个已跳过';
+              '已匹配 ${result.matched} 个视频 · ${result.needsReview} 个待确认 · ${result.skipped} 个已跳过'
+              '${result.reviewReasons.isEmpty ? '' : '\n${result.reviewReasons.entries.map((entry) => '${entry.key.message}（${entry.value}）').join('\n')}'}';
           if (result.errors.isNotEmpty) _error = result.errors.join('\n');
           if (result.needsReview == 0 && result.errors.isEmpty) {
             _selected.clear();

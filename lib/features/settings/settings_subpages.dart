@@ -303,7 +303,7 @@ class _TmdbSettingsPageState extends ConsumerState<TmdbSettingsPage> {
         ],
       ),
     );
-    return _SettingsSubpage(title: 'TMDB 识别', child: tmdbConfiguration);
+    return SettingsSubpage(title: 'TMDB 识别', child: tmdbConfiguration);
   }
 }
 
@@ -312,7 +312,7 @@ class SyncSettingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) =>
-      const _SettingsSubpage(title: '跨设备同步', child: SyncSettingsCard());
+      const SettingsSubpage(title: '跨设备同步', child: SyncSettingsCard());
 }
 
 class PosterCacheSettingsPage extends StatefulWidget {
@@ -399,12 +399,12 @@ class _PosterCacheSettingsPageState extends State<PosterCacheSettingsPage> {
       ),
     );
 
-    return _SettingsSubpage(title: '海报缓存', child: cacheManagement);
+    return SettingsSubpage(title: '海报缓存', child: cacheManagement);
   }
 }
 
-class _SettingsSubpage extends StatelessWidget {
-  const _SettingsSubpage({required this.title, required this.child});
+class SettingsSubpage extends StatelessWidget {
+  const SettingsSubpage({super.key, required this.title, required this.child});
 
   final String title;
   final Widget child;

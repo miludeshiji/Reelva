@@ -12,6 +12,7 @@ class TmdbWork {
   final String? backdropPath;
   final int? year;
   final List<String> aliases;
+  final List<int> seasonNumbers;
 
   const TmdbWork({
     required this.id,
@@ -23,6 +24,7 @@ class TmdbWork {
     this.backdropPath,
     this.year,
     this.aliases = const [],
+    this.seasonNumbers = const [],
   });
 
   /// 构造海报完整绝对 URL
@@ -51,6 +53,7 @@ class TmdbWork {
     String? backdropPath,
     int? year,
     List<String>? aliases,
+    List<int>? seasonNumbers,
   }) {
     return TmdbWork(
       id: id ?? this.id,
@@ -62,6 +65,7 @@ class TmdbWork {
       backdropPath: backdropPath ?? this.backdropPath,
       year: year ?? this.year,
       aliases: aliases ?? this.aliases,
+      seasonNumbers: seasonNumbers ?? this.seasonNumbers,
     );
   }
 
@@ -76,6 +80,7 @@ class TmdbWork {
       if (backdropPath != null) 'backdropPath': backdropPath,
       if (year != null) 'year': year,
       if (aliases.isNotEmpty) 'aliases': aliases,
+      if (seasonNumbers.isNotEmpty) 'seasonNumbers': seasonNumbers,
     };
   }
 
@@ -122,6 +127,16 @@ class TmdbWork {
           (json['backdropPath'] as String?),
       year: year,
       aliases: aliases,
+      seasonNumbers:
+          (json['seasons'] as List<dynamic>? ?? const [])
+              .whereType<Map<String, dynamic>>()
+              .map((season) => season['season_number'])
+              .whereType<int>()
+              .toList()
+            ..addAll(
+              (json['seasonNumbers'] as List<dynamic>? ?? const [])
+                  .whereType<int>(),
+            ),
     );
   }
 

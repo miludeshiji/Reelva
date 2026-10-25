@@ -635,7 +635,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       if (snapshot.status == PlaybackStatus.error) {
         return KeyEventResult.handled;
       }
-      final nextVol = (snapshot.volume + 5.0).clamp(0.0, 100.0);
+      final nextVol = (snapshot.volume + 5.0).clamp(0.0, _session!.maxVolume);
       engine.setVolume(nextVol);
       return KeyEventResult.handled;
     }
@@ -644,7 +644,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       if (snapshot.status == PlaybackStatus.error) {
         return KeyEventResult.handled;
       }
-      final nextVol = (snapshot.volume - 5.0).clamp(0.0, 100.0);
+      final nextVol = (snapshot.volume - 5.0).clamp(0.0, _session!.maxVolume);
       engine.setVolume(nextVol);
       return KeyEventResult.handled;
     }
@@ -858,6 +858,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           key: _controlsKey,
           snapshot: snapshot,
           engine: engine,
+          maxVolume: _session!.maxVolume,
           overlay: overlay,
           isFullscreen: _isFullscreen,
           onToggleFullscreen: () => _setFullscreen(!_isFullscreen),

@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../library/infrastructure/media_library_repository.dart';
 import '../domain/matching_file.dart';
+import '../domain/match_decision.dart';
+import '../domain/media_filename_parser.dart';
 import '../domain/tmdb_models.dart';
 import '../infrastructure/tmdb_client.dart';
 import '../infrastructure/tmdb_token_store.dart';
@@ -20,6 +22,7 @@ class MetadataRefreshResult {
   final int skipped;
   final List<String> errors;
   final bool localOnly;
+  final Map<MatchReason, int> reviewReasons;
 
   const MetadataRefreshResult({
     this.matched = 0,
@@ -27,6 +30,7 @@ class MetadataRefreshResult {
     this.skipped = 0,
     this.errors = const [],
     this.localOnly = false,
+    this.reviewReasons = const {},
   });
 
   @override
@@ -38,7 +42,7 @@ class MetadataRefreshResult {
 ///
 /// 职责：
 /// 1. TMDB 搜索与置信度算法排序（标题、原名、别名、年份加权）
-/// 2. 保守自动匹配（必须已知年份、置信度高且与第二名有显著胜出裕度；不确定/多集保留人工核对）
+/// 2. 多标题召回与详情身份核验；年份缺失仍可检索，不确定季集保留人工核对
 /// 3. 手动匹配绑定（抓取详情及所有季集分集，写入数据库并施加元数据锁，返回规范 ID）
 /// 4. 批量刷新与并发互斥保护
 /// 5. 本地元数据手工编辑与输入校验
@@ -74,6 +78,9 @@ class MetadataService {
       rawCandidates = groups.expand((group) => group).toSet().toList();
     }
 
+    if (rawCandidates.isEmpty && year != null) {
+      rawCandidates = await search(cleanQuery, type: type);
+    }
     if (rawCandidates.isEmpty) return const [];
 
     // 计算置信度得分并降序排序
@@ -105,13 +112,23 @@ class MetadataService {
       final parsed = file.parsed;
       final numbers = overrides[file.fileId] ?? file.seriesNumbers;
       final season = numbers.season;
-      final number = numbers.episode;
+      var number = numbers.episode;
       String? error;
       TmdbEpisode? episode;
       if (parsed.isMultiEpisode) {
         error = '此文件包含多集，请取消勾选后单独处理';
       } else if (season == null || season < 0) {
         error = '请选择所属季';
+      } else if (parsed.isSpecialOrOva &&
+          season == 0 &&
+          !overrides.containsKey(file.fileId)) {
+        final episodes = seasons[0] ??= await tmdbClient.getTvSeasonEpisodes(
+          candidate.id,
+          0,
+        );
+        episode = _specialEpisode(parsed, episodes);
+        number = episode?.episodeNumber;
+        if (episode == null) error = '请确认第 0 季中特别篇的集号';
       } else if (number == null || number < 1) {
         error = '请填写集号';
       } else {
@@ -153,82 +170,70 @@ class MetadataService {
   Future<MetadataRefreshResult> matchFilesAutomatically(
     List<MatchingFile> files, {
     void Function(int processed, int total)? onProgress,
+    bool Function()? isCancelled,
+  }) => _matchFiles(
+    files,
+    _MatchSession(),
+    onProgress: onProgress,
+    isCancelled: isCancelled,
+  );
+
+  Future<MetadataRefreshResult> _matchFiles(
+    List<MatchingFile> files,
+    _MatchSession session, {
+    void Function(int processed, int total)? onProgress,
+    bool Function()? isCancelled,
   }) async {
-    if (!await tokenStore.isConfigured()) {
-      return const MetadataRefreshResult(errors: ['请先配置 TMDB 凭据后再自动匹配']);
-    }
     var matched = 0;
     var needsReview = 0;
     var skipped = 0;
     final errors = <String>[];
-    final searches = <(String, String, int), List<TmdbWork>>{};
-    final details = <TmdbWork, TmdbWork>{};
-    final episodes = <(int, int), List<TmdbEpisode>>{};
+    final reasons = <MatchReason, int>{};
     onProgress?.call(0, files.length);
     for (final (index, file) in files.indexed) {
+      if (isCancelled?.call() ?? false) break;
       try {
-        if (await mediaLibraryRepository.isFileMetadataLocked(file.fileId)) {
+        if (await mediaLibraryRepository.isFileMetadataProtected(file.fileId)) {
           skipped++;
           continue;
         }
         final parsed = file.parsed;
-        if (parsed.type == null ||
-            parsed.year == null ||
-            parsed.isMultiEpisode ||
-            (parsed.type == 'series' &&
-                (parsed.seasonNumber == null ||
-                    parsed.episodeNumber == null))) {
-          needsReview++;
-          continue;
-        }
-        final key = (parsed.type!, parsed.title, parsed.year!);
-        final candidates = searches[key] ??= await search(
-          parsed.title,
-          type: parsed.type,
-          year: parsed.year,
+        final decision = await _decide(
+          parsed,
+          session,
+          isCancelled: isCancelled,
         );
-        if (candidates.isEmpty) {
-          needsReview++;
-          continue;
-        }
-        final top = candidates.first;
-        final score = computeMatchScore(
-          query: parsed.title,
-          targetYear: parsed.year,
-          candidate: top,
-        );
-        final second = candidates.length < 2
-            ? 0.0
-            : computeMatchScore(
-                query: parsed.title,
-                targetYear: parsed.year,
-                candidate: candidates[1],
-              );
-        if (top.year == null ||
-            (top.year! - parsed.year!).abs() > 1 ||
-            score < 0.85 ||
-            (candidates.length > 1 && score - second < 0.15)) {
-          needsReview++;
-          continue;
-        }
-        final metadata = details[top] ??= top.type == 'movie'
-            ? await tmdbClient.getMovieDetails(top.id)
-            : await tmdbClient.getTvDetails(top.id);
+        var reason = decision.reason;
+        final metadata = decision.automatic;
         TmdbEpisode? episode;
-        if (top.type == 'series') {
-          final key = (top.id, parsed.seasonNumber!);
-          final season = episodes[key] ??= await tmdbClient.getTvSeasonEpisodes(
-            top.id,
-            key.$2,
+        if (metadata != null && metadata.type == 'series') {
+          final mapping = await _automaticEpisode(
+            parsed,
+            metadata,
+            session,
+            isCancelled: isCancelled,
           );
-          episode = season
-              .where((e) => e.episodeNumber == parsed.episodeNumber)
-              .firstOrNull;
-          if (episode == null) {
-            needsReview++;
-            continue;
-          }
+          reason = mapping.reason;
+          episode = mapping.episode;
         }
+        if (reason != null || metadata == null) {
+          final actualReason = reason ?? MatchReason.candidateAmbiguous;
+          reasons.update(actualReason, (count) => count + 1, ifAbsent: () => 1);
+          if (actualReason == MatchReason.extraMedia) {
+            skipped++;
+          } else {
+            needsReview++;
+          }
+          await mediaLibraryRepository.recordMatchingReview(
+            [file.fileId],
+            MatchDecision(
+              reason: actualReason,
+              candidates: decision.candidates,
+            ),
+          );
+          continue;
+        }
+        if (isCancelled?.call() ?? false) break;
         final workId = await mediaLibraryRepository.applyMetadataToFiles(
           {file.fileId: episode},
           metadata,
@@ -240,15 +245,16 @@ class MetadataService {
           matched++;
         }
       } on MetadataException catch (error) {
-        errors.add('${file.name}：${error.message}');
+        if (error.code == 'cancelled') break;
+        errors.add(error.message);
         if (error.code == 'unauthorized' || error.code == 'rate_limit') break;
       } catch (error, stackTrace) {
         AppLogger.instance.error(
-          '所选文件自动匹配失败',
+          '自动匹配失败',
           error: error,
           stackTrace: stackTrace,
         );
-        errors.add('${file.name}：匹配失败');
+        errors.add('匹配请求失败，请检查网络后重试');
       } finally {
         onProgress?.call(index + 1, files.length);
       }
@@ -257,8 +263,280 @@ class MetadataService {
       matched: matched,
       needsReview: needsReview,
       skipped: skipped,
-      errors: errors,
+      errors: errors.toSet().toList(),
+      reviewReasons: reasons,
     );
+  }
+
+  Future<MatchDecision> _decide(
+    ParsedMediaFilename parsed,
+    _MatchSession session, {
+    bool Function()? isCancelled,
+  }) async {
+    if (parsed.isExtra) {
+      return const MatchDecision(reason: MatchReason.extraMedia);
+    }
+    if (parsed.isMultiEpisode) {
+      return const MatchDecision(reason: MatchReason.specialUnverified);
+    }
+    final queries = {
+      ...parsed.titleCandidates,
+      parsed.title,
+      if (parsed.secondaryTitle != null) parsed.secondaryTitle!,
+    }.where((title) => _normalize(title).isNotEmpty).take(3).toList();
+    if (queries.isEmpty) {
+      return const MatchDecision(reason: MatchReason.noTitleEvidence);
+    }
+    // 后续季目录中的年份可能是该季播出年，不能用它筛选全剧首播年。
+    final year = (parsed.seasonNumber ?? 1) > 1 ? null : parsed.year;
+    final key = (parsed.type, year, queries.map(_normalize).join('|'));
+    final decision = await (session.decisions[key] ??= _retrieveAndDecide(
+      queries,
+      parsed.type,
+      year,
+      session,
+      isCancelled: isCancelled,
+    ));
+    final filenameTitle = parsed.filenameTitle;
+    if (decision.automatic != null &&
+        filenameTitle != null &&
+        _normalize(filenameTitle).length >= 4 &&
+        !_exactTitle(filenameTitle, decision.automatic!)) {
+      return MatchDecision(
+        reason: MatchReason.candidateAmbiguous,
+        candidates: decision.candidates,
+      );
+    }
+    return decision;
+  }
+
+  Future<MatchDecision> _retrieveAndDecide(
+    List<String> queries,
+    String? type,
+    int? year,
+    _MatchSession session, {
+    bool Function()? isCancelled,
+  }) async {
+    final found = <TmdbWork, TmdbWork>{};
+    var requests = 0;
+    final types = type == null ? ['movie', 'series'] : [type];
+    for (final query in queries) {
+      for (final searchType in types) {
+        for (final filter in [year, if (year != null) null]) {
+          if (requests >= 6) break;
+          if (isCancelled?.call() ?? false) {
+            throw const MetadataException('已取消匹配', code: 'cancelled');
+          }
+          requests++;
+          final searchKey = (searchType, _normalize(query), filter);
+          final results = await (session.searches[searchKey] ??=
+              searchType == 'movie'
+              ? tmdbClient.searchMovie(query, year: filter)
+              : tmdbClient.searchTv(query, year: filter));
+          for (final candidate in results) {
+            found[candidate] = candidate;
+          }
+          // 年份筛选已得到精确标题时仍继续其他有来源的标题，聚合后统一判定。
+          if (filter != null &&
+              results.any((candidate) => _exactTitle(query, candidate))) {
+            break;
+          }
+        }
+      }
+    }
+    if (found.isEmpty) {
+      return const MatchDecision(reason: MatchReason.noCandidates);
+    }
+    double score(TmdbWork work) {
+      final scores = queries.map(
+        (query) =>
+            computeMatchScore(query: query, targetYear: year, candidate: work),
+      );
+      final exact = queries.where((query) => _exactTitle(query, work)).length;
+      return scores.reduce(math.max) +
+          math.min(2, math.max(0, exact - 1)) * 0.05;
+    }
+
+    var ranked = found.values.toList()
+      ..sort((a, b) => score(b).compareTo(score(a)));
+    for (final candidate in ranked.take(3).toList()) {
+      if (type != null && candidate.type != type) continue;
+      if (isCancelled?.call() ?? false) {
+        throw const MetadataException('已取消匹配', code: 'cancelled');
+      }
+      final detail = await (session.details[candidate] ??=
+          candidate.type == 'movie'
+          ? tmdbClient.getMovieDetails(candidate.id)
+          : tmdbClient.getTvDetails(candidate.id));
+      if (detail.id != candidate.id || detail.type != candidate.type) {
+        throw const MetadataException(
+          'TMDB 返回的作品身份不一致',
+          code: 'invalid_response',
+        );
+      }
+      found[candidate] = detail;
+    }
+    ranked = found.values.toList()
+      ..sort((a, b) => score(b).compareTo(score(a)));
+    final top = ranked.first;
+    MatchDecision review(MatchReason reason) =>
+        MatchDecision(reason: reason, candidates: ranked.take(3).toList());
+    if (type != null && top.type != type) {
+      return review(MatchReason.typeConflict);
+    }
+    if (!session.details.containsKey(top)) {
+      return review(MatchReason.candidateAmbiguous);
+    }
+    if (year != null && (top.year == null || (year - top.year!).abs() > 1)) {
+      return review(MatchReason.yearConflict);
+    }
+    final exact = queries.where((query) => _exactTitle(query, top)).toList();
+    if (queries.any(
+      (query) =>
+          !_exactTitle(query, top) &&
+          exact.any(
+            (matched) =>
+                _normalize(query).startsWith(_normalize(matched)) &&
+                !(year != null &&
+                    _normalize(query) == _normalize('$matched $year')) &&
+                _normalize(query).length > _normalize(matched).length + 1,
+          ),
+    )) {
+      return review(MatchReason.candidateAmbiguous);
+    }
+    if (exact.isEmpty ||
+        (year == null &&
+            exact.every((query) => _normalize(query).length <= 3) &&
+            exact.map(_normalize).toSet().length < 2)) {
+      return review(MatchReason.candidateAmbiguous);
+    }
+    if (ranked.length > 1 && score(top) - score(ranked[1]) < 0.12) {
+      return review(MatchReason.candidateAmbiguous);
+    }
+    return MatchDecision(automatic: top, candidates: ranked.take(3).toList());
+  }
+
+  static bool _exactTitle(String query, TmdbWork candidate) =>
+      [
+        candidate.title,
+        if (candidate.originalTitle != null) candidate.originalTitle!,
+        ...candidate.aliases,
+      ].any(
+        (title) =>
+            _normalize(query) == _normalize(title) ||
+            (candidate.type == 'movie' &&
+                _movieTitleKey(query) == _movieTitleKey(title)),
+      );
+
+  static String _movieTitleKey(String title) {
+    final releaseTitle = title.replaceFirst(
+      RegExp(r'\s+-\s+movie\s*$', caseSensitive: false),
+      '',
+    );
+    final theatrical = RegExp(r'剧场版|劇場版');
+    return '${_normalize(releaseTitle.replaceAll(theatrical, ''))}'
+        '${theatrical.hasMatch(releaseTitle) ? '剧场版' : ''}';
+  }
+
+  Future<({TmdbEpisode? episode, MatchReason? reason})> _automaticEpisode(
+    ParsedMediaFilename parsed,
+    TmdbWork work,
+    _MatchSession session, {
+    bool Function()? isCancelled,
+  }) async {
+    final season = parsed.seasonNumber;
+    final number = parsed.episodeNumber;
+    const review = (
+      episode: null,
+      reason: MatchReason.episodeMappingUnverified,
+    );
+    Future<List<TmdbEpisode>> episodes(int season) {
+      if (isCancelled?.call() ?? false) {
+        throw const MetadataException('已取消匹配', code: 'cancelled');
+      }
+      return session.seasons[(work.id, season)] ??= tmdbClient
+          .getTvSeasonEpisodes(work.id, season);
+    }
+
+    if (parsed.isSpecialOrOva) {
+      final specials = await episodes(0);
+      if (RegExp(
+        r'S00[ ._-]*E\d+',
+        caseSensitive: false,
+      ).hasMatch(parsed.rawName)) {
+        final episode = specials
+            .where((episode) => episode.episodeNumber == number)
+            .firstOrNull;
+        return episode == null ? review : (episode: episode, reason: null);
+      }
+      final episode = _specialEpisode(parsed, specials);
+      return episode == null
+          ? (episode: null, reason: MatchReason.specialUnverified)
+          : (episode: episode, reason: null);
+    }
+    if (season == null || number == null || parsed.hasSeasonConflict) {
+      return review;
+    }
+    if (work.seasonNumbers.isNotEmpty && !work.seasonNumbers.contains(season)) {
+      return review;
+    }
+    if (parsed.isSeasonInferred) {
+      final seasons = work.seasonNumbers.where((season) => season > 0).toSet();
+      final numericName = RegExp(r'^\d{1,3}\.[^./\\]+$')
+          .hasMatch(parsed.rawName);
+      if (numericName || seasons.length != 1 || !seasons.contains(1)) {
+        return review;
+      }
+    }
+    final current = await episodes(season);
+    final direct = current
+        .where((episode) => episode.episodeNumber == number)
+        .firstOrNull;
+    if (parsed.absoluteEpisodeNumber != null &&
+        season > 1 &&
+        !RegExp(
+          r'\d(?:st|nd|rd|th)',
+          caseSensitive: false,
+        ).hasMatch(parsed.rawEpisodeToken ?? '')) {
+      if (season > 10) return review;
+      var offset = 0;
+      for (var previous = 1; previous < season; previous++) {
+        final list = await episodes(previous);
+        final numbers = list.map((episode) => episode.episodeNumber).toSet();
+        if (numbers.isEmpty ||
+            numbers.length != numbers.reduce(math.max) ||
+            numbers.reduce(math.min) != 1) {
+          return review;
+        }
+        offset += numbers.length;
+      }
+      final mapped = current
+          .where(
+            (episode) =>
+                episode.episodeNumber == parsed.absoluteEpisodeNumber! - offset,
+          )
+          .firstOrNull;
+      if (mapped != null &&
+          direct != null &&
+          mapped.episodeNumber != direct.episodeNumber) {
+        return review;
+      }
+      if (mapped != null) return (episode: mapped, reason: null);
+    }
+    return direct == null ? review : (episode: direct, reason: null);
+  }
+
+  static TmdbEpisode? _specialEpisode(
+    ParsedMediaFilename parsed,
+    List<TmdbEpisode> episodes,
+  ) {
+    if (episodes.length == 1) return episodes.single;
+    final raw = _normalize(parsed.rawName);
+    final matches = episodes.where((episode) {
+      final title = _normalize(episode.title ?? '');
+      return title.length >= 4 && raw.contains(title);
+    }).toList();
+    return matches.length == 1 ? matches.single : null;
   }
 
   /// 手动绑定元数据
@@ -403,164 +681,61 @@ class MetadataService {
   Future<MetadataRefreshResult> _doRefresh({
     void Function(MetadataPhase phase, int processed, int? total)? onProgress,
   }) async {
-    int matched = 0;
-    int needsReview = 0;
-    int skipped = 0;
-    final List<String> errors = [];
-
-    // 1. 率先迁移未解析文件生成候选条目（失败显式传播）
     onProgress?.call(MetadataPhase.recognizing, 0, null);
     try {
       await mediaLibraryRepository.recognizePendingFiles();
-    } catch (e, st) {
-      AppLogger.instance.error('识别待处理文件失败', error: e, stackTrace: st);
-      final msg = e is MetadataException ? e.message : '媒体库待处理文件识别失败';
-      throw MetadataException(msg, code: 'recognition_error');
-    }
-
-    // 2. 检查凭据配置（isConfigured 会向上抛出 storage_error，由 controller/UI 捕获）
-    final isConfigured = await tokenStore.isConfigured();
-    if (!isConfigured) {
-      return MetadataRefreshResult(
-        skipped: skipped,
-        needsReview: needsReview,
-        localOnly: true,
+    } catch (error, stackTrace) {
+      AppLogger.instance.error(
+        '识别待处理文件失败',
+        error: error,
+        stackTrace: stackTrace,
       );
+      throw const MetadataException('媒体库待处理文件识别失败', code: 'recognition_error');
     }
-
-    // 3. 获取待匹配作品列表
-    final pendingWorks = await mediaLibraryRepository.unmatchedWorks();
-    if (pendingWorks.isEmpty) {
-      return const MetadataRefreshResult();
+    if (!await tokenStore.isConfigured()) {
+      return const MetadataRefreshResult(localOnly: true);
     }
-
+    final works = await mediaLibraryRepository.unmatchedWorks();
+    final session = _MatchSession();
+    var matched = 0;
+    var needsReview = 0;
+    var skipped = 0;
     var processed = 0;
-    for (final work in pendingWorks) {
-      onProgress?.call(MetadataPhase.matching, processed, pendingWorks.length);
+    final errors = <String>[];
+    final reasons = <MatchReason, int>{};
+    for (final work in works) {
+      onProgress?.call(MetadataPhase.matching, processed, works.length);
       processed++;
-      if (work.metadataLocked) {
+      if (work.metadataLocked || work.metadataSource != 'local') {
         skipped++;
         continue;
       }
-
-      // 年份未知或类型未知时保守不自动匹配，留作人工审核
-      if (work.year == null || work.type == null) {
-        needsReview++;
+      final files = await mediaLibraryRepository.matchingFilesForWork(work.id);
+      if (files.isEmpty) {
+        skipped++;
         continue;
       }
-
-      try {
-        final candidates = await search(
-          work.title,
-          type: work.type!,
-          year: work.year,
-        );
-
-        if (candidates.isEmpty) {
-          needsReview++;
-          continue;
-        }
-
-        final top = candidates.first;
-        final topScore = computeMatchScore(
-          query: work.title,
-          targetYear: work.year,
-          candidate: top,
-        );
-
-        final runnerUpScore = candidates.length > 1
-            ? computeMatchScore(
-                query: work.title,
-                targetYear: work.year,
-                candidate: candidates[1],
-              )
-            : 0.0;
-
-        // 严格高置信度判定：
-        // 1. 年份必须相差 <= 1 年
-        // 2. 综合得分 >= 0.85
-        // 3. 必须有显著胜出优势（领先第二名 >= 0.15）
-        final isYearMatched =
-            top.year != null && (top.year! - work.year!).abs() <= 1;
-        final isWinner =
-            (topScore - runnerUpScore) >= 0.15 || candidates.length == 1;
-        final isHighConfidence = isYearMatched && topScore >= 0.85 && isWinner;
-
-        if (isHighConfidence) {
-          // 抓取详情与分集
-          final isMovie = work.type == 'movie';
-          final TmdbWork details;
-          final List<TmdbEpisode> episodes = [];
-
-          if (isMovie) {
-            details = await tmdbClient.getMovieDetails(top.id);
-          } else {
-            details = await tmdbClient.getTvDetails(top.id);
-            final localWork = await mediaLibraryRepository.getWorkDetails(
-              work.id,
-            );
-            final seasons =
-                localWork?.versions
-                    .map((v) => v.seasonNumber)
-                    .whereType<int>()
-                    .where((s) => s >= 0)
-                    .toSet() ??
-                {1};
-
-            for (final seasonNum in seasons) {
-              final eps = await tmdbClient.getTvSeasonEpisodes(
-                top.id,
-                seasonNum,
-              );
-              episodes.addAll(eps);
-            }
-          }
-
-          // 自动应用元数据（不锁）
-          final canonicalId = await mediaLibraryRepository.applyMetadata(
-            work.id,
-            details,
-            manual: false,
-          );
-
-          if (episodes.isNotEmpty) {
-            await mediaLibraryRepository.applyEpisodeMetadata(
-              canonicalId,
-              episodes,
-              manual: false,
-            );
-          }
-
-          matched++;
-        } else {
-          // 低置信度保守保留在待审核中，不污染数据
-          needsReview++;
-        }
-      } on MetadataException catch (metaErr) {
-        if (metaErr.code == 'work_not_found') {
-          skipped++;
-          continue;
-        }
-        if (metaErr.code == 'unauthorized') {
-          errors.add(metaErr.message);
-          // 凭据无效直接中止后续请求
-          break;
-        } else if (metaErr.code == 'rate_limit') {
-          errors.add(metaErr.message);
-          break;
-        } else {
-          errors.add('${work.title}: ${metaErr.message}');
-        }
-      } catch (e) {
-        errors.add('${work.title}: 匹配异常');
+      final result = await _matchFiles(files, session);
+      if (result.needsReview > 0) {
+        needsReview++;
+      } else if (result.matched > 0) {
+        matched++;
+      } else if (result.errors.isEmpty) {
+        skipped++;
       }
+      for (final reason in result.reviewReasons.keys) {
+        reasons.update(reason, (count) => count + 1, ifAbsent: () => 1);
+      }
+      errors.addAll(result.errors);
+      if (result.errors.isNotEmpty) break;
     }
-    onProgress?.call(MetadataPhase.matching, processed, pendingWorks.length);
+    onProgress?.call(MetadataPhase.matching, processed, works.length);
     return MetadataRefreshResult(
       matched: matched,
       needsReview: needsReview,
       skipped: skipped,
-      errors: errors,
+      errors: errors.toSet().toList(),
+      reviewReasons: reasons,
     );
   }
 
@@ -683,7 +858,7 @@ class MetadataService {
 
   static String _normalize(String s) {
     return s.toLowerCase().replaceAll(
-      RegExp(r'[\s\-_\.:/\\,\(\)\[\]\{\}]+'),
+      RegExp(r'''[\s\-_\.:/\\,()\[\]{}：，。！？!?「」『』“”‘’"'・·]+'''),
       '',
     );
   }
@@ -724,4 +899,12 @@ class MetadataService {
 
     return v1[s2.length];
   }
+}
+
+/// 单次任务内复用请求，跨任务仍沿用 TmdbClient 的持久缓存与限流。
+class _MatchSession {
+  final searches = <(String, String, int?), Future<List<TmdbWork>>>{};
+  final details = <TmdbWork, Future<TmdbWork>>{};
+  final seasons = <(int, int), Future<List<TmdbEpisode>>>{};
+  final decisions = <(String?, int?, String), Future<MatchDecision>>{};
 }

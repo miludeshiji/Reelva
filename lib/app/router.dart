@@ -8,6 +8,7 @@ import 'package:reelva/features/library/presentation/work_details_page.dart';
 import 'package:reelva/features/player/domain/playback_resource.dart';
 import 'package:reelva/features/player/presentation/player_page.dart';
 import 'package:reelva/features/settings/about_page.dart';
+import 'package:reelva/features/settings/player_settings_page.dart';
 import 'package:reelva/features/settings/settings_page.dart';
 import 'package:reelva/features/settings/settings_subpages.dart';
 import 'package:reelva/features/sources/add_source_page.dart';
@@ -122,6 +123,11 @@ GoRouter createRouter({String initialLocation = '/'}) {
                 pageBuilder: (context, state) =>
                     _buildMaterialPage(state, const SettingsPage()),
                 routes: [
+                  GoRoute(
+                    path: 'player',
+                    pageBuilder: (context, state) =>
+                        _buildMaterialPage(state, const PlayerSettingsPage()),
+                  ),
                   GoRoute(
                     path: 'tmdb',
                     pageBuilder: (context, state) =>

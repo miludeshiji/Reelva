@@ -19,6 +19,14 @@ class ParsedMediaFilename {
     this.type,
     this.isConfident = false,
     this.isAmbiguous = false,
+    this.titleCandidates = const [],
+    this.isExtra = false,
+    this.isSeasonInferred = false,
+    this.hasSeasonConflict = false,
+    this.absoluteEpisodeNumber,
+    this.rawEpisodeToken,
+    this.editionRevision,
+    this.filenameTitle,
   });
 
   /// 原始文件名（包含扩展名）
@@ -66,6 +74,16 @@ class ParsedMediaFilename {
   /// 是否结构模糊/无年份/难以确定类型
   final bool isAmbiguous;
 
+  /// 具体作品目录名与文件原名，按检索优先级排列，不包含合集祖先目录。
+  final List<String> titleCandidates;
+  final bool isExtra;
+  final bool isSeasonInferred;
+  final bool hasSeasonConflict;
+  final int? absoluteEpisodeNumber;
+  final String? rawEpisodeToken;
+  final int? editionRevision;
+  final String? filenameTitle;
+
   ParsedMediaFilename copyWith({
     String? rawName,
     String? title,
@@ -82,6 +100,14 @@ class ParsedMediaFilename {
     String? type,
     bool? isConfident,
     bool? isAmbiguous,
+    List<String>? titleCandidates,
+    bool? isExtra,
+    bool? isSeasonInferred,
+    bool? hasSeasonConflict,
+    int? absoluteEpisodeNumber,
+    String? rawEpisodeToken,
+    int? editionRevision,
+    String? filenameTitle,
   }) {
     return ParsedMediaFilename(
       rawName: rawName ?? this.rawName,
@@ -99,6 +125,15 @@ class ParsedMediaFilename {
       type: type ?? this.type,
       isConfident: isConfident ?? this.isConfident,
       isAmbiguous: isAmbiguous ?? this.isAmbiguous,
+      titleCandidates: titleCandidates ?? this.titleCandidates,
+      isExtra: isExtra ?? this.isExtra,
+      isSeasonInferred: isSeasonInferred ?? this.isSeasonInferred,
+      hasSeasonConflict: hasSeasonConflict ?? this.hasSeasonConflict,
+      absoluteEpisodeNumber:
+          absoluteEpisodeNumber ?? this.absoluteEpisodeNumber,
+      rawEpisodeToken: rawEpisodeToken ?? this.rawEpisodeToken,
+      editionRevision: editionRevision ?? this.editionRevision,
+      filenameTitle: filenameTitle ?? this.filenameTitle,
     );
   }
 
@@ -121,10 +156,18 @@ class ParsedMediaFilename {
           resolution == other.resolution &&
           type == other.type &&
           isConfident == other.isConfident &&
-          isAmbiguous == other.isAmbiguous;
+          isAmbiguous == other.isAmbiguous &&
+          listEquals(titleCandidates, other.titleCandidates) &&
+          isExtra == other.isExtra &&
+          isSeasonInferred == other.isSeasonInferred &&
+          hasSeasonConflict == other.hasSeasonConflict &&
+          absoluteEpisodeNumber == other.absoluteEpisodeNumber &&
+          rawEpisodeToken == other.rawEpisodeToken &&
+          editionRevision == other.editionRevision &&
+          filenameTitle == other.filenameTitle;
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     rawName,
     title,
     secondaryTitle,
@@ -140,7 +183,15 @@ class ParsedMediaFilename {
     type,
     isConfident,
     isAmbiguous,
-  );
+    Object.hashAll(titleCandidates),
+    isExtra,
+    isSeasonInferred,
+    hasSeasonConflict,
+    absoluteEpisodeNumber,
+    rawEpisodeToken,
+    editionRevision,
+    filenameTitle,
+  ]);
 
   @override
   String toString() =>
@@ -159,7 +210,7 @@ class MediaFilenameParser {
   static final RegExp _yearRegex = RegExp(r'(?<!\d)(19\d\d|20\d\d)(?!\d)');
 
   static final RegExp _resolutionRegex = RegExp(
-    r'(?<!\w)(4k|2160p|1080p|1080i|720p|576p|480p|uhd|fhd|hd)(?!\w)',
+    r'(?<![A-Za-z0-9])(4k|2160p|1080p|1080i|720p|576p|480p|uhd|fhd|hd)(?![A-Za-z0-9])',
     caseSensitive: false,
   );
 
@@ -199,11 +250,21 @@ class MediaFilenameParser {
     String rawName, {
     List<String> directoryNames = const [],
   }) {
-    var nameWithoutExt = rawName.replaceAll(_extRegex, '').trim();
+    var nameWithoutExt = cleanReleaseTitle(rawName.replaceAll(_extRegex, ''));
+    final directorySeason = directoryNames.reversed
+        .map(seasonFromName)
+        .whereType<int>()
+        .firstOrNull;
+    final isExtra =
+        directoryNames.any(isExtraName) || isExtraName(nameWithoutExt);
+    var isSeasonInferred = false;
+    int? absoluteEpisodeNumber;
+    String? rawEpisodeToken;
+    int? editionRevision;
 
     // 1. 提取分辨率
     String? resolution;
-    final resMatch = _resolutionRegex.firstMatch(nameWithoutExt);
+    final resMatch = _resolutionRegex.firstMatch(rawName);
     if (resMatch != null) {
       final resText = resMatch.group(1)!.toUpperCase();
       if (resText == '2160P' || resText == 'UHD' || resText == '4K') {
@@ -316,7 +377,12 @@ class MediaFilenameParser {
       if (match != null) {
         isSeries = true;
         episodeNumber = int.parse(match.namedGroup('episode')!);
-        if (episodeMatch == null) seasonNumber = 1;
+        if (episodeMatch == null) {
+          seasonNumber = 1;
+          isSeasonInferred = directorySeason == null;
+          absoluteEpisodeNumber = episodeNumber;
+          rawEpisodeToken = match.group(0);
+        }
         episodeNumbers.add(episodeNumber);
         if (episodeMatch != null) {
           final end = int.tryParse(episodeMatch.namedGroup('end') ?? '');
@@ -334,6 +400,63 @@ class MediaFilenameParser {
       }
     }
 
+    // 番组编号先于标题清洗：[13v2]、[11.5]、[88-90(...)]、[4th - 01]。
+    if (!isSeries) {
+      final numberedSeason = RegExp(
+        r'\[(?<season>\d{1,2})(?:st|nd|rd|th)\s*-\s*(?<episode>\d{1,3})\]',
+        caseSensitive: false,
+      ).firstMatch(nameWithoutExt);
+      final bracket = RegExp(
+        r'\[(?<episode>\d{1,3})(?:\.(?<fraction>\d+)|v(?<revision>\d+)|[-~](?<end>\d{1,3})(?:\([^\]]*\))?)?\]',
+        caseSensitive: false,
+      ).firstMatch(nameWithoutExt);
+      final dash = RegExp(
+        r'\s+-\s+(?<episode>\d{1,3})(?:v(?<revision>\d+))?(?=\s|\[|$)',
+        caseSensitive: false,
+      ).firstMatch(nameWithoutExt);
+      final qualityNumber = directoryNames.isNotEmpty
+          ? RegExp(
+              r'^(?<episode>\d{1,3})\s+(?=4K|1080|2160|720)',
+              caseSensitive: false,
+            ).firstMatch(nameWithoutExt)
+          : null;
+      final match = numberedSeason ?? bracket ?? dash ?? qualityNumber;
+      if (match != null) {
+        isSeries = true;
+        rawEpisodeToken = match.group(0)!.trim();
+        final number = int.parse(match.namedGroup('episode')!);
+        if (numberedSeason != null) {
+          seasonNumber = int.parse(numberedSeason.namedGroup('season')!);
+        } else {
+          seasonNumber = directorySeason ?? 1;
+          isSeasonInferred = directorySeason == null;
+          absoluteEpisodeNumber = number;
+        }
+        final fraction = bracket?.namedGroup('fraction');
+        final end = int.tryParse(bracket?.namedGroup('end') ?? '');
+        editionRevision = int.tryParse(
+          bracket?.namedGroup('revision') ?? dash?.namedGroup('revision') ?? '',
+        );
+        if (fraction != null) {
+          isSpecialOrOva = true;
+        } else if (end != null && end > number) {
+          isMultiEpisode = true;
+          episodeNumbers.addAll([for (var n = number; n <= end; n++) n]);
+        } else {
+          episodeNumber = number;
+          episodeNumbers.add(number);
+        }
+        cutIndex = match.start;
+        epEndIndex = match.end;
+      }
+    }
+
+    final totalEpisode = RegExp(r'\[总第(?<episode>\d+)\]')
+        .firstMatch(nameWithoutExt);
+    if (totalEpisode != null) {
+      absoluteEpisodeNumber = int.parse(totalEpisode.namedGroup('episode')!);
+    }
+
     // SP / OVA 模式
     if (!isSeries) {
       final spMatch = _spOvaRegex.firstMatch(nameWithoutExt);
@@ -349,6 +472,20 @@ class MediaFilenameParser {
         cutIndex = spMatch.start;
         epEndIndex = spMatch.end;
       }
+    }
+
+    // OVA/OAD/小剧场即便与普通编号并存，也不作为正片自动绑定。
+    if (_spOvaRegex.hasMatch(nameWithoutExt) ||
+        RegExp(
+          r'\bshort\s+anime\b|番外|总集篇',
+          caseSensitive: false,
+        ).hasMatch(nameWithoutExt)) {
+      isSpecialOrOva = true;
+    }
+    if (isSpecialOrOva) {
+      isSeries = true;
+      seasonNumber = 0;
+      isSeasonInferred = false;
     }
 
     // 4. 提取年份（支持 1917.2019 / 2001.A.Space.Odyssey.1968 等数字标题）
@@ -429,10 +566,32 @@ class MediaFilenameParser {
 
     // 提取可能的次要标题（如中文 + 英文组合）
     var (mainTitle, secTitle) = _extractDualTitles(cleanedTitle);
+    final fileTitle = mainTitle;
+    String? workDirectoryTitle;
+    for (final directory in directoryNames.reversed) {
+      if (isContextDirectory(directory) || isExtraName(directory)) continue;
+      final cleaned = cleanDirectoryTitle(directory);
+      if (cleaned.isEmpty) continue;
+      if ((seasonFromName(directory) != null ||
+              RegExp(
+                r'\bfinal\s+season\b',
+                caseSensitive: false,
+              ).hasMatch(directory)) &&
+          directoryNames.any(
+            (parent) =>
+                parent != directory &&
+                seasonFromName(parent) == null &&
+                !isContextDirectory(parent),
+          )) {
+        continue;
+      }
+      workDirectoryTitle = parse(cleaned).title;
+      break;
+    }
     if (isSeries && mainTitle.isEmpty) {
       for (final directory in directoryNames.reversed) {
-        if (seasonFromName(directory) != null) continue;
-        final parent = parse(directory);
+        if (isContextDirectory(directory) || isExtraName(directory)) continue;
+        final parent = parse(cleanDirectoryTitle(directory));
         if (parent.title.isEmpty) continue;
         mainTitle = parent.title;
         secTitle = parent.secondaryTitle;
@@ -440,9 +599,10 @@ class MediaFilenameParser {
         break;
       }
     }
+    if (workDirectoryTitle != null && isSeries) mainTitle = workDirectoryTitle;
     if (year == null) {
       for (final directory in directoryNames.reversed) {
-        year = parse(directory).year;
+        year = parse(cleanDirectoryTitle(directory)).year;
         if (year != null) break;
       }
     }
@@ -471,7 +631,14 @@ class MediaFilenameParser {
     var isConfident = false;
     var isAmbiguous = false;
 
-    if (isSeries) {
+    final movieHint = RegExp(
+      r'剧场版|劇場版|\bmovie\b',
+      caseSensitive: false,
+    ).hasMatch('$nameWithoutExt ${workDirectoryTitle ?? ''}');
+    if (movieHint && !isSeries) {
+      type = 'movie';
+      isConfident = true;
+    } else if (isSeries) {
       type = 'series';
       if (isMultiEpisode) {
         // 多集文件必须保留待确认审查状态
@@ -516,6 +683,33 @@ class MediaFilenameParser {
       type: type,
       isConfident: isConfident,
       isAmbiguous: isAmbiguous,
+      titleCandidates: {
+        ?workDirectoryTitle,
+        if (fileTitle.isNotEmpty) fileTitle,
+        if (secTitle != null && secTitle.isNotEmpty) secTitle,
+        if (mainTitle.isNotEmpty) mainTitle,
+        if (!isSeries && year != null && fileTitle.isNotEmpty)
+          '$fileTitle $year',
+        if (movieHint && !isSeries)
+          fileTitle
+              .replaceAll(
+                RegExp(r'剧场版|劇場版|\s+-\s+movie\s*$', caseSensitive: false),
+                '',
+              )
+              .trim(),
+      }.toList(),
+      isExtra: isExtra,
+      isSeasonInferred: isSeasonInferred,
+      hasSeasonConflict:
+          !isSpecialOrOva &&
+          !isSeasonInferred &&
+          directorySeason != null &&
+          seasonNumber != null &&
+          seasonNumber != directorySeason,
+      absoluteEpisodeNumber: absoluteEpisodeNumber,
+      rawEpisodeToken: rawEpisodeToken,
+      editionRevision: editionRevision,
+      filenameTitle: fileTitle.isEmpty ? null : fileTitle,
     );
   }
 
@@ -528,6 +722,106 @@ class MediaFilenameParser {
         .replaceAll(RegExp(r'\s{2,}'), ' ')
         .trim();
     return s;
+  }
+
+  static String cleanReleaseTitle(String value) {
+    var title = value
+        .replaceAll('&#39;', "'")
+        .replaceAll('&amp;', '&')
+        .replaceAll('：', ':')
+        .replaceAll('（', '(')
+        .replaceAll('）', ')')
+        .replaceAll('’', "'")
+        .replaceAll('！', '!')
+        .replaceAll('？', '?');
+    final leading = RegExp(r'^\s*\[([^\]]+)\]').firstMatch(title);
+    if (leading != null) {
+      final group = leading.group(1)!;
+      final remainder = title.substring(leading.end).trimLeft();
+      final next = RegExp(r'^\[([^\]]+)\]').firstMatch(remainder);
+      if (RegExp(
+            r'studio|raws|sub|字幕|\bvcb\b|lolihouse|kissaten|airot[a-z]*|bean|\&',
+            caseSensitive: false,
+          ).hasMatch(group) ||
+          (next != null &&
+              RegExp(r'[A-Za-z]{3}').hasMatch(next.group(1)!) &&
+              !RegExp(
+                r'1080|2160|720|hevc|bdrip|web|ma10p',
+                caseSensitive: false,
+              ).hasMatch(next.group(1)!))) {
+        title = remainder;
+      }
+    }
+    return title.replaceAllMapped(RegExp(r'\[([^\]]+)\]'), (match) {
+      final token = match.group(1)!;
+      return RegExp(
+            r'^(?:ma\d+p|hi\d+p|main_movie|\d{3,4}[pi]|\d{3,4}x\d+|4k|bd|web|x26[45]|h26[45]|hevc|avc|flac|aac|ass|chs|cht|jpsc|sc|tc|简繁|合集版)',
+            caseSensitive: false,
+          ).hasMatch(token)
+          ? ' '
+          : match.group(0)!;
+    }).trim();
+  }
+
+  static String cleanDirectoryTitle(String value) {
+    var title = cleanReleaseTitle(value);
+    final prefix = RegExp(r'^([A-Za-z])([ _]+)(\S.*)$').firstMatch(title);
+    if (prefix != null &&
+        (prefix.group(2)!.contains('_') ||
+            RegExp(r'[\u4e00-\u9fff]').hasMatch(prefix.group(3)!) ||
+            prefix.group(1)!.toLowerCase() ==
+                prefix.group(3)![0].toLowerCase())) {
+      title = prefix.group(3)!;
+    }
+    return title
+        .replaceAllMapped(
+          RegExp(r'\(((?:19|20)\d{2})\s*[-~～]\s*(?:19|20)\d{2}\)'),
+          (match) => '(${match.group(1)})',
+        )
+        .replaceFirst(RegExp(r'^\d{1,2}[.、 ]+\s*(?=\D)'), '')
+        .replaceFirst(RegExp(r'\s*\((?:10|[0-9])\.\d{1,2}\)\s*$'), '')
+        .replaceAll(
+          RegExp(
+            r'(?<![A-Za-z0-9])(?:s|season[ ._-]*)(\d{1,2})(?!\d)|第\s*\d{1,2}\s*季',
+            caseSensitive: false,
+          ),
+          '',
+        )
+        .trim();
+  }
+
+  static bool isExtraName(String value) => RegExp(
+    r'^(?:CDs?|Scans?|Bonus|Other|Extras?|SPs?|特典|花絮)$|(?<![a-zA-Z])(?:NCOP|NCED|PV|CM|MV|Menu(?:JP|EN)?)[ ._\d-]*(?![a-zA-Z])',
+    caseSensitive: false,
+  ).hasMatch(value.trim());
+
+  static bool isContextDirectory(String value) {
+    final cleaned = cleanDirectoryTitle(value);
+    return cleaned.isEmpty ||
+        const {
+          '动漫',
+          '动画',
+          '影视',
+          '电影',
+          '剧集',
+          '电视剧',
+          '在线',
+          '我的文件',
+          '媒体',
+          '资源',
+          'media',
+          'videos',
+          'video',
+          'library',
+          'movies',
+          'series',
+          'tv',
+          'anime',
+        }.contains(cleaned.toLowerCase()) ||
+        RegExp(
+          r'^(?:(?:4k|hdr|dv|1080p|2160p|720p|h265|hevc|bluray|bd|remux|10bit|ma10p)[ &_.+-]*)+$',
+          caseSensitive: false,
+        ).hasMatch(cleaned);
   }
 
   static int? seasonFromName(String name) {

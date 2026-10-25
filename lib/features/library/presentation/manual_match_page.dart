@@ -6,6 +6,7 @@ import '../../../shared/widgets/glass_widgets.dart';
 import '../../../shared/widgets/poster_image.dart';
 import '../../metadata/application/metadata_providers.dart';
 import '../../metadata/domain/matching_file.dart';
+import '../../metadata/domain/match_decision.dart';
 import '../../metadata/domain/tmdb_models.dart';
 import '../domain/library_work.dart';
 
@@ -36,21 +37,16 @@ class ManualMatchPage extends ConsumerStatefulWidget {
     ),
   );
 
-  static Future<int?> showForWork(BuildContext context, WorkDetails details) =>
-      show(
-        context,
-        files: [
-          for (final version in details.versions)
-            MatchingFile(
-              fileId: version.fileId,
-              name: version.fileName,
-              seasonNumber: version.seasonNumber,
-              episodeNumber: version.episodeNumber,
-            ),
-        ],
-        initialTitle: details.work.title,
-        initialYear: details.work.year,
-      );
+  static Future<int?> showForWork(
+    BuildContext context,
+    WorkDetails details, {
+    required List<MatchingFile> files,
+  }) => show(
+    context,
+    files: files,
+    initialTitle: files.isEmpty ? details.work.title : files.first.parsed.title,
+    initialYear: details.work.year,
+  );
 
   @override
   ConsumerState<ManualMatchPage> createState() => _ManualMatchPageState();
@@ -65,6 +61,7 @@ class _ManualMatchPageState extends ConsumerState<ManualMatchPage> {
   final _previewKey = GlobalKey();
   final _numbers = <int, ({int? season, int? episode})>{};
   final _included = <int>{};
+  final _editedNumbers = <int>{};
   Map<int, String> _fileErrors = {};
   List<TmdbWork>? _results;
   TmdbWork? _candidate;
@@ -82,6 +79,11 @@ class _ManualMatchPageState extends ConsumerState<ManualMatchPage> {
       _included.add(file.fileId);
       _numbers[file.fileId] = file.seriesNumbers;
     }
+    final suggestions = widget.files
+        .expand((file) => file.suggestions)
+        .toSet()
+        .toList();
+    if (suggestions.isNotEmpty) _results = suggestions;
   }
 
   @override
@@ -160,10 +162,18 @@ class _ManualMatchPageState extends ConsumerState<ManualMatchPage> {
       final plans = await service.prepareFileMatches(
         widget.files,
         candidate,
-        overrides: _numbers,
+        overrides: {for (final id in _editedNumbers) id: _numbers[id]!},
       );
       if (mounted) {
         setState(() {
+          for (final plan in plans) {
+            if (!_editedNumbers.contains(plan.file.fileId)) {
+              _numbers[plan.file.fileId] = (
+                season: plan.seasonNumber,
+                episode: plan.episodeNumber,
+              );
+            }
+          }
           _fileErrors = {
             for (final plan in plans)
               if (plan.error != null) plan.file.fileId: plan.error!,
@@ -207,6 +217,7 @@ class _ManualMatchPageState extends ConsumerState<ManualMatchPage> {
       for (final fileId in _included) {
         final numbers = _numbers[fileId]!;
         if (numbers.season == null) {
+          _editedNumbers.add(fileId);
           _numbers[fileId] = (season: season, episode: numbers.episode);
           _fileErrors.remove(fileId);
         }
@@ -266,6 +277,15 @@ class _ManualMatchPageState extends ConsumerState<ManualMatchPage> {
   @override
   Widget build(BuildContext context) {
     final busy = _preparing || _applying;
+    final titles = widget.files
+        .expand((file) => file.parsed.titleCandidates)
+        .toSet()
+        .take(4)
+        .toList();
+    final reasons = widget.files
+        .map((file) => file.reviewReason)
+        .whereType<MatchReason>()
+        .toSet();
     return PopScope(
       canPop: !_applying,
       child: Scaffold(
@@ -315,6 +335,42 @@ class _ManualMatchPageState extends ConsumerState<ManualMatchPage> {
                                         hintText: '同时搜索电影与剧集',
                                       ),
                                     ),
+                                    if (titles.length > 1) ...[
+                                      const SizedBox(height: 8),
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: [
+                                          for (final title in titles)
+                                            ConstrainedBox(
+                                              constraints: const BoxConstraints(
+                                                maxWidth: 260,
+                                              ),
+                                              child: ActionChip(
+                                                label: Text(
+                                                  title,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                                onPressed: busy || _searching
+                                                    ? null
+                                                    : () {
+                                                        _query.text = title;
+                                                        _invalidateSearch(
+                                                          title,
+                                                        );
+                                                        _search();
+                                                      },
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ],
+                                    for (final reason in reasons) ...[
+                                      const SizedBox(height: 8),
+                                      Text(reason.message),
+                                    ],
                                     const SizedBox(height: 12),
                                     Row(
                                       children: [
@@ -619,6 +675,7 @@ class _ManualMatchPageState extends ConsumerState<ManualMatchPage> {
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(labelText: '季'),
                     onChanged: (value) {
+                      _editedNumbers.add(file.fileId);
                       _numbers[file.fileId] = (
                         season: int.tryParse(value),
                         episode: _numbers[file.fileId]!.episode,
@@ -638,6 +695,7 @@ class _ManualMatchPageState extends ConsumerState<ManualMatchPage> {
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(labelText: '集'),
                     onChanged: (value) {
+                      _editedNumbers.add(file.fileId);
                       _numbers[file.fileId] = (
                         season: _numbers[file.fileId]!.season,
                         episode: int.tryParse(value),

@@ -230,6 +230,36 @@ void main() {
       expect(details.aliases, containsAll(['潜行凶间', '奠基']));
     });
 
+    test('getTvDetails 保留第 0 季、正片季列表和别名，模型往返不丢失', () async {
+      fakeAdapter.handler = (options) {
+        expect(options.path, '/tv/101');
+        return ResponseBody.fromString(
+          jsonEncode({
+            'id': 101,
+            'name': '冰果',
+            'original_name': 'Hyouka',
+            'seasons': [
+              {'season_number': 0},
+              {'season_number': 1},
+            ],
+            'alternative_titles': {
+              'results': [
+                {'title': 'Hyouka'},
+              ],
+            },
+          }),
+          200,
+          headers: {
+            Headers.contentTypeHeader: [Headers.jsonContentType],
+          },
+        );
+      };
+      final details = await client.getTvDetails(101);
+      expect(details.seasonNumbers, [0, 1]);
+      expect(details.aliases, ['Hyouka']);
+      expect(TmdbWork.fromJson(details.toJson()).seasonNumbers, [0, 1]);
+    });
+
     test('getTvSeasonEpisodes parses episodes list', () async {
       fakeAdapter.handler = (options) {
         expect(options.path, equals('/tv/1396/season/1'));

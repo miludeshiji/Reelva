@@ -7,6 +7,8 @@
 ## 开发
 
 - [开发环境与检查](development/build.md)：环境搭建、代码检查与本地启动。
+- [播放器配置](development/player_configuration.md)：libmpv 默认参数、设置持久化及跨平台适配边界。
+- [TMDB 匹配规则与目录回归](development/tmdb_matching.md)：目录解析、候选核验、季集映射和固定样例验证。
 - [版本发布](development/release.md)：签名配置、CI 工作流与发布流程。
 
 ## 架构

@@ -24,6 +24,7 @@ class PlayerControls extends StatefulWidget {
     required this.onToggleFullscreen,
     this.overlay = false,
     this.onInteractionChanged,
+    this.maxVolume = 100,
   });
 
   final PlaybackSnapshot snapshot;
@@ -32,6 +33,7 @@ class PlayerControls extends StatefulWidget {
   final VoidCallback onToggleFullscreen;
   final bool overlay;
   final ValueChanged<bool>? onInteractionChanged;
+  final double maxVolume;
 
   static const List<double> supportedRates = [0.5, 1.0, 1.25, 1.5, 2.0, 3.0];
 
@@ -438,8 +440,8 @@ class _PlayerControlsState extends State<PlayerControls> {
                   Slider(
                     key: const Key('player_volume_slider'),
                     autofocus: true,
-                    value: current.volume.clamp(0.0, 100.0),
-                    max: 100.0,
+                    value: current.volume.clamp(0.0, widget.maxVolume),
+                    max: widget.maxVolume,
                     onChanged: (volume) {
                       if (volume > 0) _lastNonZeroVolume = volume;
                       engine.setVolume(volume);

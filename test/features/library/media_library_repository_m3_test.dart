@@ -1052,7 +1052,7 @@ void main() {
       expect(singleVideo.available, isTrue);
     });
 
-    test('scanning series file with year into locked null-year series attaches version without overwriting year', () async {
+    test('同名新文件不会仅凭标题挂入已锁定作品，原有人工信息保持不变', () async {
       final source = await repo.upsertSource(
         kind: 'local',
         rootLocator: 'C:/TV',
@@ -1087,15 +1087,20 @@ void main() {
       await repo.applyScanBatch(source.id, scanId, entries);
       await repo.finishScan(source.id, scanId);
 
-      // 验证作品加锁状态与 year 依然完好为 null，但版本已正确附加上去
+      // 保留人工信息；缺少已确认身份的新文件独立进入本地候选。
       final details = await repo.getWorkDetails(seriesId);
       expect(details, isNotNull);
       expect(details!.work.title, 'SpecialShow');
       expect(details.work.year, isNull);
       expect(details.work.metadataLocked, isTrue);
-      expect(details.versions, hasLength(1));
-      expect(details.versions.first.seasonNumber, 1);
-      expect(details.versions.first.episodeNumber, 1);
+      expect(details.versions, isEmpty);
+      final candidates = await repo.unmatchedWorks();
+      expect(candidates, hasLength(1));
+      expect(candidates.single.id, isNot(seriesId));
+      final candidate = (await repo.getWorkDetails(candidates.single.id))!;
+      expect(candidate.work.year, 2023);
+      expect(candidate.versions.single.seasonNumber, 1);
+      expect(candidate.versions.single.episodeNumber, 1);
     });
 
     test('multiple movie candidates with same title and year do not merge automatically and do not throw', () async {

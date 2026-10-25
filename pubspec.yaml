@@ -39,3 +39,5 @@ flutter:
     - assets/Reelva.svg
     - assets/tmdb.svg
     - assets/licenses/libsmb2.txt
+    - assets/fonts/NotoSansCJKsc-Regular.otf
+    - assets/licenses/NotoSansCJK.txt

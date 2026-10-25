@@ -6,6 +6,8 @@ import 'package:reelva/features/library/domain/library_work.dart';
 import 'package:reelva/features/library/infrastructure/media_library_repository.dart';
 import 'package:reelva/features/metadata/application/metadata_service.dart';
 import 'package:reelva/features/metadata/domain/tmdb_models.dart';
+import 'package:reelva/features/metadata/domain/matching_file.dart';
+import 'package:reelva/features/metadata/domain/match_decision.dart';
 import 'package:reelva/features/metadata/infrastructure/tmdb_client.dart';
 import 'package:reelva/features/metadata/infrastructure/tmdb_token_store.dart';
 
@@ -54,6 +56,7 @@ class FakeFlutterSecureStorage extends FlutterSecureStorage {
 }
 
 class FakeTmdbClient implements TmdbClient {
+  final _searchResults = <TmdbWork, TmdbWork>{};
   List<TmdbWork> Function(String query, int? year)? searchMovieHandler;
   List<TmdbWork> Function(String query, int? year)? searchTvHandler;
   FutureOr<TmdbWork> Function(int id)? getMovieDetailsHandler;
@@ -68,7 +71,11 @@ class FakeTmdbClient implements TmdbClient {
     int page = 1,
     String language = 'zh-CN',
   }) async {
-    return searchMovieHandler?.call(query, year) ?? const [];
+    final results = searchMovieHandler?.call(query, year) ?? const <TmdbWork>[];
+    for (final work in results) {
+      _searchResults[work] = work;
+    }
+    return results;
   }
 
   @override
@@ -78,7 +85,11 @@ class FakeTmdbClient implements TmdbClient {
     int page = 1,
     String language = 'zh-CN',
   }) async {
-    return searchTvHandler?.call(query, year) ?? const [];
+    final results = searchTvHandler?.call(query, year) ?? const <TmdbWork>[];
+    for (final work in results) {
+      _searchResults[work] = work;
+    }
+    return results;
   }
 
   @override
@@ -86,7 +97,8 @@ class FakeTmdbClient implements TmdbClient {
     if (getMovieDetailsHandler != null) {
       return await getMovieDetailsHandler!(id);
     }
-    return TmdbWork(id: id, type: 'movie', title: 'Movie $id');
+    return _searchResults[TmdbWork(id: id, type: 'movie', title: '')] ??
+        TmdbWork(id: id, type: 'movie', title: 'Movie $id');
   }
 
   @override
@@ -94,7 +106,8 @@ class FakeTmdbClient implements TmdbClient {
     if (getTvDetailsHandler != null) {
       return await getTvDetailsHandler!(id);
     }
-    return TmdbWork(id: id, type: 'series', title: 'Series $id');
+    return _searchResults[TmdbWork(id: id, type: 'series', title: '')] ??
+        TmdbWork(id: id, type: 'series', title: 'Series $id');
   }
 
   @override
@@ -128,6 +141,45 @@ class FakeMediaLibraryRepository implements MediaLibraryRepository {
 
   @override
   Future<List<LibraryWork>> unmatchedWorks() async => unmatched;
+
+  @override
+  Future<List<MatchingFile>> matchingFilesForWork(int workId) async {
+    final details = detailsMap[workId];
+    if (details != null) {
+      return [
+        for (final version in details.versions)
+          MatchingFile(
+            fileId: version.fileId,
+            name: version.fileName,
+            seasonNumber: version.seasonNumber,
+            episodeNumber: version.episodeNumber,
+          ),
+      ];
+    }
+    final work = unmatched.firstWhere((work) => work.id == workId);
+    return [
+      MatchingFile(
+        fileId: workId,
+        name: '${work.title}${work.year == null ? '' : '.${work.year}'}.mkv',
+      ),
+    ];
+  }
+
+  @override
+  Future<bool> isFileMetadataProtected(int fileId) async => false;
+
+  @override
+  Future<void> recordMatchingReview(
+    List<int> fileIds,
+    MatchDecision decision,
+  ) async {}
+
+  @override
+  Future<int?> applyMetadataToFiles(
+    Map<int, TmdbEpisode?> files,
+    TmdbWork metadata, {
+    bool manual = true,
+  }) => applyMetadata(files.keys.first, metadata, manual: manual);
 
   @override
   Future<WorkDetails?> getWorkDetails(int workId) async => detailsMap[workId];

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -9,7 +10,9 @@ import '../application/playback_session.dart';
 import '../domain/playback_resource.dart';
 import '../domain/playback_snapshot.dart';
 import '../domain/player_engine.dart';
+import '../domain/player_settings.dart';
 import 'android_media_documents.dart';
+import 'mpv_player_configuration.dart';
 
 /// 初始化底层 media_kit 原生库（全局单次）
 void initializeMediaKit({String? libmpv}) {
@@ -20,33 +23,36 @@ void initializeMediaKit({String? libmpv}) {
 PlaybackSession createMediaKitSession({
   Player? player,
   AndroidMediaDocuments? documents,
+  PlayerSettings? settings,
 }) {
-  final engine = MediaKitPlayerEngine(player: player, documents: documents);
+  final engine = MediaKitPlayerEngine(
+    player: player,
+    documents: documents,
+    settings: settings,
+  );
   return PlaybackSession(
     engine: engine,
     videoBuilder: (context) => engine.buildVideoView(context),
+    maxVolume: engine._settings.maxVolume.toDouble(),
   );
 }
 
 /// media_kit 播放器领域适配器
 class MediaKitPlayerEngine implements PlayerEngine {
-  MediaKitPlayerEngine({Player? player, AndroidMediaDocuments? documents})
-    : _player =
-          player ??
-          Player(
-            configuration: const PlayerConfiguration(
-              vo: 'null',
-              osc: false,
-              pitch: false,
-              title: 'Reelva',
-              logLevel: MPVLogLevel.error,
-            ),
-          ),
-      _documents = documents ?? const AndroidMediaDocuments() {
+  MediaKitPlayerEngine({
+    Player? player,
+    AndroidMediaDocuments? documents,
+    PlayerSettings? settings,
+  }) : _settings =
+           settings ?? PlayerSettings.defaultsFor(defaultTargetPlatform),
+       _documents = documents ?? const AndroidMediaDocuments() {
+    _player =
+        player ?? Player(configuration: mediaKitPlayerConfiguration(_settings));
     _initSubscriptions();
   }
 
-  final Player _player;
+  late final Player _player;
+  final PlayerSettings _settings;
   final AndroidMediaDocuments _documents;
 
   VideoController? _videoController;
@@ -77,9 +83,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
     if (_disposed) return const SizedBox.shrink();
     _videoController ??= VideoController(
       _player,
-      configuration: const VideoControllerConfiguration(
-        enableHardwareAcceleration: true,
-      ),
+      configuration: mediaKitVideoConfiguration(_settings),
     );
     return Video(
       controller: _videoController!,
@@ -478,6 +482,13 @@ class MediaKitPlayerEngine implements PlayerEngine {
       );
 
       try {
+        final nativePlayer = _player.platform;
+        if (nativePlayer is NativePlayer) {
+          // 等待视频控制器就绪后应用，避免平台初始化覆盖用户偏好。
+          for (final entry in mpvPlayerProperties(_settings).entries) {
+            await nativePlayer.setProperty(entry.key, entry.value);
+          }
+        }
         // 先以 play: false 打开，等待底层就绪后再次确认 epoch
         await _player.open(media, play: false);
       } catch (e, st) {
@@ -619,7 +630,9 @@ class MediaKitPlayerEngine implements PlayerEngine {
     return _enqueue(() async {
       if (_disposed) return;
       try {
-        await _player.setVolume(volume);
+        await _player.setVolume(
+          volume.clamp(0.0, _settings.maxVolume.toDouble()),
+        );
       } catch (e, st) {
         AppLogger.instance.error('底层设置音量异常', error: e, stackTrace: st);
         _setPlaybackError(_safeErrorMessage(e));

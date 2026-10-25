@@ -1,4 +1,5 @@
 import 'media_filename_parser.dart';
+import 'match_decision.dart';
 import 'tmdb_models.dart';
 
 /// 本次匹配的文件及其目录上下文，不扩大到同作品的其他文件。
@@ -9,6 +10,8 @@ class MatchingFile {
     this.directoryNames = const [],
     this.seasonNumber,
     this.episodeNumber,
+    this.reviewReason,
+    this.suggestions = const [],
   });
 
   final int fileId;
@@ -16,6 +19,8 @@ class MatchingFile {
   final List<String> directoryNames;
   final int? seasonNumber;
   final int? episodeNumber;
+  final MatchReason? reviewReason;
+  final List<TmdbWork> suggestions;
 
   ParsedMediaFilename get parsed =>
       MediaFilenameParser.parse(name, directoryNames: directoryNames);

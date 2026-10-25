@@ -8,6 +8,41 @@ import 'fake_player_engine.dart';
 
 void main() {
   group('PlayerControls State & Interaction Tests', () {
+    testWidgets('音量面板遵循会话上限，可调节到 100% 以上', (tester) async {
+      const snapshot = PlaybackSnapshot(
+        status: PlaybackStatus.paused,
+        volume: 150,
+      );
+      final engine = FakePlayerEngine(initialSnapshot: snapshot);
+      addTearDown(engine.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PlayerControls(
+              snapshot: snapshot,
+              engine: engine,
+              maxVolume: 200,
+              isFullscreen: false,
+              onToggleFullscreen: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byKey(const Key('player_volume_button')));
+      await tester.pumpAndSettle();
+      final slider = find.byKey(const Key('player_volume_slider'));
+      expect(tester.widget<Slider>(slider).max, 200);
+      expect(tester.widget<Slider>(slider).value, 150);
+      await tester.tapAt(
+        tester.getTopRight(slider) +
+            Offset(-30, tester.getSize(slider).height / 2),
+      );
+      await tester.pump();
+      expect(engine.lastVolume, greaterThan(150));
+      expect(engine.lastVolume, lessThanOrEqualTo(200));
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
     testWidgets(
       'Controls state transitions: paused, playing, completed, buffering, and error',
       (tester) async {
