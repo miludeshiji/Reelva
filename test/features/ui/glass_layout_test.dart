@@ -25,8 +25,11 @@ import 'package:reelva/features/player/presentation/player_page.dart';
 import 'package:reelva/features/progress/application/progress_providers.dart';
 import 'package:reelva/features/settings/about_page.dart';
 import 'package:reelva/features/settings/settings_page.dart';
+import 'package:reelva/features/settings/settings_subpages.dart';
 import 'package:reelva/features/sources/application/source_providers.dart';
+import 'package:reelva/features/sources/add_source_page.dart';
 import 'package:reelva/features/sources/domain/source_models.dart';
+import 'package:reelva/features/sources/source_setup_page.dart';
 import 'package:reelva/features/sources/sources_page.dart';
 import 'package:reelva/features/sync/application/sync_providers.dart';
 import 'package:reelva/shared/widgets/glass_navigation.dart';
@@ -137,9 +140,25 @@ enum _Page {
   home('HomePage', '/', HomePage),
   library('LibraryPage', '/library', LibraryPage),
   sources('SourcesPage', '/sources', SourcesPage),
+  addSource('AddSourcePage', '/sources/add', AddSourcePage),
+  localSource('LocalSourceSetupPage', '/sources/add/local', SourceSetupPage),
+  webdavSource('WebDavSourceSetupPage', '/sources/add/webdav', SourceSetupPage),
+  openlistSource(
+    'OpenListSourceSetupPage',
+    '/sources/add/openlist',
+    SourceSetupPage,
+  ),
+  smbSource('SmbSourceSetupPage', '/sources/add/smb', SourceSetupPage),
   details('WorkDetailsPage', '/library/work/2', WorkDetailsPage),
   player('PlayerPage', '/player', PlayerPage),
   settings('SettingsPage', '/settings', SettingsPage),
+  tmdbSettings('TmdbSettingsPage', '/settings/tmdb', TmdbSettingsPage),
+  syncSettings('SyncSettingsPage', '/settings/sync', SyncSettingsPage),
+  cacheSettings(
+    'PosterCacheSettingsPage',
+    '/settings/cache',
+    PosterCacheSettingsPage,
+  ),
   about('AboutPage', '/settings/about', AboutPage);
 
   const _Page(this.label, this.location, this.widgetType);
@@ -375,6 +394,18 @@ void main() {
           }
 
           await _exerciseContent(tester, page);
+          if (capture && page.widgetType == SourceSetupPage) {
+            await tester.ensureVisible(
+              find.byKey(const Key('add_source_advanced_options')),
+            );
+            await tester.pumpAndSettle();
+            await _capture(
+              tester,
+              boundaryKey,
+              '${page.name}-${viewport.name}-advanced.png',
+              viewport.size,
+            );
+          }
           expect(tester.takeException(), isNull);
         } finally {
           debugDisableShadows = previousDebugDisableShadows;
@@ -393,9 +424,12 @@ void _expectNavigation(WidgetTester tester, _Page page, bool desktop) {
   }
   expect(find.byType(AppShell), findsOneWidget);
   expect(find.byType(GlassSidebar), desktop ? findsOneWidget : findsNothing);
+  final showBottomNavigation =
+      !desktop &&
+      const {'/', '/library', '/sources', '/settings'}.contains(page.location);
   expect(
     find.byType(GlassBottomNavigationBar),
-    desktop ? findsNothing : findsOneWidget,
+    showBottomNavigation ? findsOneWidget : findsNothing,
   );
   if (page == _Page.home && desktop) {
     final sidebar = tester.getRect(find.byType(GlassSidebar));
@@ -462,6 +496,57 @@ Future<void> _exerciseContent(WidgetTester tester, _Page page) async {
       expect(find.text(_sourceError), findsWidgets);
       await _reveal(tester, page, find.text(_sources.last.name));
       expect(find.textContaining(_sources.last.rootLocator), findsOneWidget);
+    case _Page.addSource:
+      expect(find.byType(AlertDialog), findsNothing);
+      for (final kind in SourceSetupKind.values) {
+        await _reveal(
+          tester,
+          page,
+          find.byKey(Key('add_source_type_${kind.name}')),
+        );
+      }
+    case _Page.localSource ||
+        _Page.webdavSource ||
+        _Page.openlistSource ||
+        _Page.smbSource:
+      expect(find.byType(Form), findsOneWidget);
+      expect(find.byKey(const Key('add_source_name_field')), findsOneWidget);
+      final advanced = find.byKey(const Key('add_source_advanced_options'));
+      await _reveal(tester, page, advanced);
+      await tester.tap(advanced);
+      await tester.pumpAndSettle();
+      for (final field in [
+        (key: 'add_source_extensions_field', label: '视频扩展名（逗号分隔）'),
+        (key: 'add_source_excluded_field', label: '排除目录名称（逗号分隔）'),
+      ]) {
+        final input = find.byKey(Key(field.key));
+        final label = find.descendant(
+          of: input,
+          matching: find.text(field.label),
+        );
+        final bodyClip = find
+            .ancestor(of: input, matching: find.byType(ClipRect))
+            .first;
+        expect(
+          tester.getTopLeft(label).dy,
+          greaterThanOrEqualTo(tester.getTopLeft(bodyClip).dy),
+          reason: '高级选项浮动标签应完整保留在展开区域内',
+        );
+        final editable = tester
+            .state<EditableTextState>(
+              find.descendant(of: input, matching: find.byType(EditableText)),
+            )
+            .renderEditable;
+        expect(editable.maxScrollExtent, 0, reason: '默认扫描选项应完整换行显示，无需在输入框内滚动');
+      }
+      await _reveal(
+        tester,
+        page,
+        find.byKey(const Key('add_source_excluded_field')),
+      );
+      final confirm = find.byKey(const Key('add_source_confirm_button'));
+      await _reveal(tester, page, confirm);
+      expect(confirm.hitTestable(), findsOneWidget);
     case _Page.details:
       expect(find.byKey(const Key('work_details_title')), findsOneWidget);
       expect(find.text(_details.work.title), findsWidgets);
@@ -520,20 +605,29 @@ Future<void> _exerciseContent(WidgetTester tester, _Page page) async {
       );
       expect(container.read(syncConfigurationProvider).asData, isNotNull);
       expect(container.read(syncConfigurationProvider).asData?.value, isNull);
+      expect(find.byType(TextField), findsNothing);
       await _reveal(tester, page, find.byKey(const Key('settings_tmdb_tile')));
-      await tester.tap(find.byKey(const Key('settings_tmdb_tile')));
-      await tester.pumpAndSettle();
+      await _reveal(tester, page, find.byKey(const Key('settings_sync_tile')));
+      await _reveal(tester, page, find.byKey(const Key('settings_cache_tile')));
+      await _reveal(tester, page, find.byKey(const Key('settings_about_tile')));
+    case _Page.tmdbSettings:
       await _reveal(
         tester,
         page,
         find.byKey(const Key('tmdb_configured_chip')),
       );
       expect(find.text('已配置'), findsOneWidget);
-      await _reveal(tester, page, find.byKey(const Key('settings_sync_tile')));
-      await tester.tap(find.byKey(const Key('settings_sync_tile')));
-      await tester.pumpAndSettle();
+      await _reveal(tester, page, find.byKey(const Key('tmdb_save_button')));
+    case _Page.syncSettings:
       await _reveal(tester, page, find.byKey(const Key('sync_endpoint')));
       expect(find.byKey(const Key('sync_status_chip')), findsOneWidget);
+      await _reveal(tester, page, find.byKey(const Key('sync_save')));
+    case _Page.cacheSettings:
+      await _reveal(
+        tester,
+        page,
+        find.byKey(const Key('clear_poster_cache_button')),
+      );
     case _Page.about:
       expect(find.text('现代跨平台媒体库与播放器'), findsOneWidget);
       await _reveal(tester, page, find.text(AboutPage.tmdbRequiredNotice));

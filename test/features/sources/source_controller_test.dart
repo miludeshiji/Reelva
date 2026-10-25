@@ -119,7 +119,7 @@ void main() {
       fakeAdapter.directorySelection = null;
       final controller = container.read(sourceControllerProvider.notifier);
 
-      await controller.addDirectory();
+      expect(await controller.addDirectory(), isNull);
 
       final sources = await repo.watchSources().first;
       expect(sources, isEmpty);
@@ -143,11 +143,12 @@ void main() {
       ];
 
       final controller = container.read(sourceControllerProvider.notifier);
-      await controller.addDirectory();
+      final created = await controller.addDirectory();
 
       final sources = await repo.watchSources().first;
       expect(sources.length, 1);
       final source = sources.first;
+      expect(created?.id, source.id);
       expect(source.name, 'Movies');
       expect(source.rootLocator, '/movies');
 

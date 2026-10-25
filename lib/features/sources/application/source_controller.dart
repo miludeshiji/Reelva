@@ -43,8 +43,8 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
   /// 添加媒体源目录
   ///
   /// 根据运行平台自动选择 Windows 本地适配器或 Android SAF 适配器；
-  /// 用户取消选择则静默退出；选择成功后持久化源并立即触发初次扫描。
-  Future<void> addDirectory({
+  /// 用户取消选择则返回 null；选择成功后持久化源、触发初次扫描并返回媒体源。
+  Future<MediaSourceConfig?> addDirectory({
     String? name,
     List<String> extensions = defaultVideoExtensions,
     List<String> excludedDirectories = defaultExcludedDirectories,
@@ -64,7 +64,7 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
 
     final selection = await adapter.pickDirectory();
     if (selection == null) {
-      return;
+      return null;
     }
 
     final displayName = name != null && name.trim().isNotEmpty
@@ -80,6 +80,7 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
     );
 
     await refreshSource(source.id);
+    return source;
   }
 
   /// 添加或更新远程媒体源（WebDAV / OpenList / SMB）

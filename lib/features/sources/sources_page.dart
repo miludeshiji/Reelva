@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:reelva/shared/widgets/glass_widgets.dart'
     show
         GlassBackground,
@@ -12,13 +13,12 @@ import 'package:reelva/shared/widgets/glass_widgets.dart'
 import '../../shared/widgets/empty_state_view.dart';
 import 'application/source_providers.dart';
 import 'domain/source_models.dart';
-import 'infrastructure/remote_credentials_store.dart';
 import 'remote_source_dialog.dart';
 
 /// 媒体源管理页面
 ///
 /// 展示已配置的媒体源列表、实时扫描进度与错误信息；
-/// 支持通过配置弹窗添加新源、重命名、重新扫描、取消扫描、重新授权以及移除。
+/// 支持通过独立页面添加新源，以及重命名、重新扫描、取消扫描、重新授权与移除。
 class SourcesPage extends ConsumerWidget {
   const SourcesPage({super.key});
 
@@ -38,7 +38,151 @@ class SourcesPage extends ConsumerWidget {
                   constraints.maxWidth >= ReelvaDesign.desktopBreakpoint;
               final addCard = _AddSourceCard(
                 key: const Key('sources_add_card'),
-                onTap: () => _showAddSourceDialog(context, ref),
+                onTap: () => context.push('/sources/add'),
+              );
+
+              final content = ListView(
+                key: const Key('sources_list_view'),
+                padding: EdgeInsets.fromLTRB(
+                  0,
+                  0,
+                  0,
+                  ReelvaDesign.space32 + MediaQuery.paddingOf(context).bottom,
+                ),
+                children: [
+                  const SizedBox(height: ReelvaDesign.space8),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: ReelvaDesign.space24,
+                    ),
+                    child: sourcesAsync.when(
+                      loading: () => Column(
+                        children: [
+                          addCard,
+                          const Padding(
+                            padding: EdgeInsets.all(ReelvaDesign.space32),
+                            child: Center(
+                              key: Key('sources_loading_indicator'),
+                              child: CircularProgressIndicator(),
+                            ),
+                          ),
+                        ],
+                      ),
+                      error: (error, stack) => Column(
+                        children: [
+                          addCard,
+                          const SizedBox(height: ReelvaDesign.space24),
+                          GlassCard(
+                            key: const Key('sources_error_widget'),
+                            child: EmptyStateView(
+                              icon: Icons.cloud_off_outlined,
+                              title: '暂时无法加载媒体源',
+                              message: '请稍后重试。',
+                              actionLabel: '重试',
+                              onAction: () =>
+                                  ref.invalidate(mediaSourcesProvider),
+                            ),
+                          ),
+                        ],
+                      ),
+                      data: (sources) {
+                        final sourceList = Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
+                              children: [
+                                const Expanded(
+                                  child: GlassSectionTitle(title: '已连接'),
+                                ),
+                                const SizedBox(width: ReelvaDesign.space12),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: ReelvaDesign.space12,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFEFF4FB),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    '共 ${sources.length} 个',
+                                    style: const TextStyle(
+                                      color: ReelvaDesign.muted,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: ReelvaDesign.space20),
+                            if (sources.isEmpty)
+                              EmptyStateView(
+                                key: const Key('sources_empty_view'),
+                                icon: Icons.folder_outlined,
+                                title: '暂无媒体源',
+                                message: '添加本地文件夹或存储目录，自动扫描视频并建立影视库。',
+                                actionLabel: '添加媒体源',
+                                onAction: () => context.push('/sources/add'),
+                              )
+                            else
+                              for (
+                                var index = 0;
+                                index < sources.length;
+                                index++
+                              ) ...[
+                                if (index > 0)
+                                  const SizedBox(height: ReelvaDesign.space12),
+                                _SourceCard(
+                                  source: sources[index],
+                                  progress: scanProgressMap[sources[index].id],
+                                ),
+                              ],
+                          ],
+                        );
+                        final summary = _ScanSummary(
+                          sources: sources,
+                          progressMap: scanProgressMap,
+                        );
+
+                        if (isDesktop) {
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              SizedBox(
+                                width: 300,
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    addCard,
+                                    const SizedBox(
+                                      height: ReelvaDesign.space20,
+                                    ),
+                                    summary,
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: ReelvaDesign.space32),
+                              Expanded(child: sourceList),
+                            ],
+                          );
+                        }
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            addCard,
+                            const SizedBox(height: ReelvaDesign.space32),
+                            sourceList,
+                            const SizedBox(height: ReelvaDesign.space24),
+                            summary,
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
               );
 
               return Align(
@@ -47,15 +191,8 @@ class SourcesPage extends ConsumerWidget {
                   constraints: const BoxConstraints(
                     maxWidth: ReelvaDesign.contentMaxWidth,
                   ),
-                  child: ListView(
-                    key: const Key('sources_list_view'),
-                    padding: EdgeInsets.fromLTRB(
-                      0,
-                      0,
-                      0,
-                      ReelvaDesign.space32 +
-                          MediaQuery.viewPaddingOf(context).bottom,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Row(
                         children: [
@@ -67,149 +204,14 @@ class SourcesPage extends ConsumerWidget {
                             child: GlassIconButton(
                               key: const Key('sources_add_appbar_button'),
                               icon: Icons.add,
+                              size: ReelvaDesign.pageHeaderButtonSize,
                               tooltip: '添加媒体源',
-                              onPressed: () =>
-                                  _showAddSourceDialog(context, ref),
+                              onPressed: () => context.push('/sources/add'),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: ReelvaDesign.space8),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: ReelvaDesign.space24,
-                        ),
-                        child: sourcesAsync.when(
-                          loading: () => Column(
-                            children: [
-                              addCard,
-                              const Padding(
-                                padding: EdgeInsets.all(ReelvaDesign.space32),
-                                child: Center(
-                                  key: Key('sources_loading_indicator'),
-                                  child: CircularProgressIndicator(),
-                                ),
-                              ),
-                            ],
-                          ),
-                          error: (error, stack) => Column(
-                            children: [
-                              addCard,
-                              const SizedBox(height: ReelvaDesign.space24),
-                              GlassCard(
-                                key: const Key('sources_error_widget'),
-                                child: EmptyStateView(
-                                  icon: Icons.cloud_off_outlined,
-                                  title: '暂时无法加载媒体源',
-                                  message: '请稍后重试。',
-                                  actionLabel: '重试',
-                                  onAction: () =>
-                                      ref.invalidate(mediaSourcesProvider),
-                                ),
-                              ),
-                            ],
-                          ),
-                          data: (sources) {
-                            final sourceList = Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Row(
-                                  children: [
-                                    const Expanded(
-                                      child: GlassSectionTitle(title: '已连接'),
-                                    ),
-                                    const SizedBox(width: ReelvaDesign.space12),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: ReelvaDesign.space12,
-                                        vertical: 6,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFEFF4FB),
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      child: Text(
-                                        '共 ${sources.length} 个',
-                                        style: const TextStyle(
-                                          color: ReelvaDesign.muted,
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: ReelvaDesign.space20),
-                                if (sources.isEmpty)
-                                  EmptyStateView(
-                                    key: const Key('sources_empty_view'),
-                                    icon: Icons.folder_outlined,
-                                    title: '暂无媒体源',
-                                    message: '添加本地文件夹或存储目录，自动扫描视频并建立影视库。',
-                                    actionLabel: '添加媒体源',
-                                    onAction: () =>
-                                        _showAddSourceDialog(context, ref),
-                                  )
-                                else
-                                  for (
-                                    var index = 0;
-                                    index < sources.length;
-                                    index++
-                                  ) ...[
-                                    if (index > 0)
-                                      const SizedBox(
-                                        height: ReelvaDesign.space12,
-                                      ),
-                                    _SourceCard(
-                                      source: sources[index],
-                                      progress:
-                                          scanProgressMap[sources[index].id],
-                                    ),
-                                  ],
-                              ],
-                            );
-                            final summary = _ScanSummary(
-                              sources: sources,
-                              progressMap: scanProgressMap,
-                            );
-
-                            if (isDesktop) {
-                              return Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  SizedBox(
-                                    width: 300,
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.stretch,
-                                      children: [
-                                        addCard,
-                                        const SizedBox(
-                                          height: ReelvaDesign.space20,
-                                        ),
-                                        summary,
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: ReelvaDesign.space32),
-                                  Expanded(child: sourceList),
-                                ],
-                              );
-                            }
-
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                addCard,
-                                const SizedBox(height: ReelvaDesign.space32),
-                                sourceList,
-                                const SizedBox(height: ReelvaDesign.space24),
-                                summary,
-                              ],
-                            );
-                          },
-                        ),
-                      ),
+                      Expanded(child: content),
                     ],
                   ),
                 ),
@@ -218,13 +220,6 @@ class SourcesPage extends ConsumerWidget {
           ),
         ),
       ),
-    );
-  }
-
-  Future<void> _showAddSourceDialog(BuildContext context, WidgetRef ref) async {
-    await showDialog<void>(
-      context: context,
-      builder: (dialogCtx) => const _AddSourceDialog(),
     );
   }
 }
@@ -404,350 +399,6 @@ String _formatDateTime(DateTime dt) {
   final hour = local.hour.toString().padLeft(2, '0');
   final minute = local.minute.toString().padLeft(2, '0');
   return '$year-$month-$day $hour:$minute';
-}
-
-class _AddSourceDialog extends ConsumerStatefulWidget {
-  const _AddSourceDialog();
-
-  @override
-  ConsumerState<_AddSourceDialog> createState() => _AddSourceDialogState();
-}
-
-class _AddSourceDialogState extends ConsumerState<_AddSourceDialog> {
-  String _selectedType = 'local';
-  final _nameController = TextEditingController();
-  final _urlController = TextEditingController();
-  final _usernameController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _tokenController = TextEditingController();
-  final _domainController = TextEditingController();
-  final _openListPathController = TextEditingController();
-  final _userAgentController = TextEditingController();
-  final _refererController = TextEditingController();
-
-  final _extensionsController = TextEditingController(
-    text: defaultVideoExtensions.join(', '),
-  );
-  final _excludedController = TextEditingController(
-    text: defaultExcludedDirectories.join(', '),
-  );
-
-  bool _isSubmitting = false;
-  String? _errorMessage;
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _urlController.dispose();
-    _usernameController.dispose();
-    _passwordController.dispose();
-    _tokenController.dispose();
-    _domainController.dispose();
-    _openListPathController.dispose();
-    _userAgentController.dispose();
-    _refererController.dispose();
-    _extensionsController.dispose();
-    _excludedController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    final rawName = _nameController.text.trim();
-    final name = rawName.isEmpty ? null : rawName;
-    final extensions = _extensionsController.text
-        .split(',')
-        .map((e) => e.trim().toLowerCase())
-        .where((e) => e.isNotEmpty)
-        .toList();
-    final excluded = _excludedController.text
-        .split(',')
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
-
-    setState(() {
-      _isSubmitting = true;
-      _errorMessage = null;
-    });
-
-    try {
-      if (_selectedType == 'local') {
-        await ref
-            .read(sourceControllerProvider.notifier)
-            .addDirectory(
-              name: name,
-              extensions: extensions.isEmpty
-                  ? defaultVideoExtensions
-                  : extensions,
-              excludedDirectories: excluded.isEmpty
-                  ? defaultExcludedDirectories
-                  : excluded,
-            );
-      } else {
-        final rawUrl = _urlController.text.trim();
-        if (rawUrl.isEmpty) {
-          setState(() {
-            _isSubmitting = false;
-            _errorMessage = '请输入根目录地址';
-          });
-          return;
-        }
-
-        final headers = <String, String>{};
-        if (_userAgentController.text.trim().isNotEmpty) {
-          headers['User-Agent'] = _userAgentController.text.trim();
-        }
-        if (_refererController.text.trim().isNotEmpty) {
-          headers['Referer'] = _refererController.text.trim();
-        }
-
-        final credentials = RemoteCredentials(
-          username: _usernameController.text.trim(),
-          password: _passwordController.text,
-          token: _tokenController.text.trim(),
-          domain: _domainController.text.trim(),
-          playbackHeaders: headers,
-        );
-
-        await ref
-            .read(sourceControllerProvider.notifier)
-            .addRemoteSource(
-              kind: _selectedType,
-              rootUrl: rawUrl,
-              name: name,
-              credentials: credentials,
-              openListRootPath: _openListPathController.text.trim().isEmpty
-                  ? null
-                  : _openListPathController.text.trim(),
-              extensions: extensions.isEmpty
-                  ? defaultVideoExtensions
-                  : extensions,
-              excludedDirectories: excluded.isEmpty
-                  ? defaultExcludedDirectories
-                  : excluded,
-            );
-      }
-      if (mounted) {
-        Navigator.of(context).pop();
-      }
-    } catch (e) {
-      if (!mounted) return;
-      final message = e is MediaSourceException ? e.message : '添加媒体源失败，请重试';
-      setState(() {
-        _isSubmitting = false;
-        _errorMessage = message;
-      });
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(message)));
-    }
-  }
-
-  String get _urlHint {
-    switch (_selectedType) {
-      case 'webdav':
-        return 'https://example.com/dav/';
-      case 'openlist':
-        return 'https://example.com/base#/Movies';
-      case 'smb':
-        return 'smb://192.168.1.100/share/media';
-      default:
-        return 'https://';
-    }
-  }
-
-  String get _urlLabel {
-    switch (_selectedType) {
-      case 'webdav':
-        return 'WebDAV URL';
-      case 'openlist':
-        return 'OpenList 服务器 URL';
-      case 'smb':
-        return 'SMB 共享路径';
-      default:
-        return '服务器地址';
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isLocal = _selectedType == 'local';
-    return AlertDialog(
-      title: const Text('添加媒体源'),
-      content: SingleChildScrollView(
-        child: SizedBox(
-          width: 480,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              DropdownButtonFormField<String>(
-                key: const Key('add_source_type_dropdown'),
-                initialValue: _selectedType,
-                decoration: const InputDecoration(labelText: '媒体源类型'),
-                items: const [
-                  DropdownMenuItem(value: 'local', child: Text('本地目录')),
-                  DropdownMenuItem(value: 'webdav', child: Text('WebDAV')),
-                  DropdownMenuItem(value: 'openlist', child: Text('OpenList')),
-                  DropdownMenuItem(value: 'smb', child: Text('SMB (局域网共享)')),
-                ],
-                onChanged: (val) {
-                  if (val != null) {
-                    setState(() {
-                      _selectedType = val;
-                      _errorMessage = null;
-                    });
-                  }
-                },
-              ),
-              const SizedBox(height: 16),
-              if (!isLocal) ...[
-                TextField(
-                  controller: _urlController,
-                  key: const Key('remote_source_url_field'),
-                  decoration: InputDecoration(
-                    labelText: _urlLabel,
-                    hintText: _urlHint,
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ],
-              TextField(
-                controller: _nameController,
-                key: const Key('add_source_name_field'),
-                decoration: InputDecoration(
-                  labelText: '媒体源名称（可选）',
-                  hintText: isLocal ? '留空将使用目录名称' : '留空将自动根据地址生成',
-                ),
-              ),
-              if (_selectedType == 'webdav') ...[
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _usernameController,
-                  key: const Key('remote_source_username_field'),
-                  decoration: const InputDecoration(labelText: '用户名（可选）'),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _passwordController,
-                  key: const Key('remote_source_password_field'),
-                  obscureText: true,
-                  decoration: const InputDecoration(labelText: '密码（可选）'),
-                ),
-              ] else if (_selectedType == 'openlist') ...[
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _openListPathController,
-                  key: const Key('remote_source_openlist_path_field'),
-                  decoration: const InputDecoration(
-                    labelText: '根目录路径（可选，或在 URL # 中指定）',
-                    hintText: '/Movies',
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _tokenController,
-                  key: const Key('remote_source_token_field'),
-                  obscureText: true,
-                  decoration: const InputDecoration(labelText: 'API Token（可选）'),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _passwordController,
-                  key: const Key('remote_source_password_field'),
-                  obscureText: true,
-                  decoration: const InputDecoration(labelText: '目录访问密码（可选）'),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _userAgentController,
-                  key: const Key('remote_source_user_agent_field'),
-                  decoration: const InputDecoration(
-                    labelText: 'User-Agent 请求头（可选）',
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _refererController,
-                  key: const Key('remote_source_referer_field'),
-                  decoration: const InputDecoration(
-                    labelText: 'Referer 请求头（可选）',
-                  ),
-                ),
-              ] else if (_selectedType == 'smb') ...[
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _usernameController,
-                  key: const Key('remote_source_username_field'),
-                  decoration: const InputDecoration(labelText: '用户名（可选）'),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _passwordController,
-                  key: const Key('remote_source_password_field'),
-                  obscureText: true,
-                  decoration: const InputDecoration(labelText: '密码（可选）'),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _domainController,
-                  key: const Key('remote_source_domain_field'),
-                  decoration: const InputDecoration(
-                    labelText: '工作组 / 域名（可选）',
-                    hintText: 'WORKGROUP',
-                  ),
-                ),
-              ],
-              const SizedBox(height: 16),
-              TextField(
-                controller: _extensionsController,
-                key: const Key('add_source_extensions_field'),
-                decoration: const InputDecoration(
-                  labelText: '视频扩展名（逗号分隔）',
-                  hintText: 'mkv, mp4, avi, mov, m4v, ts, webm',
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _excludedController,
-                key: const Key('add_source_excluded_field'),
-                decoration: const InputDecoration(
-                  labelText: '排除目录名称（逗号分隔）',
-                  hintText: r'.cache, $RECYCLE.BIN, System Volume Information',
-                ),
-              ),
-              if (_errorMessage != null) ...[
-                const SizedBox(height: 16),
-                Text(
-                  _errorMessage!,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.error,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _isSubmitting ? null : () => Navigator.of(context).pop(),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          key: const Key('add_source_confirm_button'),
-          onPressed: _isSubmitting ? null : _submit,
-          child: _isSubmitting
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Text(isLocal ? '选择目录' : '添加'),
-        ),
-      ],
-    );
-  }
 }
 
 class _SourceCard extends ConsumerWidget {

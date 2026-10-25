@@ -27,7 +27,12 @@ class AboutPage extends StatelessWidget {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 640),
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            padding: EdgeInsets.fromLTRB(
+              20,
+              24,
+              20,
+              24 + MediaQuery.paddingOf(context).bottom,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [

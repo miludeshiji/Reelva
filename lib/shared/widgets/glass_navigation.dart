@@ -10,6 +10,8 @@ const _destinations = [
   (id: 'settings', label: '设置', icon: Icons.light_mode_outlined),
 ];
 
+const _sidebarTransitionDuration = Duration(milliseconds: 220);
+
 class GlassBottomNavigationBar extends StatelessWidget {
   const GlassBottomNavigationBar({
     super.key,
@@ -80,8 +82,12 @@ class _GlassSidebarState extends State<GlassSidebar> {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    return AnimatedContainer(
       key: const ValueKey('glass_sidebar'),
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : _sidebarTransitionDuration,
+      curve: Curves.easeInOutCubic,
       width: _isCollapsed ? 112 : 248,
       child: Padding(
         padding: const EdgeInsets.all(ReelvaDesign.space16),
@@ -108,19 +114,27 @@ class _GlassSidebarState extends State<GlassSidebar> {
                           _isCollapsed = !_isCollapsed;
                         }),
                       ),
-                      if (!_isCollapsed) ...[
-                        const SizedBox(width: ReelvaDesign.space12),
-                        const Expanded(
-                          child: Text(
-                            'Reelva',
-                            style: TextStyle(
-                              color: ReelvaDesign.ink,
-                              fontSize: 22,
-                              fontWeight: FontWeight.w700,
+                      Expanded(
+                        child: _SidebarLabel(
+                          visible: !_isCollapsed,
+                          child: const Padding(
+                            padding: EdgeInsets.only(
+                              left: ReelvaDesign.space12,
+                            ),
+                            child: Text(
+                              'Reelva',
+                              maxLines: 1,
+                              softWrap: false,
+                              overflow: TextOverflow.clip,
+                              style: TextStyle(
+                                color: ReelvaDesign.ink,
+                                fontSize: 22,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
                         ),
-                      ],
+                      ),
                     ],
                   ),
                   const SizedBox(height: ReelvaDesign.space32),
@@ -143,6 +157,34 @@ class _GlassSidebarState extends State<GlassSidebar> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _SidebarLabel extends StatelessWidget {
+  const _SidebarLabel({required this.visible, required this.child});
+
+  final bool visible;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRect(
+      child: AnimatedSwitcher(
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : _sidebarTransitionDuration,
+        switchInCurve: Curves.easeInOutCubic,
+        switchOutCurve: Curves.easeInOutCubic,
+        layoutBuilder: (currentChild, previousChildren) => Stack(
+          alignment: Alignment.centerLeft,
+          children: [
+            ...previousChildren,
+            if (currentChild != null) currentChild,
+          ],
+        ),
+        child: visible ? child : const SizedBox.shrink(),
       ),
     );
   }
@@ -208,12 +250,16 @@ class _NavigationButton extends StatelessWidget {
     final icon = Icon(destination.icon, size: 20, color: color);
     final label = Text(
       destination.label,
+      maxLines: isSidebar ? 1 : null,
+      softWrap: !isSidebar,
+      overflow: isSidebar ? TextOverflow.clip : null,
       textAlign: isSidebar && !iconOnly ? TextAlign.start : TextAlign.center,
       style: TextStyle(
         color: color,
         fontSize: isSidebar ? 14 : 11,
         fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
         height: 1.2,
+        leadingDistribution: isSidebar ? TextLeadingDistribution.even : null,
       ),
     );
 
@@ -245,7 +291,12 @@ class _NavigationButton extends StatelessWidget {
                   ? Row(
                       children: [
                         SizedBox(width: 48, child: icon),
-                        if (!iconOnly) Expanded(child: label),
+                        Expanded(
+                          child: _SidebarLabel(
+                            visible: !iconOnly,
+                            child: label,
+                          ),
+                        ),
                       ],
                     )
                   : Column(
@@ -259,12 +310,10 @@ class _NavigationButton extends StatelessWidget {
       ),
     );
 
-    return iconOnly
-        ? Tooltip(
-            message: destination.label,
-            excludeFromSemantics: true,
-            child: button,
-          )
-        : button;
+    return Tooltip(
+      message: iconOnly ? destination.label : '',
+      excludeFromSemantics: true,
+      child: button,
+    );
   }
 }

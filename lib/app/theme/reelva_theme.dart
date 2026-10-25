@@ -27,6 +27,8 @@ abstract final class ReelvaDesign {
   static const double desktopBreakpoint = 900;
   static const double contentMaxWidth = 1280;
   static const double playerContentMaxWidth = 1136;
+  static const double pageHeaderTitleSize = 24;
+  static const double pageHeaderButtonSize = 40;
   static const double pageHeaderMinHeight = 48;
 }
 

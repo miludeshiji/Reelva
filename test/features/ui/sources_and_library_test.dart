@@ -252,11 +252,13 @@ void main() {
           );
           await tester.pumpAndSettle();
 
-          // 1. 在 SourcesPage 触发添加媒体源弹窗
+          // 1. 在 SourcesPage 进入来源选择页，再打开本地目录配置
           expect(find.byType(SourcesPage), findsOneWidget);
           final addButton = find.byKey(const Key('sources_add_appbar_button'));
           expect(addButton, findsOneWidget);
           await tester.tap(addButton);
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const Key('add_source_type_local')));
           await tester.pumpAndSettle();
 
           // 2. 确认添加并触发 SourceController.addDirectory 真实流程
@@ -264,6 +266,7 @@ void main() {
             const Key('add_source_confirm_button'),
           );
           expect(confirmButton, findsOneWidget);
+          await tester.ensureVisible(confirmButton);
           await tester.tap(confirmButton);
           await tester.pumpAndSettle();
 

@@ -128,7 +128,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                       scaler.scale(11) * 1.4 +
                       ReelvaDesign.space4;
 
-                  return CustomScrollView(
+                  final content = CustomScrollView(
                     key: const Key('library_works_scroll_view'),
                     controller: _scrollController,
                     keyboardDismissBehavior:
@@ -138,42 +138,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Expanded(
-                                  child: GlassPageHeader(title: '影视库'),
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.only(
-                                    top: ReelvaDesign.space20,
-                                    right: ReelvaDesign.space24,
-                                  ),
-                                  child: metaTaskState.running
-                                      ? const SizedBox(
-                                          width: 48,
-                                          height: 48,
-                                          child: Center(
-                                            child: SizedBox(
-                                              width: 20,
-                                              height: 20,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                              ),
-                                            ),
-                                          ),
-                                        )
-                                      : GlassIconButton(
-                                          key: const Key(
-                                            'library_refresh_metadata_button',
-                                          ),
-                                          icon: Icons.refresh_rounded,
-                                          tooltip: '刷新并识别影视元数据',
-                                          onPressed: _triggerRefresh,
-                                        ),
-                                ),
-                              ],
-                            ),
                             Padding(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: padding,
@@ -361,10 +325,56 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                                     ),
                                   ),
                                 ),
+                              SliverToBoxAdapter(
+                                child: SizedBox(
+                                  height: MediaQuery.paddingOf(context).bottom,
+                                ),
+                              ),
                             ],
                           );
                         },
                       ),
+                    ],
+                  );
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Expanded(child: GlassPageHeader(title: '影视库')),
+                          Padding(
+                            padding: const EdgeInsets.only(
+                              top: ReelvaDesign.space12,
+                              right: ReelvaDesign.space24,
+                            ),
+                            child: metaTaskState.running
+                                ? const SizedBox(
+                                    width: 48,
+                                    height: 48,
+                                    child: Center(
+                                      child: SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                : GlassIconButton(
+                                    key: const Key(
+                                      'library_refresh_metadata_button',
+                                    ),
+                                    icon: Icons.refresh_rounded,
+                                    size: ReelvaDesign.pageHeaderButtonSize,
+                                    tooltip: '刷新并识别影视元数据',
+                                    onPressed: _triggerRefresh,
+                                  ),
+                          ),
+                        ],
+                      ),
+                      Expanded(child: content),
                     ],
                   );
                 },

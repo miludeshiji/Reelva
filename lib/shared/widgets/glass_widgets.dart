@@ -82,6 +82,7 @@ class GlassButton extends StatelessWidget {
     this.onPressed,
     this.primary = false,
     this.tooltip,
+    this.style,
   });
 
   final Widget child;
@@ -89,23 +90,26 @@ class GlassButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final bool primary;
   final String? tooltip;
+  final ButtonStyle? style;
 
   @override
   Widget build(BuildContext context) {
     final Widget button;
     if (primary) {
       button = icon == null
-          ? FilledButton(onPressed: onPressed, child: child)
+          ? FilledButton(onPressed: onPressed, style: style, child: child)
           : FilledButton.icon(
               onPressed: onPressed,
+              style: style,
               icon: Icon(icon),
               label: child,
             );
     } else {
       button = icon == null
-          ? OutlinedButton(onPressed: onPressed, child: child)
+          ? OutlinedButton(onPressed: onPressed, style: style, child: child)
           : OutlinedButton.icon(
               onPressed: onPressed,
+              style: style,
               icon: Icon(icon),
               label: child,
             );
@@ -121,12 +125,14 @@ class GlassIconButton extends StatelessWidget {
     required this.onPressed,
     required this.tooltip,
     this.selected = false,
+    this.size = 48,
   });
 
   final IconData icon;
   final VoidCallback? onPressed;
   final String tooltip;
   final bool selected;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
@@ -139,7 +145,9 @@ class GlassIconButton extends StatelessWidget {
       isSelected: selected,
       icon: Icon(icon),
       style: IconButton.styleFrom(
-        minimumSize: const Size(48, 48),
+        minimumSize: Size.square(size),
+        iconSize: size / 2,
+        padding: EdgeInsets.all(size / 4),
         shape: const CircleBorder(),
         backgroundColor: selected
             ? scheme.primaryContainer
@@ -277,7 +285,7 @@ class GlassPageHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final heading = ConstrainedBox(
@@ -297,7 +305,7 @@ class GlassPageHeader extends StatelessWidget {
                         child: Text(
                           title,
                           style: theme.textTheme.headlineLarge?.copyWith(
-                            fontSize: 30,
+                            fontSize: ReelvaDesign.pageHeaderTitleSize,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -321,10 +329,12 @@ class GlassPageHeader extends StatelessWidget {
 
           final stackActions =
               constraints.maxWidth < 600 ||
-              MediaQuery.textScalerOf(context).scale(30) > 42;
+              MediaQuery.textScalerOf(context)
+                      .scale(ReelvaDesign.pageHeaderTitleSize) >
+                  ReelvaDesign.pageHeaderTitleSize * 1.4;
           final actionGroup = Wrap(
-            spacing: 8,
-            runSpacing: 8,
+            spacing: 4,
+            runSpacing: 4,
             alignment: stackActions ? WrapAlignment.start : WrapAlignment.end,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: actions,
@@ -339,7 +349,7 @@ class GlassPageHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(child: heading),
-              const SizedBox(width: 24),
+              const SizedBox(width: 16),
               ConstrainedBox(
                 constraints: BoxConstraints(
                   maxWidth: constraints.maxWidth * 0.45,

@@ -9,6 +9,9 @@ import 'package:reelva/features/player/domain/playback_resource.dart';
 import 'package:reelva/features/player/presentation/player_page.dart';
 import 'package:reelva/features/settings/about_page.dart';
 import 'package:reelva/features/settings/settings_page.dart';
+import 'package:reelva/features/settings/settings_subpages.dart';
+import 'package:reelva/features/sources/add_source_page.dart';
+import 'package:reelva/features/sources/source_setup_page.dart';
 import 'package:reelva/features/sources/sources_page.dart';
 import 'package:reelva/shared/widgets/empty_state_view.dart';
 
@@ -64,6 +67,33 @@ GoRouter createRouter({String initialLocation = '/'}) {
                 path: '/sources',
                 pageBuilder: (context, state) =>
                     _buildMaterialPage(state, const SourcesPage()),
+                routes: [
+                  GoRoute(
+                    path: 'add',
+                    pageBuilder: (context, state) =>
+                        _buildMaterialPage(state, const AddSourcePage()),
+                    routes: [
+                      GoRoute(
+                        path: ':kind',
+                        redirect: (context, state) =>
+                            SourceSetupKind.values.any(
+                              (kind) =>
+                                  kind.name == state.pathParameters['kind'],
+                            )
+                            ? null
+                            : '/sources/add',
+                        pageBuilder: (context, state) => _buildMaterialPage(
+                          state,
+                          SourceSetupPage(
+                            kind: SourceSetupKind.values.byName(
+                              state.pathParameters['kind']!,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ],
           ),
@@ -74,6 +104,23 @@ GoRouter createRouter({String initialLocation = '/'}) {
                 pageBuilder: (context, state) =>
                     _buildMaterialPage(state, const SettingsPage()),
                 routes: [
+                  GoRoute(
+                    path: 'tmdb',
+                    pageBuilder: (context, state) =>
+                        _buildMaterialPage(state, const TmdbSettingsPage()),
+                  ),
+                  GoRoute(
+                    path: 'sync',
+                    pageBuilder: (context, state) =>
+                        _buildMaterialPage(state, const SyncSettingsPage()),
+                  ),
+                  GoRoute(
+                    path: 'cache',
+                    pageBuilder: (context, state) => _buildMaterialPage(
+                      state,
+                      const PosterCacheSettingsPage(),
+                    ),
+                  ),
                   GoRoute(
                     path: 'about',
                     pageBuilder: (context, state) =>

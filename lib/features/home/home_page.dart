@@ -225,7 +225,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                 : 0) +
             ReelvaDesign.space4;
 
-        return RefreshIndicator(
+        final content = RefreshIndicator(
           onRefresh: () async {
             _retryAll();
           },
@@ -233,17 +233,6 @@ class _HomePageState extends ConsumerState<HomePage> {
             key: const Key('home_content_scroll_view'),
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
-              SliverPadding(
-                padding: EdgeInsets.fromLTRB(
-                  inset,
-                  ReelvaDesign.space20,
-                  inset,
-                  ReelvaDesign.space20,
-                ),
-                sliver: SliverToBoxAdapter(
-                  child: _buildHeader(context, isDesktop: isDesktop),
-                ),
-              ),
               SliverPadding(
                 padding: EdgeInsets.symmetric(horizontal: inset),
                 sliver: SliverToBoxAdapter(
@@ -385,11 +374,29 @@ class _HomePageState extends ConsumerState<HomePage> {
                 ),
               SliverToBoxAdapter(
                 child: SizedBox(
-                  height: 112 + MediaQuery.paddingOf(context).bottom,
+                  height: isDesktop
+                      ? 112
+                      : ReelvaDesign.space32 +
+                            MediaQuery.paddingOf(context).bottom,
                 ),
               ),
             ],
           ),
+        );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                inset,
+                ReelvaDesign.space12,
+                inset,
+                ReelvaDesign.space12,
+              ),
+              child: _buildHeader(context, isDesktop: isDesktop),
+            ),
+            Expanded(child: content),
+          ],
         );
       },
     );
@@ -423,7 +430,7 @@ class _HomePageState extends ConsumerState<HomePage> {
       child: Wrap(
         alignment: WrapAlignment.spaceBetween,
         crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: 16,
+        spacing: 12,
         runSpacing: 8,
         children: [
           ConstrainedBox(
@@ -442,7 +449,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.headlineLarge
                           ?.copyWith(
-                            fontSize: 30,
+                            fontSize: ReelvaDesign.pageHeaderTitleSize,
                             fontWeight: FontWeight.w700,
                             color: ReelvaDesign.ink,
                           ),
@@ -453,13 +460,14 @@ class _HomePageState extends ConsumerState<HomePage> {
             ),
           ),
           Wrap(
-            spacing: 8,
+            spacing: 4,
             runSpacing: 8,
             children: [
               GlassIconButton(
                 key: const Key('home_open_player_fab'),
                 tooltip: '打开播放器',
                 icon: Icons.play_arrow_rounded,
+                size: ReelvaDesign.pageHeaderButtonSize,
                 onPressed: () {
                   final router = GoRouter.of(context);
                   if (router.routeInformationProvider.value.uri.path !=
@@ -472,12 +480,26 @@ class _HomePageState extends ConsumerState<HomePage> {
                 GlassButton(
                   icon: Icons.search_rounded,
                   tooltip: '前往影视库搜索作品',
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(
+                      ReelvaDesign.pageHeaderButtonSize,
+                      ReelvaDesign.pageHeaderButtonSize,
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    iconSize: 20,
+                    textStyle: Theme.of(context).textTheme.labelLarge
+                        ?.copyWith(fontSize: 12),
+                  ),
                   onPressed: () => context.go('/library'),
                   child: const Text('搜索影视作品'),
                 )
               else
                 GlassIconButton(
                   icon: Icons.search_rounded,
+                  size: ReelvaDesign.pageHeaderButtonSize,
                   onPressed: () => context.go('/library'),
                   tooltip: '前往影视库搜索作品',
                 ),

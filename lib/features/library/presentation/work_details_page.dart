@@ -170,6 +170,9 @@ class _WorkDetailsPageState extends ConsumerState<WorkDetailsPage> {
                   ),
                   child: SingleChildScrollView(
                     key: const Key('work_details_scroll_view'),
+                    padding: EdgeInsets.only(
+                      bottom: MediaQuery.paddingOf(context).bottom,
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -220,6 +223,7 @@ class _WorkDetailsPageState extends ConsumerState<WorkDetailsPage> {
             title: '作品详情',
             leading: GlassIconButton(
               icon: Icons.arrow_back_rounded,
+              size: ReelvaDesign.pageHeaderButtonSize,
               tooltip: '返回影视库',
               onPressed: () => context.go('/library'),
             ),
@@ -271,6 +275,7 @@ class _WorkDetailsPageState extends ConsumerState<WorkDetailsPage> {
                         child: GlassIconButton(
                           key: const Key('work_details_back_button'),
                           icon: Icons.arrow_back_rounded,
+                          size: ReelvaDesign.pageHeaderButtonSize,
                           tooltip: '返回影视库',
                           onPressed: () => context.go('/library'),
                         ),
@@ -279,6 +284,7 @@ class _WorkDetailsPageState extends ConsumerState<WorkDetailsPage> {
                       Expanded(
                         child: Align(
                           alignment: Alignment.centerLeft,
+                          heightFactor: 1,
                           child: GlassCard(
                             padding: const EdgeInsets.symmetric(
                               horizontal: ReelvaDesign.space12,

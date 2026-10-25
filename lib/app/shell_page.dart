@@ -86,13 +86,23 @@ class AppShell extends StatelessWidget {
       );
     }
 
+    final showBottomNavigationBar = const {
+      '/',
+      '/library',
+      '/sources',
+      '/settings',
+    }.contains(GoRouterState.of(context).uri.path);
+
     return Scaffold(
       backgroundColor: ReelvaDesign.background,
+      extendBody: showBottomNavigationBar,
       body: navigationShell,
-      bottomNavigationBar: GlassBottomNavigationBar(
-        selectedIndex: navigationShell.currentIndex,
-        onDestinationSelected: _onDestinationSelected,
-      ),
+      bottomNavigationBar: showBottomNavigationBar
+          ? GlassBottomNavigationBar(
+              selectedIndex: navigationShell.currentIndex,
+              onDestinationSelected: _onDestinationSelected,
+            )
+          : null,
     );
   }
 }
