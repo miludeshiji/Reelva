@@ -251,7 +251,7 @@ jobs:
       - name: 构建 Windows 应用
         run: |
           $ErrorActionPreference = 'Stop'
-          flutter build windows --${{ needs.metadata.outputs.mode }} --target-platform windows-x64 --no-pub
+          flutter build windows --${{ needs.metadata.outputs.mode }} --no-pub
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: 打包 Windows 产物
         run: |
