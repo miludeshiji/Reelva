@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
@@ -179,6 +181,201 @@ Future<void> _pumpDetails(
 }
 
 void main() {
+  for (final unmatchedOnly in [false, true]) {
+    testWidgets('加载更多保留列表和滚动位置，失败可重试（待匹配：$unmatchedOnly）', (tester) async {
+      final works = List.generate(
+        205,
+        (index) => LibraryWork(id: index + 1, title: '作品 ${index + 1}'),
+      );
+      final requests = <LibraryWorksFilter>[];
+      final pages = <StreamController<List<LibraryWork>>>[];
+      Stream<List<LibraryWork>> watchPage(LibraryWorksFilter filter) {
+        requests.add(filter);
+        if (filter.limit == 100) return Stream.value(works.take(100).toList());
+        final page = StreamController<List<LibraryWork>>();
+        pages.add(page);
+        return page.stream;
+      }
+
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox.shrink());
+        for (final page in pages) {
+          await page.close();
+        }
+      });
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            metadataControllerProvider.overrideWith(
+              _IdleMetadataController.new,
+            ),
+            libraryWorksProvider.overrideWith(
+              (ref, limit) => watchPage((
+                limit: limit,
+                search: '',
+                type: null,
+                recentlyAdded: false,
+                unmatchedOnly: false,
+              )),
+            ),
+            filteredLibraryWorksProvider.overrideWith(
+              (ref, filter) => watchPage(filter),
+            ),
+          ],
+          child: MaterialApp(
+            theme: ReelvaTheme.light,
+            home: LibraryPage(unmatchedOnly: unmatchedOnly),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final gridFinder = find.byKey(const Key('library_works_grid'));
+      final loadMoreFinder = find.byKey(const Key('library_load_more_button'));
+      final controller = tester
+          .widget<CustomScrollView>(
+            find.byKey(const Key('library_works_scroll_view')),
+          )
+          .controller!;
+      controller.jumpTo(controller.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      final gridElement = tester.element(gridFinder);
+      final offset = controller.offset;
+      expect(offset, greaterThan(0));
+      expect(find.byKey(const Key('library_work_card_100')), findsOneWidget);
+
+      await tester.tap(loadMoreFinder);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(gridFinder, findsOneWidget);
+      expect(tester.element(gridFinder), same(gridElement));
+      expect(controller.offset, closeTo(offset, 0.1));
+      expect(find.byKey(const Key('library_work_card_100')), findsOneWidget);
+      expect(find.byKey(const Key('library_loading_indicator')), findsNothing);
+      expect(
+        find.byKey(const Key('library_load_more_indicator')),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.descendant(
+                of: loadMoreFinder,
+                matching: find.byType(OutlinedButton),
+              ),
+            )
+            .onPressed,
+        isNull,
+      );
+      await tester.tap(loadMoreFinder);
+      await tester.pump();
+      expect(requests.map((request) => request.limit), [100, 200]);
+      expect(
+        requests.every((request) => request.unmatchedOnly == unmatchedOnly),
+        isTrue,
+      );
+
+      pages.last.addError(StateError('分页查询失败'));
+      await tester.pumpAndSettle();
+      expect(tester.element(gridFinder), same(gridElement));
+      expect(controller.offset, closeTo(offset, 0.1));
+      expect(find.byKey(const Key('library_error_widget')), findsNothing);
+      expect(find.text('加载失败，点击重试'), findsOneWidget);
+
+      await tester.tap(loadMoreFinder);
+      await tester.pump();
+      expect(requests.map((request) => request.limit), [100, 200, 200]);
+      expect(tester.element(gridFinder), same(gridElement));
+      expect(controller.offset, closeTo(offset, 0.1));
+      pages.last.add(works.take(200).toList());
+      await tester.pumpAndSettle();
+      expect(tester.element(gridFinder), same(gridElement));
+      expect(controller.offset, closeTo(offset, 0.1));
+      expect(
+        tester.widget<SliverGrid>(gridFinder).delegate.estimatedChildCount,
+        200,
+      );
+
+      controller.jumpTo(controller.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      final secondOffset = controller.offset;
+      await tester.tap(loadMoreFinder);
+      await tester.pump();
+      expect(tester.element(gridFinder), same(gridElement));
+      expect(controller.offset, closeTo(secondOffset, 0.1));
+      expect(requests.map((request) => request.limit), [100, 200, 200, 300]);
+      pages.last.add(works);
+      await tester.pumpAndSettle();
+      expect(tester.element(gridFinder), same(gridElement));
+      expect(controller.offset, closeTo(secondOffset, 0.1));
+      expect(
+        tester.widget<SliverGrid>(gridFinder).delegate.estimatedChildCount,
+        205,
+      );
+      expect(loadMoreFinder, findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('分页等待期间切换筛选重置列表，旧分页结果不会覆盖新筛选', (tester) async {
+    final works = List.generate(
+      100,
+      (index) => LibraryWork(id: index + 1, title: '作品 ${index + 1}'),
+    );
+    final page = StreamController<List<LibraryWork>>();
+    final filteredPage = StreamController<List<LibraryWork>>();
+    final requests = <LibraryWorksFilter>[];
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await page.close();
+      await filteredPage.close();
+    });
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          metadataControllerProvider.overrideWith(_IdleMetadataController.new),
+          libraryWorksProvider.overrideWith(
+            (ref, limit) => limit == 100 ? Stream.value(works) : page.stream,
+          ),
+          filteredLibraryWorksProvider.overrideWith((ref, filter) {
+            requests.add(filter);
+            return filteredPage.stream;
+          }),
+        ],
+        child: MaterialApp(theme: ReelvaTheme.light, home: const LibraryPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final controller = tester
+        .widget<CustomScrollView>(
+          find.byKey(const Key('library_works_scroll_view')),
+        )
+        .controller!;
+    controller.jumpTo(controller.position.maxScrollExtent);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('library_load_more_button')));
+    await tester.pump();
+    controller.jumpTo(0);
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('library_filter_movie')));
+    await tester.pump();
+    expect(requests.single.type, 'movie');
+    expect(requests.single.limit, 100);
+    expect(controller.offset, 0);
+    expect(find.byKey(const Key('library_works_grid')), findsNothing);
+    expect(find.byKey(const Key('library_loading_indicator')), findsOneWidget);
+
+    page.add([...works, _laterMovie]);
+    await tester.pump();
+    expect(find.byKey(const Key('library_works_grid')), findsNothing);
+    filteredPage.add(const [_laterMovie]);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('library_work_card_1')), findsNothing);
+    expect(find.byKey(const Key('library_work_card_105')), findsOneWidget);
+    expect(find.byKey(const Key('library_load_more_button')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('整理结果可进入待匹配列表和手动匹配，处理后实时移出列表', (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1200, 900);

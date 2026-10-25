@@ -92,7 +92,7 @@ class _GlassSidebarState extends State<GlassSidebar> {
       child: Padding(
         padding: const EdgeInsets.all(ReelvaDesign.space16),
         child: _GlassSurface(
-          borderRadius: BorderRadius.circular(ReelvaDesign.radiusLarge),
+          borderRadius: BorderRadius.circular(ReelvaDesign.radius),
           child: SafeArea(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(ReelvaDesign.space16),
@@ -243,7 +243,9 @@ class _NavigationButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final destination = _destinations[index];
     final color = selected ? ReelvaDesign.accent : ReelvaDesign.muted;
-    final borderRadius = BorderRadius.circular(27);
+    final borderRadius = BorderRadius.circular(
+      isSidebar ? ReelvaDesign.radiusSmall : 27,
+    );
     final icon = Icon(destination.icon, size: 20, color: color);
     final label = Text(
       destination.label,
@@ -276,7 +278,7 @@ class _NavigationButton extends StatelessWidget {
           borderRadius: borderRadius,
           onTap: onTap,
           child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: isSidebar ? 54 : 62),
+            constraints: BoxConstraints(minHeight: isSidebar ? 48 : 62),
             child: Padding(
               padding: EdgeInsets.symmetric(
                 horizontal: isSidebar ? 0 : ReelvaDesign.space4,

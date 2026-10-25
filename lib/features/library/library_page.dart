@@ -26,6 +26,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
   final _searchController = TextEditingController();
   final _scrollController = ScrollController();
   int _limit = 100;
+  List<LibraryWork>? _worksBeforeLoadMore;
   String _search = '';
   String? _type;
   bool _recentlyAdded = false;
@@ -77,6 +78,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     setState(() {
       _search = search;
       _limit = 100;
+      _worksBeforeLoadMore = null;
     });
     if (_scrollController.hasClients) _scrollController.jumpTo(0);
   }
@@ -86,6 +88,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     setState(() {
       _type = type;
       _limit = 100;
+      _worksBeforeLoadMore = null;
     });
     if (_scrollController.hasClients) _scrollController.jumpTo(0);
   }
@@ -94,6 +97,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     setState(() {
       _recentlyAdded = !_recentlyAdded;
       _limit = 100;
+      _worksBeforeLoadMore = null;
     });
     if (_scrollController.hasClients) _scrollController.jumpTo(0);
   }
@@ -105,6 +109,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
       _type = null;
       _recentlyAdded = false;
       _limit = 100;
+      _worksBeforeLoadMore = null;
     });
     if (_scrollController.hasClients) _scrollController.jumpTo(0);
   }
@@ -120,9 +125,28 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     );
     final usesFilteredProvider =
         _hasFilters || _recentlyAdded || widget.unmatchedOnly;
-    final worksAsync = usesFilteredProvider
-        ? ref.watch(filteredLibraryWorksProvider(query))
-        : ref.watch(libraryWorksProvider(_limit));
+    final worksProvider = usesFilteredProvider
+        ? filteredLibraryWorksProvider(query)
+        : libraryWorksProvider(_limit);
+    final worksAsync = ref.watch(worksProvider);
+    ref.listen(worksProvider, (_, next) {
+      if (_worksBeforeLoadMore != null &&
+          next.hasValue &&
+          !next.isLoading &&
+          !next.hasError) {
+        setState(() => _worksBeforeLoadMore = null);
+      }
+    });
+    final worksBeforeLoadMore = _worksBeforeLoadMore;
+    final visibleWorksAsync =
+        worksBeforeLoadMore != null && !worksAsync.hasValue
+        ? AsyncData(worksBeforeLoadMore)
+        : worksAsync;
+    final isLoadingMore = worksBeforeLoadMore != null && worksAsync.isLoading;
+    final loadMoreFailed =
+        worksBeforeLoadMore != null &&
+        worksAsync.hasError &&
+        !worksAsync.isLoading;
     final metaTaskState = ref.watch(metadataControllerProvider);
     final isScanning = ref.watch(
       sourceControllerProvider.select(
@@ -290,7 +314,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                           ],
                         ),
                       ),
-                      worksAsync.when(
+                      visibleWorksAsync.when(
                         loading: () => SliverFillRemaining(
                           hasScrollBody: false,
                           child: Center(
@@ -321,17 +345,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                                   const SizedBox(height: ReelvaDesign.space12),
                                   GlassButton(
                                     key: const Key('library_retry_button'),
-                                    onPressed: () {
-                                      if (usesFilteredProvider) {
-                                        ref.invalidate(
-                                          filteredLibraryWorksProvider(query),
-                                        );
-                                      } else {
-                                        ref.invalidate(
-                                          libraryWorksProvider(_limit),
-                                        );
-                                      }
-                                    },
+                                    onPressed: () =>
+                                        ref.invalidate(worksProvider),
                                     icon: Icons.refresh_rounded,
                                     child: const Text('重试'),
                                   ),
@@ -427,7 +442,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                                   }, childCount: works.length),
                                 ),
                               ),
-                              if (works.length >= _limit)
+                              if (worksBeforeLoadMore != null ||
+                                  works.length >= _limit)
                                 SliverToBoxAdapter(
                                   child: Padding(
                                     padding: const EdgeInsets.only(
@@ -438,10 +454,43 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                                         key: const Key(
                                           'library_load_more_button',
                                         ),
-                                        onPressed: () => setState(() {
-                                          _limit += 100;
-                                        }),
-                                        child: const Text('加载更多作品'),
+                                        onPressed: isLoadingMore
+                                            ? null
+                                            : () {
+                                                if (loadMoreFailed) {
+                                                  ref.invalidate(worksProvider);
+                                                } else if (_worksBeforeLoadMore ==
+                                                    null) {
+                                                  setState(() {
+                                                    _worksBeforeLoadMore =
+                                                        works;
+                                                    _limit += 100;
+                                                  });
+                                                }
+                                              },
+                                        child: isLoadingMore
+                                            ? const Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  SizedBox.square(
+                                                    dimension: 20,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                          key: Key(
+                                                            'library_load_more_indicator',
+                                                          ),
+                                                          strokeWidth: 2,
+                                                        ),
+                                                  ),
+                                                  SizedBox(width: 8),
+                                                  Text('正在加载…'),
+                                                ],
+                                              )
+                                            : Text(
+                                                loadMoreFailed
+                                                    ? '加载失败，点击重试'
+                                                    : '加载更多作品',
+                                              ),
                                       ),
                                     ),
                                   ),
