@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:drift/native.dart';
@@ -33,6 +34,7 @@ import 'package:reelva/features/sources/source_setup_page.dart';
 import 'package:reelva/features/sources/sources_page.dart';
 import 'package:reelva/features/sync/application/sync_providers.dart';
 import 'package:reelva/shared/widgets/glass_navigation.dart';
+import 'package:reelva/shared/widgets/glass_widgets.dart';
 
 import '../player/fake_player_engine.dart';
 
@@ -393,6 +395,31 @@ void main() {
             );
           }
 
+          if (viewport.name == 'desktop' &&
+              const {
+                _Page.addSource,
+                _Page.localSource,
+                _Page.webdavSource,
+                _Page.openlistSource,
+                _Page.smbSource,
+                _Page.tmdbSettings,
+                _Page.syncSettings,
+                _Page.cacheSettings,
+              }.contains(page)) {
+            _expectDesktopSubpage(tester, page);
+            await tester.tap(find.byKey(const ValueKey('sidebar_toggle')));
+            await tester.pumpAndSettle();
+            _expectDesktopSubpage(tester, page);
+            if (capture) {
+              await _capture(
+                tester,
+                boundaryKey,
+                '${page.name}-desktop-collapsed.png',
+                viewport.size,
+              );
+            }
+          }
+
           await _exerciseContent(tester, page);
           if (capture && page.widgetType == SourceSetupPage) {
             await tester.ensureVisible(
@@ -437,6 +464,49 @@ void _expectNavigation(WidgetTester tester, _Page page, bool desktop) {
     expect(sidebar.left, 0);
     expect(sidebar.height, tester.view.physicalSize.height);
     expect(home.left, greaterThanOrEqualTo(sidebar.right));
+  }
+}
+
+void _expectDesktopSubpage(WidgetTester tester, _Page page) {
+  final sidebar = tester.getRect(find.byType(GlassSidebar));
+  final availableWidth = tester.view.physicalSize.width - sidebar.right;
+  final expectedWidth = math.min(availableWidth, ReelvaDesign.contentMaxWidth);
+  final header = tester.getRect(find.byType(GlassPageHeader));
+  expect(
+    header.width,
+    closeTo(expectedWidth, 0.01),
+    reason: '桌面子页面应使用与主页面一致的内容宽度',
+  );
+  expect(
+    header.left,
+    closeTo(sidebar.right + (availableWidth - expectedWidth) / 2, 0.01),
+    reason: '侧栏展开或收起时，子页面标题均应与主页面的内容边界对齐',
+  );
+  if (page.widgetType == SourceSetupPage) {
+    final connection = tester.getRect(
+      find.byKey(const Key('source_setup_connection_card')),
+    );
+    final advanced = tester.getRect(
+      find.byKey(const Key('source_setup_advanced_card')),
+    );
+    expect(connection.top, advanced.top);
+    expect(advanced.left, greaterThan(connection.right));
+    expect(connection.left, closeTo(header.left + ReelvaDesign.space24, 0.01));
+    expect(advanced.right, closeTo(header.right - ReelvaDesign.space24, 0.01));
+  } else if (page != _Page.addSource) {
+    final card = tester.getRect(
+      find
+          .descendant(
+            of: find.byType(page.widgetType),
+            matching: find.byType(GlassCard),
+          )
+          .first,
+    );
+    expect(card.left, closeTo(header.left + ReelvaDesign.space24, 0.01));
+    expect(
+      card.width,
+      closeTo(math.min(960, expectedWidth - ReelvaDesign.space24 * 2), 0.01),
+    );
   }
 }
 

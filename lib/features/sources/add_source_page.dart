@@ -19,7 +19,9 @@ class AddSourcePage extends StatelessWidget {
           child: Align(
             alignment: Alignment.topCenter,
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 960),
+              constraints: const BoxConstraints(
+                maxWidth: ReelvaDesign.contentMaxWidth,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [

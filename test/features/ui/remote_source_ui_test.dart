@@ -312,6 +312,63 @@ void main() {
     }
   });
 
+  testWidgets('Windows 宽窄窗口切换保留表单输入和高级选项展开状态', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    try {
+      await tester.pumpWidget(buildTestApp());
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('sources_add_appbar_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('add_source_type_webdav')));
+      await tester.pumpAndSettle();
+      final pageState = tester.state(find.byType(SourceSetupPage));
+      final address = find.byKey(const Key('remote_source_url_field'));
+      await tester.enterText(address, 'https://dav.example.com/movies/');
+      await tester.tap(find.byKey(const Key('add_source_advanced_options')));
+      await tester.pumpAndSettle();
+      final extensions = find.byKey(const Key('add_source_extensions_field'));
+      await tester.enterText(extensions, 'mkv, mp4, webm');
+      final connection = find.byKey(const Key('source_setup_connection_card'));
+      final advanced = find.byKey(const Key('source_setup_advanced_card'));
+      expect(tester.getTopLeft(connection).dy, tester.getTopLeft(advanced).dy);
+
+      tester.view.physicalSize = const Size(390, 844);
+      await tester.pumpAndSettle();
+      expect(tester.state(find.byType(SourceSetupPage)), same(pageState));
+      expect(
+        tester.widget<TextFormField>(address).controller!.text,
+        'https://dav.example.com/movies/',
+      );
+      expect(
+        tester.widget<TextFormField>(extensions).controller!.text,
+        'mkv, mp4, webm',
+      );
+      expect(
+        tester.getTopLeft(advanced).dy,
+        greaterThan(tester.getBottomRight(connection).dy),
+      );
+      final confirm = find.byKey(const Key('add_source_confirm_button'));
+      await tester.ensureVisible(confirm);
+      await tester.pumpAndSettle();
+      expect(confirm.hitTestable(), findsOneWidget);
+
+      tester.view.physicalSize = const Size(1440, 900);
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(connection).dy, tester.getTopLeft(advanced).dy);
+      expect(
+        tester.widget<TextFormField>(extensions).controller!.text,
+        'mkv, mp4, webm',
+      );
+      expect(tester.takeException(), isNull);
+    } finally {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(Duration.zero);
+    }
+  });
+
   for (final kind in [SourceSetupKind.openlist, SourceSetupKind.smb]) {
     testWidgets('${kind.label} 独立配置保留凭据、路径和高级扫描选项', (tester) async {
       try {

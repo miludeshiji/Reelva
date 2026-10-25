@@ -14,7 +14,7 @@ String formatDuration(Duration d) {
   return '$minutes:$seconds';
 }
 
-/// 透明悬浮播放控件；窄屏将字幕、音轨和音量等选项收入设置面板。
+/// 透明悬浮播放控件；音量按需展开，窄屏将字幕、音轨和倍速收入设置面板。
 class PlayerControls extends StatefulWidget {
   const PlayerControls({
     super.key,
@@ -42,6 +42,7 @@ class PlayerControls extends StatefulWidget {
 class _PlayerControlsState extends State<PlayerControls> {
   double _lastNonZeroVolume = 100.0;
   double? _dragPositionMs;
+  FocusNode? _focusBeforeVolumeMenu;
 
   @override
   void initState() {
@@ -59,9 +60,9 @@ class _PlayerControlsState extends State<PlayerControls> {
     }
   }
 
-  void _toggleMute() {
-    if (widget.snapshot.volume > 0) {
-      _lastNonZeroVolume = widget.snapshot.volume;
+  void _toggleMute(PlaybackSnapshot snapshot) {
+    if (snapshot.volume > 0) {
+      _lastNonZeroVolume = snapshot.volume;
       widget.engine.setVolume(0);
     } else {
       widget.engine.setVolume(
@@ -266,16 +267,7 @@ class _PlayerControlsState extends State<PlayerControls> {
         ),
       ],
     );
-    final mute = IconButton(
-      key: const Key('player_mute_button'),
-      icon: Icon(
-        snapshot.volume == 0
-            ? Icons.volume_off_rounded
-            : Icons.volume_up_rounded,
-      ),
-      tooltip: snapshot.volume == 0 ? '取消静音' : '静音',
-      onPressed: _toggleMute,
-    );
+    final volume = _buildVolumeMenu(context, snapshot);
     final fullscreen = IconButton(
       key: const Key('player_fullscreen_button'),
       icon: Icon(
@@ -307,11 +299,8 @@ class _PlayerControlsState extends State<PlayerControls> {
                   child: StreamBuilder<PlaybackSnapshot>(
                     stream: engine.snapshots,
                     initialData: engine.snapshot,
-                    builder: (context, state) => _buildSettings(
-                      context,
-                      state.data ?? snapshot,
-                      closeOnStop: true,
-                    ),
+                    builder: (context, state) =>
+                        _buildSettings(context, state.data ?? snapshot),
                   ),
                 ),
               ),
@@ -385,7 +374,7 @@ class _PlayerControlsState extends State<PlayerControls> {
                   transport,
                   const Spacer(),
                   if (compact) more else _buildSettings(context, snapshot),
-                  mute,
+                  volume,
                   fullscreen,
                 ],
               ),
@@ -396,37 +385,105 @@ class _PlayerControlsState extends State<PlayerControls> {
     );
   }
 
-  Widget _buildSettings(
-    BuildContext context,
-    PlaybackSnapshot snapshot, {
-    bool closeOnStop = false,
-  }) {
+  Widget _buildVolumeMenu(BuildContext context, PlaybackSnapshot snapshot) {
+    const panelWidth = 240.0;
     final theme = Theme.of(context);
     final engine = widget.engine;
-    final volume = SizedBox(
-      width: 144,
-      child: Row(
-        children: [
-          Expanded(
-            child: Slider(
-              key: const Key('player_volume_slider'),
-              value: snapshot.volume.clamp(0.0, 100.0),
-              max: 100.0,
-              onChangeStart: (_) => widget.onInteractionChanged?.call(true),
-              onChanged: engine.setVolume,
-              onChangeEnd: (_) => widget.onInteractionChanged?.call(false),
-            ),
-          ),
-          Text(
-            '${snapshot.volume.round()}%',
-            key: const Key('player_volume_text'),
-            style: theme.textTheme.labelSmall?.copyWith(
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
-          ),
-        ],
+    return MenuAnchor(
+      alignmentOffset: const Offset(-panelWidth, 8),
+      style: const MenuStyle(
+        alignment: Alignment.bottomRight,
+        padding: WidgetStatePropertyAll(EdgeInsets.all(8)),
+      ),
+      consumeOutsideTap: true,
+      onOpen: () {
+        _focusBeforeVolumeMenu = FocusManager.instance.primaryFocus;
+        widget.onInteractionChanged?.call(true);
+      },
+      onClose: () {
+        _focusBeforeVolumeMenu?.requestFocus();
+        _focusBeforeVolumeMenu = null;
+        widget.onInteractionChanged?.call(false);
+      },
+      menuChildren: [
+        StreamBuilder<PlaybackSnapshot>(
+          stream: engine.snapshots,
+          initialData: snapshot,
+          builder: (context, state) {
+            final current = state.data ?? snapshot;
+            final isMuted = current.volume == 0;
+            return SizedBox(
+              key: const Key('player_volume_panel'),
+              width: panelWidth - 16,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text('音量', style: theme.textTheme.labelLarge),
+                        ),
+                        Text(
+                          '${current.volume.round()}%',
+                          key: const Key('player_volume_text'),
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Slider(
+                    key: const Key('player_volume_slider'),
+                    autofocus: true,
+                    value: current.volume.clamp(0.0, 100.0),
+                    max: 100.0,
+                    onChanged: (volume) {
+                      if (volume > 0) _lastNonZeroVolume = volume;
+                      engine.setVolume(volume);
+                    },
+                  ),
+                  MenuItemButton(
+                    key: const Key('player_mute_button'),
+                    closeOnActivate: false,
+                    leadingIcon: Icon(
+                      isMuted
+                          ? Icons.volume_up_rounded
+                          : Icons.volume_off_rounded,
+                    ),
+                    onPressed: () => _toggleMute(current),
+                    child: Text(isMuted ? '取消静音' : '静音'),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ],
+      builder: (context, controller, child) => IconButton(
+        key: const Key('player_volume_button'),
+        icon: Icon(
+          snapshot.volume == 0
+              ? Icons.volume_off_rounded
+              : Icons.volume_up_rounded,
+        ),
+        tooltip: '音量',
+        onPressed: () {
+          if (controller.isOpen) {
+            controller.close();
+          } else {
+            controller.open();
+          }
+        },
       ),
     );
+  }
+
+  Widget _buildSettings(BuildContext context, PlaybackSnapshot snapshot) {
+    final theme = Theme.of(context);
+    final engine = widget.engine;
     return Wrap(
       spacing: ReelvaDesign.space4,
       runSpacing: ReelvaDesign.space4,
@@ -479,18 +536,6 @@ class _PlayerControlsState extends State<PlayerControls> {
             ),
           ),
         ),
-        IconButton(
-          key: const Key('player_stop_button'),
-          icon: const Icon(Icons.stop_rounded),
-          tooltip: '停止',
-          onPressed: snapshot.status == PlaybackStatus.idle
-              ? null
-              : () {
-                  if (closeOnStop) Navigator.of(context).pop();
-                  engine.stop();
-                },
-        ),
-        volume,
       ],
     );
   }

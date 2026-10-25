@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:reelva/features/player/domain/playback_snapshot.dart';
 import 'package:reelva/features/player/presentation/player_controls.dart';
@@ -264,56 +265,105 @@ void main() {
     );
 
     testWidgets(
-      'Volume mute and unmute restores previous non-zero volume (80 -> 0 -> 80)',
+      'Volume panel adjusts volume, restores mute level and dismisses on toggle, outside tap and Escape',
       (tester) async {
-        final engine = FakePlayerEngine();
+        const snapshot = PlaybackSnapshot(
+          status: PlaybackStatus.playing,
+          volume: 80,
+        );
+        final engine = FakePlayerEngine(initialSnapshot: snapshot);
+        addTearDown(engine.dispose);
+        final interactions = <bool>[];
 
         await tester.pumpWidget(
           MaterialApp(
             home: Scaffold(
-              body: PlayerControls(
-                snapshot: const PlaybackSnapshot(
-                  status: PlaybackStatus.playing,
-                  volume: 80.0,
+              body: StreamBuilder<PlaybackSnapshot>(
+                stream: engine.snapshots,
+                initialData: snapshot,
+                builder: (context, state) => PlayerControls(
+                  snapshot: state.data!,
+                  engine: engine,
+                  isFullscreen: false,
+                  onToggleFullscreen: () {},
+                  onInteractionChanged: interactions.add,
                 ),
-                engine: engine,
-                isFullscreen: false,
-                onToggleFullscreen: () {},
               ),
             ),
           ),
         );
 
+        final volumeButton = find.byKey(const Key('player_volume_button'));
+        final panel = find.byKey(const Key('player_volume_panel'));
+        final slider = find.byKey(const Key('player_volume_slider'));
+        final mute = find.byKey(const Key('player_mute_button'));
+        expect(slider, findsNothing);
+        expect(find.byKey(const Key('player_volume_text')), findsNothing);
+        expect(find.byKey(const Key('player_stop_button')), findsNothing);
+
+        await tester.tap(volumeButton);
+        await tester.pumpAndSettle();
+        expect(panel, findsOneWidget);
         expect(find.text('80%'), findsOneWidget);
+        expect(engine.setVolumeCount, 0);
+        expect(interactions, [true]);
 
-        // Tap mute: volume becomes 0
-        await tester.tap(find.byKey(const Key('player_mute_button')));
-        await tester.pump();
-        expect(engine.setVolumeCount, 1);
-        expect(engine.lastVolume, 0.0);
-
-        // Component receives update with volume = 0
-        await tester.pumpWidget(
-          MaterialApp(
-            home: Scaffold(
-              body: PlayerControls(
-                snapshot: const PlaybackSnapshot(
-                  status: PlaybackStatus.playing,
-                  volume: 0.0,
-                ),
-                engine: engine,
-                isFullscreen: false,
-                onToggleFullscreen: () {},
-              ),
-            ),
+        await tester.tap(mute);
+        await tester.pumpAndSettle();
+        expect(engine.lastVolume, 0);
+        expect(find.text('取消静音'), findsOneWidget);
+        expect(tester.widget<Slider>(slider).value, 0);
+        expect(
+          tester.widget<IconButton>(volumeButton).icon,
+          isA<Icon>().having(
+            (icon) => icon.icon,
+            'icon',
+            Icons.volume_off_rounded,
           ),
         );
 
-        // Tap unmute: volume must restore to 80.0, not default 100.0
-        await tester.tap(find.byKey(const Key('player_mute_button')));
-        await tester.pump();
+        await tester.tap(mute);
+        await tester.pumpAndSettle();
         expect(engine.setVolumeCount, 2);
-        expect(engine.lastVolume, 80.0);
+        expect(engine.lastVolume, 80);
+        expect(find.text('静音'), findsOneWidget);
+
+        await tester.drag(slider, const Offset(-25, 0));
+        await tester.pump();
+        final adjustedVolume = engine.lastVolume!;
+        expect(adjustedVolume, inExclusiveRange(0, 80));
+        expect(tester.widget<Slider>(slider).value, adjustedVolume);
+        expect(find.text('${adjustedVolume.round()}%'), findsOneWidget);
+        await tester.tap(mute);
+        await tester.pumpAndSettle();
+        expect(engine.lastVolume, 0);
+        await tester.tap(mute);
+        await tester.pumpAndSettle();
+        expect(engine.lastVolume, adjustedVolume);
+
+        await tester.tap(mute);
+        await tester.pumpAndSettle();
+        await tester.drag(slider, const Offset(25, 0));
+        await tester.pump();
+        expect(engine.lastVolume, greaterThan(0));
+        expect(find.text('静音'), findsOneWidget);
+
+        await tester.tap(volumeButton);
+        await tester.pumpAndSettle();
+        expect(panel, findsNothing);
+        expect(interactions, [true, false]);
+        await tester.tap(volumeButton);
+        await tester.pumpAndSettle();
+        await tester.tapAt(const Offset(10, 10));
+        await tester.pumpAndSettle();
+        expect(panel, findsNothing);
+        await tester.tap(volumeButton);
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(panel, findsNothing);
+        expect(interactions, [true, false, true, false, true, false]);
+        expect(engine.stopCount, 0);
       },
     );
 

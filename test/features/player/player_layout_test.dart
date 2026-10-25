@@ -228,6 +228,21 @@ void main() {
 
         engine.emit(engine.snapshot.copyWith(status: PlaybackStatus.paused));
         await tester.pump();
+        expect(find.byKey(const Key('player_stop_button')), findsNothing);
+        expect(find.byKey(const Key('player_volume_slider')), findsNothing);
+        final volumeButton = find.byKey(const Key('player_volume_button'));
+        await tester.tap(volumeButton);
+        await tester.pumpAndSettle();
+        final volumePanel = tester.getRect(
+          find.byKey(const Key('player_volume_panel')),
+        );
+        expect(volumePanel.left, greaterThanOrEqualTo(0));
+        expect(volumePanel.right, lessThanOrEqualTo(viewport.size.width));
+        expect(volumePanel.top, greaterThanOrEqualTo(0));
+        expect(volumePanel.bottom, lessThan(tester.getRect(volumeButton).top));
+        expect(tester.takeException(), isNull);
+        await tester.tap(volumeButton);
+        await tester.pumpAndSettle();
         final originalControls = tester.state(find.byType(PlayerControls));
         await tester.ensureVisible(find.byKey(_fullscreenKey));
         await tester.tap(find.byKey(_fullscreenKey));
@@ -248,6 +263,15 @@ void main() {
         );
         expect(engine.openCount, 2);
         expect(engine.isDisposed, isFalse);
+        await tester.tap(volumeButton);
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('player_volume_panel')), findsNothing);
+        expect(
+          find.byKey(const Key('fullscreen_exit_back_button')),
+          findsOneWidget,
+        );
         await tester.tap(find.byKey(const Key('fullscreen_exit_back_button')));
         await tester.pumpAndSettle();
         expect(
@@ -347,19 +371,27 @@ void main() {
       await _mountPlayer(tester, engine, size: const Size(1440, 1000));
       final controls = tester.state(find.byType(PlayerControls));
       final frame = tester.element(find.byKey(_frameKey));
+      final volumeButton = find.byKey(const Key('player_volume_button'));
+      await tester.tap(volumeButton);
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('player_mute_button')));
       await tester.pump();
       expect(engine.lastVolume, 0);
+      await tester.tap(volumeButton);
+      await tester.pumpAndSettle();
 
       tester.view.physicalSize = const Size(390, 844);
       await tester.pumpAndSettle();
       expect(tester.state(find.byType(PlayerControls)), same(controls));
       expect(tester.element(find.byKey(_frameKey)), same(frame));
-      final mute = find.byKey(const Key('player_mute_button'));
-      await tester.ensureVisible(mute);
-      await tester.tap(mute);
+      await tester.ensureVisible(volumeButton);
+      await tester.tap(volumeButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('player_mute_button')));
       await tester.pump();
       expect(engine.lastVolume, 75);
+      await tester.tap(volumeButton);
+      await tester.pumpAndSettle();
       await tester.pump(const Duration(seconds: 4));
       await tester.pump(const Duration(milliseconds: 250));
       expect(find.byKey(_fullscreenKey).hitTestable(), findsNothing);
@@ -402,6 +434,15 @@ void main() {
       await tester.tap(find.text('1.5x'));
       await tester.pumpAndSettle();
       expect(engine.lastRate, 1.5);
+      expect(find.byKey(const Key('player_stop_button')), findsNothing);
+      expect(find.byKey(const Key('player_volume_slider')), findsNothing);
+      await tester.tapAt(const Offset(10, 100));
+      await tester.pumpAndSettle();
+      expect(find.byType(BottomSheet), findsNothing);
+
+      final volumeButton = find.byKey(const Key('player_volume_button'));
+      await tester.tap(volumeButton);
+      await tester.pumpAndSettle();
       final slider = find.byKey(const Key('player_volume_slider'));
       await tester.drag(slider, const Offset(-25, 0));
       await tester.pump();
@@ -416,14 +457,13 @@ void main() {
       expect(_panelOpacity(tester), 0);
       await tester.tapAt(center);
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('player_more_button')));
+      await tester.tap(volumeButton);
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('player_stop_button')));
+      expect(find.byKey(const Key('player_volume_panel')), findsOneWidget);
+      await tester.tap(volumeButton);
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('player_empty_surface')), findsOneWidget);
-      expect(find.byType(BottomSheet), findsNothing);
-      await tester.tap(find.byKey(const Key('idle_open_file_button')));
-      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('player_volume_panel')), findsNothing);
+      expect(engine.stopCount, 0);
       await tester.pump(const Duration(seconds: 4));
       await tester.pump(const Duration(milliseconds: 250));
       expect(_panelOpacity(tester), 0);

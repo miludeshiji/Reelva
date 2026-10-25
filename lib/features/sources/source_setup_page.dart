@@ -155,7 +155,9 @@ class _SourceSetupPageState extends ConsumerState<SourceSetupPage> {
           child: Align(
             alignment: Alignment.topCenter,
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 640),
+              constraints: const BoxConstraints(
+                maxWidth: ReelvaDesign.contentMaxWidth,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -182,132 +184,191 @@ class _SourceSetupPageState extends ConsumerState<SourceSetupPage> {
                       ),
                       child: Form(
                         key: _formKey,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          spacing: ReelvaDesign.space16,
-                          children: [
-                            GlassCard(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                spacing: ReelvaDesign.space16,
-                                children: [
-                                  Row(
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final twoColumns =
+                                constraints.maxWidth >=
+                                ReelvaDesign.desktopBreakpoint -
+                                    ReelvaDesign.space24 * 2;
+                            final mainWidth = twoColumns
+                                ? (constraints.maxWidth -
+                                          ReelvaDesign.space24) *
+                                      0.6
+                                : constraints.maxWidth;
+                            final advancedWidth = twoColumns
+                                ? constraints.maxWidth -
+                                      ReelvaDesign.space24 -
+                                      mainWidth
+                                : constraints.maxWidth;
+                            return Wrap(
+                              spacing: ReelvaDesign.space24,
+                              runSpacing: ReelvaDesign.space16,
+                              children: [
+                                SizedBox(
+                                  width: mainWidth,
+                                  child: GlassCard(
+                                    key: const Key(
+                                      'source_setup_connection_card',
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      spacing: ReelvaDesign.space16,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Container(
+                                              width: 40,
+                                              height: 40,
+                                              decoration: BoxDecoration(
+                                                color: theme
+                                                    .colorScheme
+                                                    .primaryContainer,
+                                                borderRadius:
+                                                    BorderRadius.circular(
+                                                      ReelvaDesign.radiusSmall,
+                                                    ),
+                                              ),
+                                              child: Icon(
+                                                widget.kind.icon,
+                                                color: ReelvaDesign.accent,
+                                                size: 22,
+                                              ),
+                                            ),
+                                            const SizedBox(
+                                              width: ReelvaDesign.space12,
+                                            ),
+                                            Expanded(
+                                              child: Text(
+                                                _isLocal ? '目录信息' : '连接信息',
+                                                style:
+                                                    theme.textTheme.titleSmall,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        ..._connectionFields(),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: advancedWidth,
+                                  child: GlassCard(
+                                    key: const Key(
+                                      'source_setup_advanced_card',
+                                    ),
+                                    padding: EdgeInsets.zero,
+                                    child: ExpansionTile(
+                                      key: const Key(
+                                        'add_source_advanced_options',
+                                      ),
+                                      title: const Text('高级选项'),
+                                      maintainState: true,
+                                      shape: const Border(),
+                                      collapsedShape: const Border(),
+                                      tilePadding: const EdgeInsets.symmetric(
+                                        horizontal: ReelvaDesign.space20,
+                                        vertical: ReelvaDesign.space4,
+                                      ),
+                                      childrenPadding:
+                                          const EdgeInsets.fromLTRB(
+                                            ReelvaDesign.space20,
+                                            ReelvaDesign.space16,
+                                            ReelvaDesign.space20,
+                                            ReelvaDesign.space20,
+                                          ),
+                                      children: [
+                                        Column(
+                                          spacing: ReelvaDesign.space16,
+                                          children: _advancedFields(),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: mainWidth,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    spacing: ReelvaDesign.space16,
                                     children: [
-                                      Container(
-                                        width: 40,
-                                        height: 40,
-                                        decoration: BoxDecoration(
-                                          color: theme
-                                              .colorScheme
-                                              .primaryContainer,
-                                          borderRadius: BorderRadius.circular(
-                                            ReelvaDesign.radiusSmall,
+                                      if (_errorMessage != null)
+                                        Semantics(
+                                          liveRegion: true,
+                                          child: Text(
+                                            _errorMessage!,
+                                            style: theme.textTheme.bodySmall
+                                                ?.copyWith(
+                                                  color:
+                                                      theme.colorScheme.error,
+                                                ),
                                           ),
                                         ),
-                                        child: Icon(
-                                          widget.kind.icon,
-                                          color: ReelvaDesign.accent,
-                                          size: 22,
-                                        ),
-                                      ),
-                                      const SizedBox(
-                                        width: ReelvaDesign.space12,
-                                      ),
-                                      Expanded(
-                                        child: Text(
-                                          _isLocal ? '目录信息' : '连接信息',
-                                          style: theme.textTheme.titleSmall,
-                                        ),
+                                      LayoutBuilder(
+                                        builder: (context, constraints) {
+                                          final cancel = OutlinedButton(
+                                            onPressed: _isSubmitting
+                                                ? null
+                                                : () => context.pop(),
+                                            child: const Text('取消'),
+                                          );
+                                          final submit = FilledButton.icon(
+                                            key: const Key(
+                                              'add_source_confirm_button',
+                                            ),
+                                            onPressed: _isSubmitting
+                                                ? null
+                                                : _submit,
+                                            icon: _isSubmitting
+                                                ? const SizedBox.square(
+                                                    dimension: 18,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                          strokeWidth: 2,
+                                                          color: ReelvaDesign
+                                                              .accentForeground,
+                                                        ),
+                                                  )
+                                                : Icon(
+                                                    _isLocal
+                                                        ? Icons
+                                                              .create_new_folder_outlined
+                                                        : Icons.add,
+                                                  ),
+                                            label: Text(
+                                              _isLocal ? '选择目录并添加' : '添加媒体源',
+                                            ),
+                                          );
+                                          if (constraints.maxWidth < 360 ||
+                                              MediaQuery.textScalerOf(context)
+                                                      .scale(14) >
+                                                  14 * 1.3) {
+                                            return Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.stretch,
+                                              spacing: ReelvaDesign.space12,
+                                              children: [submit, cancel],
+                                            );
+                                          }
+                                          return Row(
+                                            children: [
+                                              cancel,
+                                              const SizedBox(
+                                                width: ReelvaDesign.space12,
+                                              ),
+                                              Expanded(child: submit),
+                                            ],
+                                          );
+                                        },
                                       ),
                                     ],
                                   ),
-                                  ..._connectionFields(),
-                                ],
-                              ),
-                            ),
-                            GlassCard(
-                              padding: EdgeInsets.zero,
-                              child: ExpansionTile(
-                                key: const Key('add_source_advanced_options'),
-                                title: const Text('高级选项'),
-                                maintainState: true,
-                                shape: const Border(),
-                                collapsedShape: const Border(),
-                                tilePadding: const EdgeInsets.symmetric(
-                                  horizontal: ReelvaDesign.space20,
-                                  vertical: ReelvaDesign.space4,
                                 ),
-                                childrenPadding: const EdgeInsets.fromLTRB(
-                                  ReelvaDesign.space20,
-                                  ReelvaDesign.space16,
-                                  ReelvaDesign.space20,
-                                  ReelvaDesign.space20,
-                                ),
-                                children: [
-                                  Column(
-                                    spacing: ReelvaDesign.space16,
-                                    children: _advancedFields(),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (_errorMessage != null)
-                              Semantics(
-                                liveRegion: true,
-                                child: Text(
-                                  _errorMessage!,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: theme.colorScheme.error,
-                                  ),
-                                ),
-                              ),
-                            LayoutBuilder(
-                              builder: (context, constraints) {
-                                final cancel = OutlinedButton(
-                                  onPressed: _isSubmitting
-                                      ? null
-                                      : () => context.pop(),
-                                  child: const Text('取消'),
-                                );
-                                final submit = FilledButton.icon(
-                                  key: const Key('add_source_confirm_button'),
-                                  onPressed: _isSubmitting ? null : _submit,
-                                  icon: _isSubmitting
-                                      ? const SizedBox.square(
-                                          dimension: 18,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color:
-                                                ReelvaDesign.accentForeground,
-                                          ),
-                                        )
-                                      : Icon(
-                                          _isLocal
-                                              ? Icons.create_new_folder_outlined
-                                              : Icons.add,
-                                        ),
-                                  label: Text(_isLocal ? '选择目录并添加' : '添加媒体源'),
-                                );
-                                if (constraints.maxWidth < 360 ||
-                                    MediaQuery.textScalerOf(context).scale(14) >
-                                        14 * 1.3) {
-                                  return Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    spacing: ReelvaDesign.space12,
-                                    children: [submit, cancel],
-                                  );
-                                }
-                                return Row(
-                                  children: [
-                                    cancel,
-                                    const SizedBox(width: ReelvaDesign.space12),
-                                    Expanded(child: submit),
-                                  ],
-                                );
-                              },
-                            ),
-                          ],
+                              ],
+                            );
+                          },
                         ),
                       ),
                     ),

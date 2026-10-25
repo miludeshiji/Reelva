@@ -419,7 +419,9 @@ class _SettingsSubpage extends StatelessWidget {
           child: Align(
             alignment: Alignment.topCenter,
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 640),
+              constraints: const BoxConstraints(
+                maxWidth: ReelvaDesign.contentMaxWidth,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -444,7 +446,13 @@ class _SettingsSubpage extends StatelessWidget {
                         ReelvaDesign.space32 +
                             MediaQuery.paddingOf(context).bottom,
                       ),
-                      child: child,
+                      child: Align(
+                        alignment: Alignment.topLeft,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 960),
+                          child: child,
+                        ),
+                      ),
                     ),
                   ),
                 ],
