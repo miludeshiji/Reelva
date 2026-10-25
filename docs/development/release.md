@@ -25,8 +25,10 @@ Reelva 通过 GitHub Actions 提供 3 个工作流，覆盖质量分析、跨平
 
 Debug 构建（`release: false`，含 PR 与手动调试）只生成 3 个 `-debug.apk` 与 1 个 `Reelva-{version}-windows-x64-debug.zip`，不生成 Debug 安装包；Debug 包仅供编译与开发测试用途，不附带且不分发不可再分发的调试 CRT。
 
-- Windows 安装程序基于 `windows/installer.iss`，使用 Inno Setup 内置默认语言编译，无代码签名；支持系统标准安装目录与可选当前用户安装模式，创建开始菜单快捷方式、可选桌面快捷方式及系统标准卸载入口（卸载不删除用户应用数据），支持 `/VERYSILENT` 静默安装；静默安装后不自动启动应用，交互安装可选择完成后启动。
+- Windows 安装程序基于 `windows/installer.iss`，支持简体中文与英文，按 Windows 界面语言自动选择，安装时也可手动切换；无代码签名。支持系统标准安装目录与可选当前用户安装模式，创建开始菜单快捷方式、可选桌面快捷方式及系统标准卸载入口（卸载不删除用户应用数据），支持 `/VERYSILENT` 静默安装；静默安装后不自动启动应用，交互安装可选择完成后启动。
 - Android APK 按分架构拆分（`--split-per-abi`），目标平台为 arm、arm64、x64。Actions 产物按架构独立上传，每个下载项只包含对应架构的 APK；正式发布时收集这三个产物，并分别上传为 Release 附件。
+
+简体中文语言文件随仓库保存在 `windows/languages/ChineseSimplified.isl`，来源为 [Inno Setup 官方翻译](https://github.com/jrsoftware/issrc/blob/6ef32198ef1f7b7b375cd4b6b90896c2a58eb4c2/Files/Languages/ChineseSimplified.isl)（适用于 Inno Setup 6.5.0+，保留上游维护者信息）。安装脚本通过相对路径引用，本地与 CI 使用相同配置；工作流无需下载或安装中文语言文件。可通过 `/LANG=chinesesimplified` 或 `/LANG=english` 指定安装语言。
 
 ## Android 签名
 
