@@ -5,6 +5,7 @@ import '../../../core/logging/app_logger.dart';
 import '../../player/domain/playback_resource.dart';
 import '../../player/domain/playback_snapshot.dart';
 import '../../player/domain/player_engine.dart';
+import '../../player/domain/player_shortcuts.dart';
 import '../infrastructure/playback_progress_repository.dart';
 
 /// 在引擎边界统一保存进度，控件和生命周期操作沿用同一播放接口。
@@ -197,6 +198,21 @@ class ProgressPlayerEngine implements PlayerEngine {
     // 先让原生播放器停止，保存使用已捕获的位置，不采纳 stop 的归零事件。
     await _inner.stop();
     await save;
+  }
+
+  @override
+  Future<void> executeShortcut(PlayerShortcutAction action) async {
+    if (_disposed) return;
+    final epoch = _epoch;
+    await _inner.executeShortcut(action);
+    if (_disposed || epoch != _epoch) return;
+    if (action == PlayerShortcutAction.previousChapter ||
+        action == PlayerShortcutAction.nextChapter ||
+        action == PlayerShortcutAction.previousFrame ||
+        action == PlayerShortcutAction.nextFrame) {
+      _captureCurrent();
+      await _saveLatest();
+    }
   }
 
   Future<void> forceSave() {

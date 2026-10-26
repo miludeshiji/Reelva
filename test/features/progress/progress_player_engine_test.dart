@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:reelva/features/player/domain/playback_resource.dart';
 import 'package:reelva/features/player/domain/playback_snapshot.dart';
 import 'package:reelva/features/player/domain/player_engine.dart';
+import 'package:reelva/features/player/domain/player_shortcuts.dart';
 import 'package:reelva/features/progress/application/progress_player_engine.dart';
 import 'package:reelva/features/progress/domain/playback_progress.dart';
 import 'package:reelva/features/progress/infrastructure/playback_progress_repository.dart';
@@ -24,6 +25,8 @@ class _FakeInnerEngine implements PlayerEngine {
   PlaybackResource? lastResource;
   Duration? lastResumeAt;
   bool isDisposed = false;
+  final shortcutActions = <PlayerShortcutAction>[];
+  void Function(PlayerShortcutAction)? onShortcut;
 
   @override
   PlaybackSnapshot get snapshot => _snapshot;
@@ -98,6 +101,12 @@ class _FakeInnerEngine implements PlayerEngine {
     emit(
       _snapshot.copyWith(status: PlaybackStatus.idle, position: Duration.zero),
     );
+  }
+
+  @override
+  Future<void> executeShortcut(PlayerShortcutAction action) async {
+    shortcutActions.add(action);
+    onShortcut?.call(action);
   }
 
   @override
@@ -187,6 +196,30 @@ void main() {
 
     tearDown(() async {
       await progressEngine.dispose();
+    });
+
+    test('章节和逐帧操作经进度层转发并保存新位置', () async {
+      await progressEngine.open(
+        PlaybackResource(
+          uri: Uri.file('/movie.mkv'),
+          displayName: 'Movie',
+          libraryFileId: 10,
+        ),
+      );
+      innerEngine.emit(
+        const PlaybackSnapshot(
+          status: PlaybackStatus.paused,
+          position: Duration(seconds: 15),
+          duration: Duration(minutes: 10),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      innerEngine.onShortcut = (_) => innerEngine.emit(
+        innerEngine.snapshot.copyWith(position: const Duration(seconds: 60)),
+      );
+      await progressEngine.executeShortcut(PlayerShortcutAction.nextChapter);
+      expect(innerEngine.shortcutActions, [PlayerShortcutAction.nextChapter]);
+      expect(mockRepo.saveCalls.last['position'], const Duration(seconds: 60));
     });
 
     test('open restores progress from repository', () async {

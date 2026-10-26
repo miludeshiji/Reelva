@@ -11,8 +11,10 @@ import '../domain/playback_resource.dart';
 import '../domain/playback_snapshot.dart';
 import '../domain/player_engine.dart';
 import '../domain/player_settings.dart';
+import '../domain/player_shortcuts.dart';
 import 'android_media_documents.dart';
 import 'mpv_player_configuration.dart';
+import 'mpv_shortcut_commands.dart';
 
 /// 初始化底层 media_kit 原生库（全局单次）
 void initializeMediaKit({String? libmpv}) {
@@ -686,6 +688,22 @@ class MediaKitPlayerEngine implements PlayerEngine {
       } catch (e, st) {
         AppLogger.instance.error('底层设置字幕轨道异常', error: e, stackTrace: st);
         _setPlaybackError(_safeErrorMessage(e));
+      }
+    });
+  }
+
+  @override
+  Future<void> executeShortcut(PlayerShortcutAction action) {
+    if (_disposed) return Future.value();
+    return _enqueue(() async {
+      if (_disposed) return;
+      final nativePlayer = _player.platform;
+      if (nativePlayer is! NativePlayer) throw UnsupportedError('当前播放后端不支持此操作');
+      for (final command in mpvShortcutCommands(
+        action,
+        android: defaultTargetPlatform == TargetPlatform.android,
+      )) {
+        await nativePlayer.command(command);
       }
     });
   }

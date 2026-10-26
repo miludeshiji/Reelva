@@ -59,6 +59,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         ),
         const SizedBox(height: ReelvaDesign.space12),
         _SettingsTile(
+          key: const Key('settings_shortcuts_tile'),
+          icon: Icons.keyboard_outlined,
+          title: '快捷键与鼠标',
+          subtitle: '自定义按键、定位步长与鼠标操作',
+          onTap: () => _openPage('/settings/shortcuts'),
+        ),
+        const SizedBox(height: ReelvaDesign.space12),
+        _SettingsTile(
           key: const Key('settings_tmdb_tile'),
           icon: Icons.verified_user_outlined,
           title: 'TMDB 识别',

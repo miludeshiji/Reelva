@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import 'player_shortcuts.dart';
+
 enum TrackAutoLoad {
   disabled('no'),
   exact('exact'),
@@ -50,6 +52,7 @@ class PlayerSettings {
     this.subtitleMarginY = 40,
     this.assStyleOverride = AssStyleOverride.compatible,
     this.blendSubtitles = true,
+    this.input = const PlayerInputSettings(),
   });
 
   factory PlayerSettings.defaultsFor(TargetPlatform platform) => PlayerSettings(
@@ -82,6 +85,7 @@ class PlayerSettings {
   final int subtitleMarginY;
   final AssStyleOverride assStyleOverride;
   final bool blendSubtitles;
+  final PlayerInputSettings input;
 
   PlayerSettings copyWith({
     bool? hardwareDecoding,
@@ -102,6 +106,7 @@ class PlayerSettings {
     int? subtitleMarginY,
     AssStyleOverride? assStyleOverride,
     bool? blendSubtitles,
+    PlayerInputSettings? input,
   }) => PlayerSettings(
     hardwareDecoding: hardwareDecoding ?? this.hardwareDecoding,
     highQualityRendering: highQualityRendering ?? this.highQualityRendering,
@@ -121,6 +126,7 @@ class PlayerSettings {
     subtitleMarginY: subtitleMarginY ?? this.subtitleMarginY,
     assStyleOverride: assStyleOverride ?? this.assStyleOverride,
     blendSubtitles: blendSubtitles ?? this.blendSubtitles,
+    input: input ?? this.input,
   );
 
   Map<String, Object> toJson() => {
@@ -142,6 +148,7 @@ class PlayerSettings {
     'subtitleMarginY': subtitleMarginY,
     'assStyleOverride': assStyleOverride.name,
     'blendSubtitles': blendSubtitles,
+    'input': input.toJson(),
   };
 
   factory PlayerSettings.fromJson(
@@ -175,12 +182,16 @@ class PlayerSettings {
           ? null
           : AssStyleOverride.values.byName(json['assStyleOverride'] as String),
       blendSubtitles: json['blendSubtitles'] as bool?,
+      input: json['input'] == null
+          ? null
+          : PlayerInputSettings.fromJson(json['input'] as Map<String, dynamic>),
     );
     settings.validate();
     return settings;
   }
 
   void validate() {
+    input.validate();
     if (!cacheSizesMb.contains(cacheSizeMb) ||
         !volumeLimits.contains(maxVolume) ||
         subtitleFont.trim().isEmpty ||

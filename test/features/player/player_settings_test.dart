@@ -8,6 +8,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:reelva/features/player/application/player_settings_provider.dart';
 import 'package:reelva/features/player/domain/playback_resource.dart';
 import 'package:reelva/features/player/domain/player_settings.dart';
+import 'package:reelva/features/player/domain/player_shortcuts.dart';
 import 'package:reelva/features/player/infrastructure/media_kit_player_engine.dart';
 import 'package:reelva/features/player/infrastructure/mpv_player_configuration.dart';
 import 'package:reelva/features/player/infrastructure/player_settings_store.dart';
@@ -24,6 +25,13 @@ class _FailingStore extends PlayerSettingsStore {
 class _NativePlayer extends Fake implements NativePlayer {
   final delegate = TestPlatformPlayer();
   final properties = <String, String>{};
+  final commands = <List<String>>[];
+
+  @override
+  Future<void> command(
+    List<String> command, {
+    bool waitForInitialization = true,
+  }) async => commands.add(command);
 
   @override
   PlayerState get state => delegate.state;
@@ -203,5 +211,25 @@ void main() {
     expect(platformPlayer.lastVolume, 150);
     await engine.setVolume(-10);
     expect(platformPlayer.lastVolume, 0);
+  });
+
+  test('高级播放操作通过原生接口执行，复合重置逐项应用', () async {
+    final native = _NativePlayer();
+    final engine = MediaKitPlayerEngine(player: Player(platformPlayer: native));
+    addTearDown(engine.dispose);
+    await engine.executeShortcut(PlayerShortcutAction.audioLater);
+    await engine.executeShortcut(PlayerShortcutAction.nextFrame);
+    await engine.executeShortcut(PlayerShortcutAction.resetColors);
+    expect(native.commands.take(2), [
+      ['add', 'audio-delay', '0.1'],
+      ['frame-step'],
+    ]);
+    expect(native.commands.skip(2), [
+      ['set', 'brightness', '0'],
+      ['set', 'contrast', '0'],
+      ['set', 'gamma', '0'],
+      ['set', 'saturation', '0'],
+      ['set', 'hue', '0'],
+    ]);
   });
 }

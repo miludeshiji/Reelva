@@ -68,7 +68,8 @@ class _PlayerSettingsPageState extends ConsumerState<PlayerSettingsPage> {
   void _restoreDefaults() {
     _formKey.currentState!.reset();
     setState(() {
-      _draft = PlayerSettings.defaultsFor(defaultTargetPlatform);
+      _draft = PlayerSettings.defaultsFor(defaultTargetPlatform)
+          .copyWith(input: _draft.input);
       _languages.text = _draft.subtitleLanguages;
       _font.text = _draft.subtitleFont;
     });
@@ -122,6 +123,7 @@ class _PlayerSettingsPageState extends ConsumerState<PlayerSettingsPage> {
       key: ValueKey('$key:$value'),
       initialValue: value,
       isExpanded: true,
+      borderRadius: BorderRadius.circular(ReelvaDesign.radius),
       decoration: InputDecoration(labelText: label),
       items: [
         for (final entry in options.entries)

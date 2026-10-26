@@ -319,11 +319,11 @@ class _WorkDetailsPageState extends ConsumerState<WorkDetailsPage> {
                           }
                         },
                         itemBuilder: (context) => const [
-                          PopupMenuItem(
+                          GlassPopupMenuItem(
                             value: _WorkAction.manualMatch,
                             child: Text('手动匹配'),
                           ),
-                          PopupMenuItem(
+                          GlassPopupMenuItem(
                             value: _WorkAction.localEdit,
                             child: Text('本地编辑'),
                           ),
@@ -583,30 +583,26 @@ class _WorkDetailsPageState extends ConsumerState<WorkDetailsPage> {
         ),
         const SizedBox(height: ReelvaDesign.space12),
         for (final season in visibleSeasons)
-          GlassCard(
+          GlassExpansionCard(
             margin: const EdgeInsets.only(bottom: ReelvaDesign.space12),
-            padding: EdgeInsets.zero,
-            child: ExpansionTile(
-              key: PageStorageKey('work_season_${details.work.id}_$season'),
-              initiallyExpanded: true,
-              maintainState: true,
-              tilePadding: const EdgeInsets.symmetric(
-                horizontal: ReelvaDesign.space16,
-                vertical: ReelvaDesign.space8,
-              ),
-              shape: const Border(),
-              collapsedShape: const Border(),
-              title: Text(
-                season > 0 ? '第 $season 季' : '特别篇 / 未归类',
-                style: Theme.of(context).textTheme.titleSmall
-                    ?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              subtitle: Text('${seasonMap[season]!.length} 个版本文件'),
-              children: [
-                const Divider(height: 1),
-                ..._buildVersionRows(context, details, seasonMap[season]!),
-              ],
+            childrenPadding: EdgeInsets.zero,
+            tileKey: PageStorageKey('work_season_${details.work.id}_$season'),
+            initiallyExpanded: true,
+            maintainState: true,
+            tilePadding: const EdgeInsets.symmetric(
+              horizontal: ReelvaDesign.space16,
+              vertical: ReelvaDesign.space8,
             ),
+            title: Text(
+              season > 0 ? '第 $season 季' : '特别篇 / 未归类',
+              style: Theme.of(context).textTheme.titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            subtitle: Text('${seasonMap[season]!.length} 个版本文件'),
+            children: [
+              const Divider(height: 1),
+              ..._buildVersionRows(context, details, seasonMap[season]!),
+            ],
           ),
       ],
     );

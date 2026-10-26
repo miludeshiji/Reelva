@@ -486,7 +486,7 @@ void main() {
       final fakeEngine = FakePlayerEngine(
         initialSnapshot: const PlaybackSnapshot(
           status: PlaybackStatus.paused,
-          volume: 195,
+          volume: 198,
         ),
       );
       addTearDown(fakeEngine.dispose);
@@ -508,7 +508,7 @@ void main() {
       expect(fakeEngine.lastVolume, 200);
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.pumpAndSettle();
-      expect(fakeEngine.lastVolume, 195);
+      expect(fakeEngine.lastVolume, 198);
       await tester.pumpWidget(const SizedBox.shrink());
     });
 
@@ -547,25 +547,25 @@ void main() {
       await tester.pumpAndSettle();
       expect(fakeEngine.playCount, 1);
 
-      // ArrowRight -> seek +10s (15s + 10s = 25s)
+      // ArrowRight -> seek +2s (15s + 2s = 17s)
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await tester.pumpAndSettle();
       expect(fakeEngine.seekCount, 1);
-      expect(fakeEngine.lastSeekPosition, const Duration(seconds: 25));
+      expect(fakeEngine.lastSeekPosition, const Duration(seconds: 17));
 
-      // ArrowLeft -> seek -10s (25s - 10s = 15s)
+      // ArrowLeft -> seek -2s (17s - 2s = 15s)
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
       await tester.pumpAndSettle();
       expect(fakeEngine.seekCount, 2);
       expect(fakeEngine.lastSeekPosition, const Duration(seconds: 15));
 
-      // ArrowUp -> volume +5 (50 + 5 = 55)
+      // ArrowUp -> volume +2 (50 + 2 = 52)
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
       await tester.pumpAndSettle();
       expect(fakeEngine.setVolumeCount, 1);
-      expect(fakeEngine.lastVolume, 55.0);
+      expect(fakeEngine.lastVolume, 52.0);
 
-      // ArrowDown -> volume -5 (55 - 5 = 50)
+      // ArrowDown -> volume -2 (52 - 2 = 50)
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.pumpAndSettle();
       expect(fakeEngine.setVolumeCount, 2);
@@ -573,7 +573,7 @@ void main() {
 
       // Seek clamp lower bound (0s):
       fakeEngine.emit(
-        fakeEngine.snapshot.copyWith(position: const Duration(seconds: 5)),
+        fakeEngine.snapshot.copyWith(position: const Duration(seconds: 1)),
       );
       await tester.pumpAndSettle();
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
@@ -582,7 +582,7 @@ void main() {
 
       // Seek clamp upper bound (duration = 2m):
       fakeEngine.emit(
-        fakeEngine.snapshot.copyWith(position: const Duration(seconds: 115)),
+        fakeEngine.snapshot.copyWith(position: const Duration(seconds: 119)),
       );
       await tester.pumpAndSettle();
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
@@ -597,7 +597,7 @@ void main() {
       expect(fakeEngine.lastVolume, 100.0);
 
       // Volume clamp lower bound (0.0):
-      fakeEngine.emit(fakeEngine.snapshot.copyWith(volume: 3.0));
+      fakeEngine.emit(fakeEngine.snapshot.copyWith(volume: 1.0));
       await tester.pumpAndSettle();
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.pumpAndSettle();

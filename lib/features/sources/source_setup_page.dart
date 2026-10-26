@@ -264,37 +264,31 @@ class _SourceSetupPageState extends ConsumerState<SourceSetupPage> {
                                 ),
                                 SizedBox(
                                   width: advancedWidth,
-                                  child: GlassCard(
+                                  child: GlassExpansionCard(
                                     key: const Key(
                                       'source_setup_advanced_card',
                                     ),
-                                    padding: EdgeInsets.zero,
-                                    child: ExpansionTile(
-                                      key: const Key(
-                                        'add_source_advanced_options',
-                                      ),
-                                      title: const Text('高级选项'),
-                                      maintainState: true,
-                                      shape: const Border(),
-                                      collapsedShape: const Border(),
-                                      tilePadding: const EdgeInsets.symmetric(
-                                        horizontal: ReelvaDesign.space20,
-                                        vertical: ReelvaDesign.space4,
-                                      ),
-                                      childrenPadding:
-                                          const EdgeInsets.fromLTRB(
-                                            ReelvaDesign.space20,
-                                            ReelvaDesign.space16,
-                                            ReelvaDesign.space20,
-                                            ReelvaDesign.space20,
-                                          ),
-                                      children: [
-                                        Column(
-                                          spacing: ReelvaDesign.space16,
-                                          children: _advancedFields(),
-                                        ),
-                                      ],
+                                    tileKey: const Key(
+                                      'add_source_advanced_options',
                                     ),
+                                    title: const Text('高级选项'),
+                                    maintainState: true,
+                                    tilePadding: const EdgeInsets.symmetric(
+                                      horizontal: ReelvaDesign.space20,
+                                      vertical: ReelvaDesign.space4,
+                                    ),
+                                    childrenPadding: const EdgeInsets.fromLTRB(
+                                      ReelvaDesign.space20,
+                                      ReelvaDesign.space16,
+                                      ReelvaDesign.space20,
+                                      ReelvaDesign.space20,
+                                    ),
+                                    children: [
+                                      Column(
+                                        spacing: ReelvaDesign.space16,
+                                        children: _advancedFields(),
+                                      ),
+                                    ],
                                   ),
                                 ),
                                 SizedBox(

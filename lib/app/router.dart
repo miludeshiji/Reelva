@@ -10,6 +10,7 @@ import 'package:reelva/features/player/presentation/player_page.dart';
 import 'package:reelva/features/progress/presentation/watch_history_page.dart';
 import 'package:reelva/features/settings/about_page.dart';
 import 'package:reelva/features/settings/player_settings_page.dart';
+import 'package:reelva/features/settings/player_shortcuts_page.dart';
 import 'package:reelva/features/settings/settings_page.dart';
 import 'package:reelva/features/settings/settings_subpages.dart';
 import 'package:reelva/features/sources/add_source_page.dart';
@@ -135,6 +136,11 @@ GoRouter createRouter({String initialLocation = '/'}) {
                     path: 'player',
                     pageBuilder: (context, state) =>
                         _buildMaterialPage(state, const PlayerSettingsPage()),
+                  ),
+                  GoRoute(
+                    path: 'shortcuts',
+                    pageBuilder: (context, state) =>
+                        _buildMaterialPage(state, const PlayerShortcutsPage()),
                   ),
                   GoRoute(
                     path: 'tmdb',

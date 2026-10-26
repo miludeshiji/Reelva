@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,9 +13,11 @@ import '../../../core/logging/app_logger.dart';
 import '../../../shared/widgets/glass_widgets.dart';
 import '../application/playback_session.dart';
 import '../application/player_providers.dart';
+import '../application/player_settings_provider.dart';
 import '../domain/playback_resource.dart';
 import '../domain/playback_snapshot.dart';
 import '../domain/player_engine.dart';
+import '../domain/player_shortcuts.dart';
 import 'network_address_dialog.dart';
 import 'player_controls.dart';
 
@@ -40,8 +43,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   bool _isTogglingFullscreen = false;
   bool _isExiting = false;
   PlaybackResource? _currentResource;
+  bool _isOpeningInitialResource = false;
   int _actionCounter = 0;
   final FocusNode _focusNode = FocusNode();
+  late final PlayerInputSettings _input;
+  double _lastNonZeroVolume = 100;
   bool _isWindowClosing = false;
   final GlobalKey _controlsKey = GlobalKey();
   Timer? _controlsHideTimer;
@@ -156,6 +162,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   @override
   void initState() {
     super.initState();
+    _input = ref.read(playerSettingsProvider).input;
     WidgetsBinding.instance.addObserver(this);
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
       windowManager.addListener(this);
@@ -169,6 +176,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     }
     if (widget.initialResource != null) {
       _currentResource = widget.initialResource;
+      _isOpeningInitialResource = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _openInitialResource();
       });
@@ -210,6 +218,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     super.didUpdateWidget(oldWidget);
     if (widget.initialResource != oldWidget.initialResource) {
       _currentResource = widget.initialResource;
+      _isOpeningInitialResource = widget.initialResource != null;
       if (widget.initialResource != null) {
         _openInitialResource();
       } else {
@@ -232,6 +241,12 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       AppLogger.instance.error('打开初始视频资源异常', error: e, stackTrace: st);
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('无法播放视频，请重试')));
+    } finally {
+      if (mounted && !_isExiting && widget.initialResource == resource) {
+        setState(() {
+          _isOpeningInitialResource = false;
+        });
+      }
     }
   }
 
@@ -568,13 +583,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     return true;
   }
 
-  KeyEventResult _handleKeyEvent(
-    FocusNode node,
-    KeyEvent event,
-    PlaybackSnapshot snapshot,
-    PlayerEngine engine,
-  ) {
-    if (event is! KeyDownEvent) {
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
     }
 
@@ -582,81 +592,253 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       return KeyEventResult.ignored;
     }
 
+    final binding = PlayerKeyBinding.fromEvent(event);
+    final action = binding == null ? null : _input.actionFor(binding);
+    if (action == null) return KeyEventResult.ignored;
+    if (event is KeyRepeatEvent && !action.repeatable) {
+      return KeyEventResult.handled;
+    }
+    unawaited(_runShortcut(action));
+    return KeyEventResult.handled;
+  }
+
+  bool get _canOperateMedia => switch (_session?.engine.snapshot.status) {
+    PlaybackStatus.playing ||
+    PlaybackStatus.paused ||
+    PlaybackStatus.buffering ||
+    PlaybackStatus.completed => true,
+    _ => false,
+  };
+
+  Future<void> _seekBy(int seconds) async {
+    final engine = _session!.engine;
+    final snapshot = engine.snapshot;
+    if (snapshot.duration <= Duration.zero) return;
+    final target = (snapshot.position.inMilliseconds + seconds * 1000).clamp(
+      0,
+      snapshot.duration.inMilliseconds,
+    );
+    await engine.seek(Duration(milliseconds: target));
+  }
+
+  Future<void> _volumeBy(int step) => _session!.engine.setVolume(
+    (_session!.engine.snapshot.volume + step).clamp(0.0, _session!.maxVolume),
+  );
+
+  Future<void> _runShortcut(PlayerShortcutAction action) async {
+    if (!mounted || _isExiting) return;
     _showControls();
-    final key = event.logicalKey;
-
-    if (key == LogicalKeyboardKey.space) {
-      if (snapshot.status == PlaybackStatus.idle ||
-          snapshot.status == PlaybackStatus.resolving ||
-          snapshot.status == PlaybackStatus.opening ||
-          snapshot.status == PlaybackStatus.error) {
-        return KeyEventResult.handled;
+    try {
+      if (action == PlayerShortcutAction.toggleFullscreen) {
+        await _setFullscreen(!_isFullscreen);
+        return;
       }
-      if (snapshot.status == PlaybackStatus.completed) {
-        engine.seek(Duration.zero);
-        engine.play();
-        return KeyEventResult.handled;
+      if (action == PlayerShortcutAction.exitFullscreen) {
+        if (_isFullscreen) await _setFullscreen(false);
+        return;
       }
-      if (snapshot.isPlaying) {
-        engine.pause();
-      } else {
-        engine.play();
+      if (!_canOperateMedia) return;
+      final engine = _session!.engine;
+      final snapshot = engine.snapshot;
+      switch (action) {
+        case PlayerShortcutAction.togglePause:
+          if (snapshot.status == PlaybackStatus.completed) {
+            await engine.seek(Duration.zero);
+            await engine.play();
+          } else if (snapshot.isPlaying) {
+            await engine.pause();
+          } else {
+            await engine.play();
+          }
+        case PlayerShortcutAction.seekBack:
+          await _seekBy(-_input.seekSeconds);
+        case PlayerShortcutAction.seekForward:
+          await _seekBy(_input.seekSeconds);
+        case PlayerShortcutAction.seekBackLarge:
+          await _seekBy(-_input.largeSeekSeconds);
+        case PlayerShortcutAction.seekForwardLarge:
+          await _seekBy(_input.largeSeekSeconds);
+        case PlayerShortcutAction.volumeUp:
+          await _volumeBy(_input.volumeStep);
+        case PlayerShortcutAction.volumeDown:
+          await _volumeBy(-_input.volumeStep);
+        case PlayerShortcutAction.volumeUpLarge:
+          await _volumeBy(_input.largeVolumeStep);
+        case PlayerShortcutAction.volumeDownLarge:
+          await _volumeBy(-_input.largeVolumeStep);
+        case PlayerShortcutAction.toggleMute:
+          if (snapshot.volume > 0) _lastNonZeroVolume = snapshot.volume;
+          await engine.setVolume(
+            snapshot.volume > 0
+                ? 0
+                : _lastNonZeroVolume.clamp(0.0, _session!.maxVolume),
+          );
+        case PlayerShortcutAction.resetRate:
+        case PlayerShortcutAction.slower:
+        case PlayerShortcutAction.faster:
+        case PlayerShortcutAction.halveRate:
+        case PlayerShortcutAction.doubleRate:
+          final rate = switch (action) {
+            PlayerShortcutAction.resetRate => 1.0,
+            PlayerShortcutAction.slower => snapshot.rate - 0.1,
+            PlayerShortcutAction.faster => snapshot.rate + 0.1,
+            PlayerShortcutAction.halveRate => snapshot.rate * 0.5,
+            _ => snapshot.rate * 2,
+          };
+          await engine.setRate(
+            double.parse(rate.clamp(0.1, 16.0).toStringAsFixed(2)),
+          );
+        case PlayerShortcutAction.cycleAudio:
+        case PlayerShortcutAction.cycleSubtitles:
+          final audio = action == PlayerShortcutAction.cycleAudio;
+          final tracks =
+              (audio ? snapshot.audioTracks : snapshot.subtitleTracks)
+                  .where((track) => track.id != 'auto')
+                  .toList();
+          if (tracks.isEmpty) return;
+          final index = tracks.indexWhere(
+            (track) =>
+                track.id ==
+                (audio ? snapshot.audioTrackId : snapshot.subtitleTrackId),
+          );
+          final next = tracks[(index + 1) % tracks.length].id;
+          if (audio) {
+            await engine.setAudioTrack(next);
+          } else {
+            await engine.setSubtitleTrack(next);
+          }
+        case PlayerShortcutAction.showProgress:
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '${formatDuration(snapshot.position)} / ${formatDuration(snapshot.duration)}',
+              ),
+            ),
+          );
+        case PlayerShortcutAction.showTracks:
+          _controlsInteractions++;
+          try {
+            await showDialog<void>(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text('音轨与字幕'),
+                content: SingleChildScrollView(
+                  child: Text(
+                    [
+                      '音轨',
+                      ...snapshot.audioTracks.map(
+                        (track) =>
+                            '${track.id == snapshot.audioTrackId ? '✓ ' : ''}${track.label}',
+                      ),
+                      '',
+                      '字幕',
+                      ...snapshot.subtitleTracks.map(
+                        (track) =>
+                            '${track.id == snapshot.subtitleTrackId ? '✓ ' : ''}${track.label}',
+                      ),
+                    ].join('\n'),
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('关闭'),
+                  ),
+                ],
+              ),
+            );
+          } finally {
+            _controlsInteractions--;
+            if (mounted) _scheduleControlsHide();
+          }
+        default:
+          await engine.executeShortcut(action);
       }
-      return KeyEventResult.handled;
+    } catch (error, stack) {
+      AppLogger.instance.error(
+        '执行播放操作失败：${action.name}',
+        error: error,
+        stackTrace: stack,
+      );
+      if (mounted && !_isExiting) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('当前视频无法执行“${action.label}”')));
+      }
     }
+  }
 
-    if (key == LogicalKeyboardKey.arrowLeft) {
-      if (snapshot.duration <= Duration.zero ||
-          snapshot.status == PlaybackStatus.idle ||
-          snapshot.status == PlaybackStatus.resolving ||
-          snapshot.status == PlaybackStatus.opening ||
-          snapshot.status == PlaybackStatus.error) {
-        return KeyEventResult.handled;
-      }
-      final target = snapshot.position - const Duration(seconds: 10);
-      engine.seek(target < Duration.zero ? Duration.zero : target);
-      return KeyEventResult.handled;
+  void _toggleSurfaceControls() {
+    _focusNode.requestFocus();
+    if (_controlsVisible &&
+        _session?.engine.snapshot.status == PlaybackStatus.playing) {
+      _controlsHideTimer?.cancel();
+      setState(() => _controlsVisible = false);
+    } else {
+      _showControls();
     }
+  }
 
-    if (key == LogicalKeyboardKey.arrowRight) {
-      if (snapshot.duration <= Duration.zero ||
-          snapshot.status == PlaybackStatus.idle ||
-          snapshot.status == PlaybackStatus.resolving ||
-          snapshot.status == PlaybackStatus.opening ||
-          snapshot.status == PlaybackStatus.error) {
-        return KeyEventResult.handled;
-      }
-      final target = snapshot.position + const Duration(seconds: 10);
-      engine.seek(target > snapshot.duration ? snapshot.duration : target);
-      return KeyEventResult.handled;
+  void _handleScroll(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent || !_canOperateMedia) return;
+    final vertical = event.scrollDelta.dy.abs() >= event.scrollDelta.dx.abs();
+    if ((vertical && !_input.wheelVolume) ||
+        (!vertical && !_input.horizontalWheelSeek)) {
+      return;
     }
+    if (event.scrollDelta == Offset.zero) return;
+    GestureBinding.instance.pointerSignalResolver.register(event, (_) {
+      _showControls();
+      final operation = vertical
+          ? _volumeBy(
+              event.scrollDelta.dy < 0
+                  ? _input.wheelVolumeStep
+                  : -_input.wheelVolumeStep,
+            )
+          : _seekBy(
+              event.scrollDelta.dx < 0
+                  ? _input.wheelSeekSeconds
+                  : -_input.wheelSeekSeconds,
+            );
+      unawaited(
+        operation.catchError((Object error, StackTrace stack) {
+          AppLogger.instance.error('滚轮播放操作失败', error: error, stackTrace: stack);
+        }),
+      );
+    });
+  }
 
-    if (key == LogicalKeyboardKey.arrowUp) {
-      if (snapshot.status == PlaybackStatus.error) {
-        return KeyEventResult.handled;
-      }
-      final nextVol = (snapshot.volume + 5.0).clamp(0.0, _session!.maxVolume);
-      engine.setVolume(nextVol);
-      return KeyEventResult.handled;
+  Future<void> _showContextMenu(Offset position) async {
+    if (!_canOperateMedia) return;
+    _focusNode.requestFocus();
+    _showControls();
+    _controlsInteractions++;
+    try {
+      final overlay =
+          Overlay.of(context).context.findRenderObject()! as RenderBox;
+      final selected = await showMenu<PlayerShortcutAction>(
+        context: context,
+        position: RelativeRect.fromRect(
+          Rect.fromLTWH(position.dx, position.dy, 0, 0),
+          Offset.zero & overlay.size,
+        ),
+        items: [
+          for (final action in [
+            PlayerShortcutAction.togglePause,
+            PlayerShortcutAction.toggleFullscreen,
+            PlayerShortcutAction.toggleMute,
+            PlayerShortcutAction.cycleAudio,
+            PlayerShortcutAction.cycleSubtitles,
+            PlayerShortcutAction.showTracks,
+            PlayerShortcutAction.loopFile,
+          ])
+            GlassPopupMenuItem(value: action, child: Text(action.label)),
+        ],
+      );
+      if (selected != null && mounted) await _runShortcut(selected);
+    } finally {
+      _controlsInteractions--;
+      if (mounted) _scheduleControlsHide();
     }
-
-    if (key == LogicalKeyboardKey.arrowDown) {
-      if (snapshot.status == PlaybackStatus.error) {
-        return KeyEventResult.handled;
-      }
-      final nextVol = (snapshot.volume - 5.0).clamp(0.0, _session!.maxVolume);
-      engine.setVolume(nextVol);
-      return KeyEventResult.handled;
-    }
-
-    if (key == LogicalKeyboardKey.escape) {
-      if (_isFullscreen && !_isTogglingFullscreen) {
-        _setFullscreen(false);
-        return KeyEventResult.handled;
-      }
-    }
-
-    return KeyEventResult.ignored;
   }
 
   Widget _buildHeader(
@@ -729,12 +911,12 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                 }
               },
               itemBuilder: (_) => const [
-                PopupMenuItem(
+                GlassPopupMenuItem(
                   key: Key('appbar_pick_file_button'),
                   value: 'file',
                   child: Text('选择本地视频'),
                 ),
-                PopupMenuItem(
+                GlassPopupMenuItem(
                   key: Key('appbar_open_url_button'),
                   value: 'url',
                   child: Text('输入网络链接'),
@@ -905,24 +1087,50 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               children: [
                 // 始终保留同一曲面；全屏、缩放和停止只改变约束与可见性。
                 GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () {
-                    _focusNode.requestFocus();
-                    if (_controlsVisible &&
-                        snapshot.status == PlaybackStatus.playing) {
-                      _controlsHideTimer?.cancel();
-                      setState(() => _controlsVisible = false);
-                    } else {
-                      _showControls();
-                    }
+                  supportedDevices: const {
+                    PointerDeviceKind.touch,
+                    PointerDeviceKind.stylus,
+                    PointerDeviceKind.invertedStylus,
+                    PointerDeviceKind.unknown,
                   },
-                  child: ColoredBox(
-                    color: idle
-                        ? Colors.transparent
-                        : ReelvaDesign.playerBackground,
-                    child: Offstage(
-                      offstage: idle,
-                      child: Center(child: session.videoBuilder(context)),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _toggleSurfaceControls,
+                  child: Listener(
+                    onPointerSignal: _handleScroll,
+                    child: GestureDetector(
+                      supportedDevices: const {PointerDeviceKind.mouse},
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        _focusNode.requestFocus();
+                        if (_input.clickToPause) {
+                          unawaited(
+                            _runShortcut(PlayerShortcutAction.togglePause),
+                          );
+                        } else {
+                          _toggleSurfaceControls();
+                        }
+                      },
+                      onDoubleTap: _input.doubleClickFullscreen
+                          ? () => unawaited(
+                              _runShortcut(
+                                PlayerShortcutAction.toggleFullscreen,
+                              ),
+                            )
+                          : null,
+                      onSecondaryTapUp: _input.rightClickMenu
+                          ? (details) => unawaited(
+                              _showContextMenu(details.globalPosition),
+                            )
+                          : null,
+                      child: ColoredBox(
+                        color: idle
+                            ? Colors.transparent
+                            : ReelvaDesign.playerBackground,
+                        child: Offstage(
+                          offstage: idle,
+                          child: Center(child: session.videoBuilder(context)),
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -1071,7 +1279,14 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         stream: session.engine.snapshots,
         initialData: session.engine.snapshot,
         builder: (context, snapshotAsync) {
-          final snapshot = snapshotAsync.data ?? const PlaybackSnapshot();
+          final engineSnapshot = snapshotAsync.data ?? const PlaybackSnapshot();
+          // 读取续播进度前引擎仍为空闲；已有视频时直接显示播放布局与加载状态。
+          final snapshot =
+              _isOpeningInitialResource &&
+                  engineSnapshot.status == PlaybackStatus.idle
+              ? engineSnapshot.copyWith(status: PlaybackStatus.opening)
+              : engineSnapshot;
+          if (snapshot.volume > 0) _lastNonZeroVolume = snapshot.volume;
           final idle = snapshot.status == PlaybackStatus.idle;
           _syncVideoOrientation(snapshot);
           final immersive = !idle || _isFullscreen;
@@ -1091,8 +1306,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               builder: (context) => Focus(
                 focusNode: _focusNode,
                 autofocus: true,
-                onKeyEvent: (node, event) =>
-                    _handleKeyEvent(node, event, snapshot, session.engine),
+                onKeyEvent: _handleKeyEvent,
                 child: Scaffold(
                   backgroundColor: immersive
                       ? ReelvaDesign.playerBackground

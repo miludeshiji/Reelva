@@ -88,6 +88,26 @@ abstract final class ReelvaTheme {
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(ReelvaDesign.radius),
     );
+    final itemShape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(ReelvaDesign.radiusSmall),
+    );
+    WidgetStateProperty<Color?> interactionOverlay(Color color) =>
+        WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.disabled)) {
+            return Colors.transparent;
+          }
+          if (states.contains(WidgetState.pressed)) {
+            return color.withValues(alpha: 0.12);
+          }
+          if (states.contains(WidgetState.focused)) {
+            return color.withValues(alpha: 0.16);
+          }
+          if (states.contains(WidgetState.hovered)) {
+            return color.withValues(alpha: 0.06);
+          }
+          return Colors.transparent;
+        });
+    final overlay = interactionOverlay(scheme.primary);
     final inputBorder = OutlineInputBorder(
       borderRadius: BorderRadius.circular(ReelvaDesign.radius),
       borderSide: BorderSide(color: scheme.outlineVariant),
@@ -182,6 +202,14 @@ abstract final class ReelvaTheme {
       dividerColor: scheme.outlineVariant,
       focusColor: scheme.primary.withValues(alpha: 0.16),
       hoverColor: scheme.primary.withValues(alpha: 0.06),
+      highlightColor: scheme.primary.withValues(alpha: 0.12),
+      splashColor: scheme.primary.withValues(alpha: 0.12),
+      listTileTheme: ListTileThemeData(shape: itemShape),
+      expansionTileTheme: ExpansionTileThemeData(
+        shape: shape,
+        collapsedShape: shape,
+        clipBehavior: Clip.antiAlias,
+      ),
       appBarTheme: AppBarThemeData(
         backgroundColor: Colors.transparent,
         foregroundColor: scheme.onSurface,
@@ -245,7 +273,7 @@ abstract final class ReelvaTheme {
           shape: shape,
           textStyle: text.labelLarge,
           alignment: Alignment.center,
-        ),
+        ).copyWith(overlayColor: interactionOverlay(scheme.onPrimary)),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
@@ -262,7 +290,7 @@ abstract final class ReelvaTheme {
           shape: shape,
           textStyle: text.labelLarge,
           alignment: Alignment.center,
-        ),
+        ).copyWith(overlayColor: overlay),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
@@ -274,7 +302,7 @@ abstract final class ReelvaTheme {
           shadowColor: Colors.black.withValues(alpha: 0.08),
           shape: shape,
           textStyle: text.labelLarge,
-        ),
+        ).copyWith(overlayColor: overlay),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
@@ -283,17 +311,15 @@ abstract final class ReelvaTheme {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           shape: shape,
           textStyle: text.labelLarge,
-        ),
+        ).copyWith(overlayColor: overlay),
       ),
       iconButtonTheme: IconButtonThemeData(
         style: IconButton.styleFrom(
           foregroundColor: scheme.onSurface,
           minimumSize: const Size(48, 48),
           padding: const EdgeInsets.all(12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(ReelvaDesign.radiusSmall),
-          ),
-        ),
+          shape: itemShape,
+        ).copyWith(overlayColor: overlay),
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: surface,
@@ -345,16 +371,15 @@ abstract final class ReelvaTheme {
           minimumSize: const Size(48, 48),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           textStyle: text.bodyMedium,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(ReelvaDesign.radiusSmall),
-          ),
-        ),
+          shape: itemShape,
+        ).copyWith(overlayColor: overlay),
       ),
       popupMenuTheme: PopupMenuThemeData(
         color: surface,
         surfaceTintColor: Colors.transparent,
         shape: shape,
         textStyle: text.bodyMedium,
+        menuPadding: const EdgeInsets.all(8),
       ),
     );
   }

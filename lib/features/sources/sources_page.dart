@@ -7,6 +7,7 @@ import 'package:reelva/shared/widgets/glass_widgets.dart'
         GlassCard,
         GlassIconButton,
         GlassPageHeader,
+        GlassPopupMenuItem,
         GlassSectionTitle,
         ReelvaDesign;
 
@@ -568,7 +569,7 @@ class _SourceCard extends ConsumerWidget {
                           source.kind == 'openlist' ||
                           source.kind == 'smb';
                       return [
-                        const PopupMenuItem(
+                        const GlassPopupMenuItem(
                           value: 'rename',
                           child: Row(
                             children: [
@@ -579,7 +580,7 @@ class _SourceCard extends ConsumerWidget {
                           ),
                         ),
                         if (!isRemote)
-                          const PopupMenuItem(
+                          const GlassPopupMenuItem(
                             value: 'reauthorize',
                             child: Row(
                               children: [
@@ -590,7 +591,7 @@ class _SourceCard extends ConsumerWidget {
                             ),
                           )
                         else
-                          const PopupMenuItem(
+                          const GlassPopupMenuItem(
                             value: 'edit_credentials',
                             child: Row(
                               children: [
@@ -600,7 +601,7 @@ class _SourceCard extends ConsumerWidget {
                               ],
                             ),
                           ),
-                        PopupMenuItem(
+                        GlassPopupMenuItem(
                           value: 'remove',
                           child: Row(
                             children: [

@@ -5,6 +5,7 @@ import 'package:reelva/features/player/application/playback_session.dart';
 import 'package:reelva/features/player/domain/playback_resource.dart';
 import 'package:reelva/features/player/domain/playback_snapshot.dart';
 import 'package:reelva/features/player/domain/player_engine.dart';
+import 'package:reelva/features/player/domain/player_shortcuts.dart';
 
 /// 测试专用的虚假播放器引擎
 ///
@@ -26,6 +27,7 @@ class FakePlayerEngine implements PlayerEngine {
   int seekCount = 0;
   int setRateCount = 0;
   int setVolumeCount = 0;
+  final shortcutActions = <PlayerShortcutAction>[];
   int setAudioTrackCount = 0;
   int setSubtitleTrackCount = 0;
   int disposeCount = 0;
@@ -119,6 +121,10 @@ class FakePlayerEngine implements PlayerEngine {
       _snapshot.copyWith(status: PlaybackStatus.idle, position: Duration.zero),
     );
   }
+
+  @override
+  Future<void> executeShortcut(PlayerShortcutAction action) async =>
+      shortcutActions.add(action);
 
   @override
   Future<void> dispose() async {

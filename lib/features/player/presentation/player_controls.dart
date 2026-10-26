@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../app/theme/reelva_theme.dart';
+import '../../../shared/widgets/glass_widgets.dart' show GlassPopupMenuItem;
 import '../domain/playback_snapshot.dart';
 import '../domain/player_engine.dart';
 
@@ -523,8 +524,10 @@ class _PlayerControlsState extends State<PlayerControls> {
           },
           itemBuilder: (context) => PlayerControls.supportedRates
               .map(
-                (rate) =>
-                    PopupMenuItem<double>(value: rate, child: Text('${rate}x')),
+                (rate) => GlassPopupMenuItem<double>(
+                  value: rate,
+                  child: Text('${rate}x'),
+                ),
               )
               .toList(),
           child: Padding(
@@ -565,7 +568,7 @@ class _PlayerControlsState extends State<PlayerControls> {
       },
       itemBuilder: (context) => tracks
           .map(
-            (track) => PopupMenuItem<String>(
+            (track) => GlassPopupMenuItem<String>(
               value: track.id,
               child: Row(
                 children: [

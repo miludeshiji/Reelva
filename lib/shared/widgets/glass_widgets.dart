@@ -74,6 +74,92 @@ class GlassCard extends StatelessWidget {
   }
 }
 
+/// 标题的点击区域覆盖整张收起卡片，展开内容保持独立的交互区域。
+class GlassExpansionCard extends StatelessWidget {
+  const GlassExpansionCard({
+    super.key,
+    this.tileKey,
+    required this.title,
+    this.subtitle,
+    required this.children,
+    this.margin,
+    this.borderRadius,
+    this.tilePadding = const EdgeInsets.all(16),
+    this.childrenPadding = const EdgeInsets.fromLTRB(16, 0, 16, 16),
+    this.initiallyExpanded = false,
+    this.maintainState = false,
+  });
+
+  final Key? tileKey;
+  final Widget title;
+  final Widget? subtitle;
+  final List<Widget> children;
+  final EdgeInsetsGeometry? margin;
+  final BorderRadius? borderRadius;
+  final EdgeInsetsGeometry tilePadding;
+  final EdgeInsetsGeometry childrenPadding;
+  final bool initiallyExpanded;
+  final bool maintainState;
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = borderRadius ?? BorderRadius.circular(ReelvaDesign.radius);
+    final shape = RoundedRectangleBorder(borderRadius: radius);
+    return GlassCard(
+      margin: margin,
+      padding: EdgeInsets.zero,
+      borderRadius: radius,
+      child: ListTileTheme.merge(
+        shape: shape,
+        child: ExpansionTile(
+          key: tileKey,
+          title: title,
+          subtitle: subtitle,
+          initiallyExpanded: initiallyExpanded,
+          maintainState: maintainState,
+          tilePadding: tilePadding,
+          childrenPadding: childrenPadding,
+          shape: shape,
+          collapsedShape: shape,
+          clipBehavior: Clip.antiAlias,
+          children: children,
+        ),
+      ),
+    );
+  }
+}
+
+/// 让旧式弹出菜单的状态层也沿着每一项自身的圆角裁剪。
+class GlassPopupMenuItem<T> extends PopupMenuItem<T> {
+  const GlassPopupMenuItem({
+    super.key,
+    super.value,
+    super.onTap,
+    super.enabled,
+    super.height,
+    super.padding,
+    super.textStyle,
+    super.labelTextStyle,
+    super.mouseCursor,
+    required super.child,
+  });
+
+  @override
+  PopupMenuItemState<T, GlassPopupMenuItem<T>> createState() =>
+      _GlassPopupMenuItemState<T>();
+}
+
+class _GlassPopupMenuItemState<T>
+    extends PopupMenuItemState<T, GlassPopupMenuItem<T>> {
+  @override
+  Widget build(BuildContext context) => Material(
+    type: MaterialType.transparency,
+    borderRadius: BorderRadius.circular(ReelvaDesign.radiusSmall),
+    clipBehavior: Clip.antiAlias,
+    child: super.build(context),
+  );
+}
+
 class GlassButton extends StatelessWidget {
   const GlassButton({
     super.key,

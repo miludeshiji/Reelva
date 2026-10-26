@@ -1,5 +1,6 @@
 import 'playback_resource.dart';
 import 'playback_snapshot.dart';
+import 'player_shortcuts.dart';
 
 /// 播放器引擎领域抽象接口
 ///
@@ -28,7 +29,7 @@ abstract interface class PlayerEngine {
   /// 设置播放倍速（通常为 0.25..4.0）
   Future<void> setRate(double rate);
 
-  /// 设置播放音量（范围 0..100）
+  /// 设置播放音量百分比，上限由会话配置决定。
   Future<void> setVolume(double volume);
 
   /// 切换音频轨道
@@ -36,6 +37,9 @@ abstract interface class PlayerEngine {
 
   /// 切换字幕轨道
   Future<void> setSubtitleTrack(String id);
+
+  /// 执行逐帧、章节、字幕同步及画面调整等原生播放操作。
+  Future<void> executeShortcut(PlayerShortcutAction action);
 
   /// 停止播放并将状态重置为空闲
   Future<void> stop();
