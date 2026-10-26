@@ -102,8 +102,10 @@ class _NativeSubtitles extends Fake implements NativePlayer {
   Future<void> dispose({bool synchronized = true}) => delegate.dispose();
 }
 
-PlaybackResource _file(String name) =>
-    PlaybackResource(uri: Uri.file('C:/media/$name'), displayName: name);
+PlaybackResource _file(String name) => PlaybackResource(
+  uri: Uri.file('C:/media/$name', windows: true),
+  displayName: name,
+);
 PlaybackResource _sourceVideo() => PlaybackResource(
   uri: Uri.parse('https://source.test/movie'),
   displayName: 'movie.mkv',

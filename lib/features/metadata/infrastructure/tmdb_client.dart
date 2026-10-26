@@ -22,6 +22,8 @@ class TmdbClient {
   final TmdbCache? cache;
   final String _baseUrl;
   final Duration requestInterval;
+  final DateTime Function() _now;
+  final Future<void> Function(Duration) _delay;
 
   static const Duration _maxBoundedRetryWait = Duration(seconds: 10);
   static const int _maxConcurrentRequests = 4;
@@ -40,7 +42,11 @@ class TmdbClient {
     Dio? dio,
     String? baseUrl,
     this.requestInterval = const Duration(milliseconds: 300),
+    DateTime Function()? now,
+    Future<void> Function(Duration)? delay,
   }) : _dio = dio ?? Dio(),
+       _now = now ?? DateTime.now,
+       _delay = delay ?? Future<void>.delayed,
        _baseUrl = baseUrl ?? 'https://api.themoviedb.org/3' {
     _dio.options.baseUrl = _baseUrl;
     _dio.options.connectTimeout = const Duration(seconds: 10);
@@ -71,7 +77,7 @@ class TmdbClient {
               code: 'unauthorized',
             );
           }
-          final now = DateTime.now();
+          final now = _now();
           final cooldown = _nextAllowedRequestTime.difference(now);
           if (cooldown > _maxBoundedRetryWait) {
             throw const MetadataException(
@@ -84,10 +90,10 @@ class TmdbClient {
               .difference(now);
           final wait = cooldown > interval ? cooldown : interval;
           if (wait <= Duration.zero) break;
-          await Future<void>.delayed(wait);
+          await _delay(wait);
           // 等待期间其他在途请求可能延长了共享冷却，启动前重新检查。
         }
-        _lastRequestTime = DateTime.now();
+        _lastRequestTime = _now();
         _activeRequests++;
         unawaited(() async {
           try {
@@ -96,7 +102,7 @@ class TmdbClient {
             if (error is DioException) {
               final status = error.response?.statusCode;
               if (status == 429) {
-                final next = DateTime.now().add(_retryAfter(error));
+                final next = _now().add(_retryAfter(error));
                 if (next.isAfter(_nextAllowedRequestTime)) {
                   _nextAllowedRequestTime = next;
                 }

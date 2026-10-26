@@ -30,20 +30,35 @@ void main() {
     adapter = FakeHttpClientAdapter();
   });
 
-  TmdbClient client({Duration interval = const Duration(milliseconds: 300)}) {
+  TmdbClient client({
+    Duration interval = const Duration(milliseconds: 300),
+    DateTime Function()? now,
+    Future<void> Function(Duration)? delay,
+  }) {
     final dio = Dio()..httpClientAdapter = adapter;
     final result = TmdbClient(
       dio: dio,
       tokenStore: tokens,
       cache: MemoryTmdbCache(),
       requestInterval: interval,
+      now: now,
+      delay: delay,
     );
     addTearDown(result.dispose);
     return result;
   }
 
   test('四个 HTTP 请求可同时等待响应，启动仍保持全局 300ms 间隔', () async {
-    final api = client();
+    var now = DateTime.utc(2026);
+    final waits = <({Duration duration, Completer<void> gate})>[];
+    final api = client(
+      now: () => now,
+      delay: (duration) {
+        final gate = Completer<void>();
+        waits.add((duration: duration, gate: gate));
+        return gate.future;
+      },
+    );
     final started = [for (var n = 0; n < 6; n++) Completer<void>()];
     final responses = <Completer<ResponseBody>>[];
     final times = <DateTime>[];
@@ -52,7 +67,7 @@ void main() {
     adapter.handler = (_) async {
       active++;
       if (active > peak) peak = active;
-      times.add(DateTime.now());
+      times.add(now);
       final response = Completer<ResponseBody>();
       responses.add(response);
       started[responses.length - 1].complete();
@@ -63,20 +78,33 @@ void main() {
       }
     };
     final results = [for (var n = 0; n < 6; n++) api.searchMovie('Movie $n')];
-    await started[3].future.timeout(const Duration(seconds: 4));
+    await started[0].future.timeout(const Duration(seconds: 2));
+    Future<void> startNext(int index) async {
+      await pumpEventQueue();
+      expect(waits, hasLength(index));
+      final wait = waits.last;
+      expect(wait.duration, const Duration(milliseconds: 300));
+      now = now.add(wait.duration);
+      wait.gate.complete();
+      await started[index].future.timeout(const Duration(seconds: 2));
+    }
+
+    for (var n = 1; n < 4; n++) {
+      await startNext(n);
+    }
     expect(responses, hasLength(4));
     expect(active, 4);
     for (var n = 1; n < times.length; n++) {
       expect(
         times[n].difference(times[n - 1]),
-        greaterThanOrEqualTo(const Duration(milliseconds: 290)),
+        const Duration(milliseconds: 300),
       );
     }
     responses[0].complete(_response());
-    await started[4].future.timeout(const Duration(seconds: 3));
+    await startNext(4);
     expect(peak, 4);
     responses[1].complete(_response());
-    await started[5].future.timeout(const Duration(seconds: 3));
+    await startNext(5);
     for (final response in responses.where(
       (response) => !response.isCompleted,
     )) {

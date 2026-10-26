@@ -112,27 +112,32 @@ void main() {
 
   group('MediaFilePicker 路径转换与安全边界测试', () {
     test('Windows 字幕选择器筛选字幕格式，保留含中文和百分号的路径', () async {
-      List<XTypeGroup>? types;
-      final picker = MediaFilePicker(
-        platformOverride: TargetPlatform.windows,
-        openFilePicker:
-            ({
-              List<XTypeGroup> acceptedTypeGroups = const [],
-              String? initialDirectory,
-              String? confirmButtonText,
-            }) async {
-              types = acceptedTypeGroups;
-              return XFile(r'C:\字幕\影片 100%.zh.srt');
-            },
-      );
-      final subtitle = await picker.pickSubtitle();
-      expect(
-        types!.single.extensions,
-        containsAll(['srt', 'ass', 'ssa', 'vtt']),
-      );
-      expect(types!.single.extensions, isNot(contains('mkv')));
-      expect(subtitle!.uri.toFilePath(windows: true), r'C:\字幕\影片 100%.zh.srt');
-      expect(subtitle.displayName, '影片 100%.zh.srt');
+      for (final name in [null, r'C:\字幕\影片 100%.zh.srt']) {
+        List<XTypeGroup>? types;
+        final picker = MediaFilePicker(
+          platformOverride: TargetPlatform.windows,
+          openFilePicker:
+              ({
+                List<XTypeGroup> acceptedTypeGroups = const [],
+                String? initialDirectory,
+                String? confirmButtonText,
+              }) async {
+                types = acceptedTypeGroups;
+                return XFile(r'C:\字幕\影片 100%.zh.srt', name: name);
+              },
+        );
+        final subtitle = await picker.pickSubtitle();
+        expect(
+          types!.single.extensions,
+          containsAll(['srt', 'ass', 'ssa', 'vtt']),
+        );
+        expect(types!.single.extensions, isNot(contains('mkv')));
+        expect(
+          subtitle!.uri.toFilePath(windows: true),
+          r'C:\字幕\影片 100%.zh.srt',
+        );
+        expect(subtitle.displayName, '影片 100%.zh.srt');
+      }
     });
 
     test('Windows 用户取消时返回 null', () async {

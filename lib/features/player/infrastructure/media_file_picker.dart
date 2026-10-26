@@ -92,12 +92,15 @@ class MediaFilePicker {
               XTypeGroup(label: '字幕', extensions: subtitleExtensions),
             ],
           );
-          resource = file == null
-              ? null
-              : PlaybackResource(
-                  uri: Uri.file(file.path, windows: true),
-                  displayName: file.name,
-                );
+          if (file == null) {
+            resource = null;
+          } else {
+            final uri = Uri.file(file.path, windows: true);
+            resource = PlaybackResource(
+              uri: uri,
+              displayName: uri.pathSegments.last,
+            );
+          }
         case TargetPlatform.android:
           resource = await androidDocuments.pickSubtitle();
         default:

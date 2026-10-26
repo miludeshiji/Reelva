@@ -197,13 +197,18 @@ void main() {
           await rawDb.close();
         }
 
-        // 2. 用 AppDatabase 打开该 v2 数据库文件触发升级至 Schema v3
+        // 2. 用 AppDatabase 打开该 v2 数据库文件触发升级至当前 Schema v4
         final appDb = AppDatabase(executor: NativeDatabase(dbFile));
         try {
-          expect(appDb.schemaVersion, 3);
+          expect(appDb.schemaVersion, 4);
 
           // 验证原有的 v1 和 v2 业务数据全部完好无损
           final sources = await appDb.select(appDb.mediaSources).get();
+          expect(
+            (await appDb.customSelect('PRAGMA user_version').getSingle())
+                .read<int>('user_version'),
+            4,
+          );
           expect(sources, hasLength(1));
           expect(sources.first.name, 'Movies');
 
@@ -264,7 +269,7 @@ void main() {
       }
     });
 
-    test('migrates from v1 database directly to v3 creating both v2 and v3 tables without data loss', () async {
+    test('migrates from v1 database to v4 preserving data and creating metadata and sync tables', () async {
       final tempDir = Directory.systemTemp.createTempSync(
         'reelva_schema_v1_to_v3_test_',
       );
@@ -340,16 +345,49 @@ void main() {
           await rawDb.runCustom('''
               INSERT INTO works (id, type, title) VALUES (1, 'movie', 'Matrix');
             ''');
+          // v1 原本包含季集表，v4 会在分集表中追加 TMDB ID。
+          await rawDb.runCustom('''
+              CREATE TABLE seasons (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                series_id INTEGER NOT NULL REFERENCES works(id) ON DELETE CASCADE,
+                season_number INTEGER NOT NULL,
+                title TEXT,
+                UNIQUE (series_id, season_number)
+              );
+            ''');
+          await rawDb.runCustom('''
+              CREATE TABLE episodes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                season_id INTEGER NOT NULL REFERENCES seasons(id) ON DELETE CASCADE,
+                episode_number INTEGER NOT NULL,
+                title TEXT,
+                overview TEXT,
+                air_date INTEGER,
+                UNIQUE (season_id, episode_number)
+              );
+            ''');
         } finally {
           await rawDb.close();
         }
 
         final appDb = AppDatabase(executor: NativeDatabase(dbFile));
         try {
-          expect(appDb.schemaVersion, 3);
+          expect(appDb.schemaVersion, 4);
           final works = await appDb.select(appDb.works).get();
           expect(works, hasLength(1));
           expect(works.first.title, 'Matrix');
+          expect(
+            (await appDb.customSelect('PRAGMA user_version').getSingle())
+                .read<int>('user_version'),
+            4,
+          );
+          final episodeColumns = await appDb
+              .customSelect("PRAGMA table_info('episodes')")
+              .get();
+          expect(
+            episodeColumns.map((row) => row.read<String>('name')),
+            contains('tmdb_id'),
+          );
 
           // 验证 v2 增加的列与表均已生效
           final cols = await appDb
