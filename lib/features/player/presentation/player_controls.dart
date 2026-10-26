@@ -26,6 +26,8 @@ class PlayerControls extends StatefulWidget {
     this.overlay = false,
     this.onInteractionChanged,
     this.maxVolume = 100,
+    this.onPickLocalSubtitle,
+    this.onPickSourceSubtitle,
   });
 
   final PlaybackSnapshot snapshot;
@@ -35,6 +37,8 @@ class PlayerControls extends StatefulWidget {
   final bool overlay;
   final ValueChanged<bool>? onInteractionChanged;
   final double maxVolume;
+  final VoidCallback? onPickLocalSubtitle;
+  final VoidCallback? onPickSourceSubtitle;
 
   static const List<double> supportedRates = [0.5, 1.0, 1.25, 1.5, 2.0, 3.0];
 
@@ -501,6 +505,12 @@ class _PlayerControlsState extends State<PlayerControls> {
           tracks: snapshot.subtitleTracks,
           selectedId: snapshot.subtitleTrackId,
           onSelected: engine.setSubtitleTrack,
+          extraActions: {
+            if (widget.onPickLocalSubtitle != null)
+              '__local_subtitle': ('选择本地字幕', widget.onPickLocalSubtitle!),
+            if (widget.onPickSourceSubtitle != null)
+              '__source_subtitle': ('选择媒体源字幕', widget.onPickSourceSubtitle!),
+          },
         ),
         _buildTrackMenu(
           context,
@@ -554,36 +564,50 @@ class _PlayerControlsState extends State<PlayerControls> {
     required List<PlaybackTrack> tracks,
     required String? selectedId,
     required ValueChanged<String> onSelected,
+    Map<String, (String, VoidCallback)> extraActions = const {},
   }) {
     return PopupMenuButton<String>(
       key: menuKey,
       tooltip: tooltip,
       initialValue: selectedId,
-      enabled: tracks.isNotEmpty,
+      enabled: tracks.isNotEmpty || extraActions.isNotEmpty,
       onOpened: () => widget.onInteractionChanged?.call(true),
       onCanceled: () => widget.onInteractionChanged?.call(false),
       onSelected: (track) {
         widget.onInteractionChanged?.call(false);
-        onSelected(track);
+        final action = extraActions[track];
+        if (action != null) {
+          action.$2();
+        } else {
+          onSelected(track);
+        }
       },
-      itemBuilder: (context) => tracks
-          .map(
-            (track) => GlassPopupMenuItem<String>(
-              value: track.id,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(track.label, overflow: TextOverflow.ellipsis),
-                  ),
-                  if (track.id == selectedId) ...[
-                    const SizedBox(width: ReelvaDesign.space8),
-                    const Icon(Icons.check, size: 16),
-                  ],
+      itemBuilder: (context) => [
+        ...tracks.map(
+          (track) => GlassPopupMenuItem<String>(
+            value: track.id,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(track.label, overflow: TextOverflow.ellipsis),
+                ),
+                if (track.id == selectedId) ...[
+                  const SizedBox(width: ReelvaDesign.space8),
+                  const Icon(Icons.check, size: 16),
                 ],
-              ),
+              ],
             ),
-          )
-          .toList(),
+          ),
+        ),
+        if (tracks.isNotEmpty && extraActions.isNotEmpty)
+          const PopupMenuDivider(),
+        ...extraActions.entries.map(
+          (entry) => GlassPopupMenuItem<String>(
+            value: entry.key,
+            child: Text(entry.value.$1),
+          ),
+        ),
+      ],
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: ReelvaDesign.space8,
@@ -593,7 +617,7 @@ class _PlayerControlsState extends State<PlayerControls> {
           label,
           key: textKey,
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            color: tracks.isEmpty
+            color: tracks.isEmpty && extraActions.isEmpty
                 ? Theme.of(context).disabledColor
                 : Theme.of(context).colorScheme.onSurface,
           ),

@@ -293,7 +293,9 @@ class _PlayerSettingsPageState extends ConsumerState<PlayerSettingsPage> {
                 onChanged: (value) =>
                     _draft = _draft.copyWith(subtitleAutoLoad: value),
               ),
-              const Text('自动加载适用于可直接访问的本地目录；网络媒体源和 Android 授权单文件暂不支持。'),
+              const Text(
+                '支持本地、WebDAV、SMB 和 Android 授权目录中的同目录字幕；单独打开的网络地址或 Android 单文件可在播放页手动选择字幕。',
+              ),
               const SizedBox(height: 16),
               TextFormField(
                 key: const Key('player_setting_sub_font'),

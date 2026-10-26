@@ -2261,6 +2261,39 @@ class $WorksTable extends Works with TableInfo<$WorksTable, WorkData> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _posterLocatorMeta = const VerificationMeta(
+    'posterLocator',
+  );
+  @override
+  late final GeneratedColumn<String> posterLocator = GeneratedColumn<String>(
+    'poster_locator',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _backdropLocatorMeta = const VerificationMeta(
+    'backdropLocator',
+  );
+  @override
+  late final GeneratedColumn<String> backdropLocator = GeneratedColumn<String>(
+    'backdrop_locator',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _premieredMeta = const VerificationMeta(
+    'premiered',
+  );
+  @override
+  late final GeneratedColumn<DateTime> premiered = GeneratedColumn<DateTime>(
+    'premiered',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _metadataSourceMeta = const VerificationMeta(
     'metadataSource',
   );
@@ -2322,6 +2355,9 @@ class $WorksTable extends Works with TableInfo<$WorksTable, WorkData> {
     overview,
     posterPath,
     backdropPath,
+    posterLocator,
+    backdropLocator,
+    premiered,
     metadataSource,
     metadataLocked,
     createdAt,
@@ -2390,6 +2426,30 @@ class $WorksTable extends Works with TableInfo<$WorksTable, WorkData> {
           data['backdrop_path']!,
           _backdropPathMeta,
         ),
+      );
+    }
+    if (data.containsKey('poster_locator')) {
+      context.handle(
+        _posterLocatorMeta,
+        posterLocator.isAcceptableOrUnknown(
+          data['poster_locator']!,
+          _posterLocatorMeta,
+        ),
+      );
+    }
+    if (data.containsKey('backdrop_locator')) {
+      context.handle(
+        _backdropLocatorMeta,
+        backdropLocator.isAcceptableOrUnknown(
+          data['backdrop_locator']!,
+          _backdropLocatorMeta,
+        ),
+      );
+    }
+    if (data.containsKey('premiered')) {
+      context.handle(
+        _premieredMeta,
+        premiered.isAcceptableOrUnknown(data['premiered']!, _premieredMeta),
       );
     }
     if (data.containsKey('metadata_source')) {
@@ -2463,6 +2523,18 @@ class $WorksTable extends Works with TableInfo<$WorksTable, WorkData> {
         DriftSqlType.string,
         data['${effectivePrefix}backdrop_path'],
       ),
+      posterLocator: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}poster_locator'],
+      ),
+      backdropLocator: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}backdrop_locator'],
+      ),
+      premiered: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}premiered'],
+      ),
       metadataSource: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}metadata_source'],
@@ -2497,6 +2569,9 @@ class WorkData extends DataClass implements Insertable<WorkData> {
   final String? overview;
   final String? posterPath;
   final String? backdropPath;
+  final String? posterLocator;
+  final String? backdropLocator;
+  final DateTime? premiered;
   final String metadataSource;
   final bool metadataLocked;
   final DateTime createdAt;
@@ -2510,6 +2585,9 @@ class WorkData extends DataClass implements Insertable<WorkData> {
     this.overview,
     this.posterPath,
     this.backdropPath,
+    this.posterLocator,
+    this.backdropLocator,
+    this.premiered,
     required this.metadataSource,
     required this.metadataLocked,
     required this.createdAt,
@@ -2538,6 +2616,15 @@ class WorkData extends DataClass implements Insertable<WorkData> {
     if (!nullToAbsent || backdropPath != null) {
       map['backdrop_path'] = Variable<String>(backdropPath);
     }
+    if (!nullToAbsent || posterLocator != null) {
+      map['poster_locator'] = Variable<String>(posterLocator);
+    }
+    if (!nullToAbsent || backdropLocator != null) {
+      map['backdrop_locator'] = Variable<String>(backdropLocator);
+    }
+    if (!nullToAbsent || premiered != null) {
+      map['premiered'] = Variable<DateTime>(premiered);
+    }
     map['metadata_source'] = Variable<String>(metadataSource);
     map['metadata_locked'] = Variable<bool>(metadataLocked);
     map['created_at'] = Variable<DateTime>(createdAt);
@@ -2563,6 +2650,15 @@ class WorkData extends DataClass implements Insertable<WorkData> {
       backdropPath: backdropPath == null && nullToAbsent
           ? const Value.absent()
           : Value(backdropPath),
+      posterLocator: posterLocator == null && nullToAbsent
+          ? const Value.absent()
+          : Value(posterLocator),
+      backdropLocator: backdropLocator == null && nullToAbsent
+          ? const Value.absent()
+          : Value(backdropLocator),
+      premiered: premiered == null && nullToAbsent
+          ? const Value.absent()
+          : Value(premiered),
       metadataSource: Value(metadataSource),
       metadataLocked: Value(metadataLocked),
       createdAt: Value(createdAt),
@@ -2584,6 +2680,9 @@ class WorkData extends DataClass implements Insertable<WorkData> {
       overview: serializer.fromJson<String?>(json['overview']),
       posterPath: serializer.fromJson<String?>(json['posterPath']),
       backdropPath: serializer.fromJson<String?>(json['backdropPath']),
+      posterLocator: serializer.fromJson<String?>(json['posterLocator']),
+      backdropLocator: serializer.fromJson<String?>(json['backdropLocator']),
+      premiered: serializer.fromJson<DateTime?>(json['premiered']),
       metadataSource: serializer.fromJson<String>(json['metadataSource']),
       metadataLocked: serializer.fromJson<bool>(json['metadataLocked']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
@@ -2602,6 +2701,9 @@ class WorkData extends DataClass implements Insertable<WorkData> {
       'overview': serializer.toJson<String?>(overview),
       'posterPath': serializer.toJson<String?>(posterPath),
       'backdropPath': serializer.toJson<String?>(backdropPath),
+      'posterLocator': serializer.toJson<String?>(posterLocator),
+      'backdropLocator': serializer.toJson<String?>(backdropLocator),
+      'premiered': serializer.toJson<DateTime?>(premiered),
       'metadataSource': serializer.toJson<String>(metadataSource),
       'metadataLocked': serializer.toJson<bool>(metadataLocked),
       'createdAt': serializer.toJson<DateTime>(createdAt),
@@ -2618,6 +2720,9 @@ class WorkData extends DataClass implements Insertable<WorkData> {
     Value<String?> overview = const Value.absent(),
     Value<String?> posterPath = const Value.absent(),
     Value<String?> backdropPath = const Value.absent(),
+    Value<String?> posterLocator = const Value.absent(),
+    Value<String?> backdropLocator = const Value.absent(),
+    Value<DateTime?> premiered = const Value.absent(),
     String? metadataSource,
     bool? metadataLocked,
     DateTime? createdAt,
@@ -2633,6 +2738,13 @@ class WorkData extends DataClass implements Insertable<WorkData> {
     overview: overview.present ? overview.value : this.overview,
     posterPath: posterPath.present ? posterPath.value : this.posterPath,
     backdropPath: backdropPath.present ? backdropPath.value : this.backdropPath,
+    posterLocator: posterLocator.present
+        ? posterLocator.value
+        : this.posterLocator,
+    backdropLocator: backdropLocator.present
+        ? backdropLocator.value
+        : this.backdropLocator,
+    premiered: premiered.present ? premiered.value : this.premiered,
     metadataSource: metadataSource ?? this.metadataSource,
     metadataLocked: metadataLocked ?? this.metadataLocked,
     createdAt: createdAt ?? this.createdAt,
@@ -2654,6 +2766,13 @@ class WorkData extends DataClass implements Insertable<WorkData> {
       backdropPath: data.backdropPath.present
           ? data.backdropPath.value
           : this.backdropPath,
+      posterLocator: data.posterLocator.present
+          ? data.posterLocator.value
+          : this.posterLocator,
+      backdropLocator: data.backdropLocator.present
+          ? data.backdropLocator.value
+          : this.backdropLocator,
+      premiered: data.premiered.present ? data.premiered.value : this.premiered,
       metadataSource: data.metadataSource.present
           ? data.metadataSource.value
           : this.metadataSource,
@@ -2676,6 +2795,9 @@ class WorkData extends DataClass implements Insertable<WorkData> {
           ..write('overview: $overview, ')
           ..write('posterPath: $posterPath, ')
           ..write('backdropPath: $backdropPath, ')
+          ..write('posterLocator: $posterLocator, ')
+          ..write('backdropLocator: $backdropLocator, ')
+          ..write('premiered: $premiered, ')
           ..write('metadataSource: $metadataSource, ')
           ..write('metadataLocked: $metadataLocked, ')
           ..write('createdAt: $createdAt, ')
@@ -2694,6 +2816,9 @@ class WorkData extends DataClass implements Insertable<WorkData> {
     overview,
     posterPath,
     backdropPath,
+    posterLocator,
+    backdropLocator,
+    premiered,
     metadataSource,
     metadataLocked,
     createdAt,
@@ -2711,6 +2836,9 @@ class WorkData extends DataClass implements Insertable<WorkData> {
           other.overview == this.overview &&
           other.posterPath == this.posterPath &&
           other.backdropPath == this.backdropPath &&
+          other.posterLocator == this.posterLocator &&
+          other.backdropLocator == this.backdropLocator &&
+          other.premiered == this.premiered &&
           other.metadataSource == this.metadataSource &&
           other.metadataLocked == this.metadataLocked &&
           other.createdAt == this.createdAt &&
@@ -2726,6 +2854,9 @@ class WorksCompanion extends UpdateCompanion<WorkData> {
   final Value<String?> overview;
   final Value<String?> posterPath;
   final Value<String?> backdropPath;
+  final Value<String?> posterLocator;
+  final Value<String?> backdropLocator;
+  final Value<DateTime?> premiered;
   final Value<String> metadataSource;
   final Value<bool> metadataLocked;
   final Value<DateTime> createdAt;
@@ -2739,6 +2870,9 @@ class WorksCompanion extends UpdateCompanion<WorkData> {
     this.overview = const Value.absent(),
     this.posterPath = const Value.absent(),
     this.backdropPath = const Value.absent(),
+    this.posterLocator = const Value.absent(),
+    this.backdropLocator = const Value.absent(),
+    this.premiered = const Value.absent(),
     this.metadataSource = const Value.absent(),
     this.metadataLocked = const Value.absent(),
     this.createdAt = const Value.absent(),
@@ -2753,6 +2887,9 @@ class WorksCompanion extends UpdateCompanion<WorkData> {
     this.overview = const Value.absent(),
     this.posterPath = const Value.absent(),
     this.backdropPath = const Value.absent(),
+    this.posterLocator = const Value.absent(),
+    this.backdropLocator = const Value.absent(),
+    this.premiered = const Value.absent(),
     this.metadataSource = const Value.absent(),
     this.metadataLocked = const Value.absent(),
     this.createdAt = const Value.absent(),
@@ -2767,6 +2904,9 @@ class WorksCompanion extends UpdateCompanion<WorkData> {
     Expression<String>? overview,
     Expression<String>? posterPath,
     Expression<String>? backdropPath,
+    Expression<String>? posterLocator,
+    Expression<String>? backdropLocator,
+    Expression<DateTime>? premiered,
     Expression<String>? metadataSource,
     Expression<bool>? metadataLocked,
     Expression<DateTime>? createdAt,
@@ -2781,6 +2921,9 @@ class WorksCompanion extends UpdateCompanion<WorkData> {
       if (overview != null) 'overview': overview,
       if (posterPath != null) 'poster_path': posterPath,
       if (backdropPath != null) 'backdrop_path': backdropPath,
+      if (posterLocator != null) 'poster_locator': posterLocator,
+      if (backdropLocator != null) 'backdrop_locator': backdropLocator,
+      if (premiered != null) 'premiered': premiered,
       if (metadataSource != null) 'metadata_source': metadataSource,
       if (metadataLocked != null) 'metadata_locked': metadataLocked,
       if (createdAt != null) 'created_at': createdAt,
@@ -2797,6 +2940,9 @@ class WorksCompanion extends UpdateCompanion<WorkData> {
     Value<String?>? overview,
     Value<String?>? posterPath,
     Value<String?>? backdropPath,
+    Value<String?>? posterLocator,
+    Value<String?>? backdropLocator,
+    Value<DateTime?>? premiered,
     Value<String>? metadataSource,
     Value<bool>? metadataLocked,
     Value<DateTime>? createdAt,
@@ -2811,6 +2957,9 @@ class WorksCompanion extends UpdateCompanion<WorkData> {
       overview: overview ?? this.overview,
       posterPath: posterPath ?? this.posterPath,
       backdropPath: backdropPath ?? this.backdropPath,
+      posterLocator: posterLocator ?? this.posterLocator,
+      backdropLocator: backdropLocator ?? this.backdropLocator,
+      premiered: premiered ?? this.premiered,
       metadataSource: metadataSource ?? this.metadataSource,
       metadataLocked: metadataLocked ?? this.metadataLocked,
       createdAt: createdAt ?? this.createdAt,
@@ -2845,6 +2994,15 @@ class WorksCompanion extends UpdateCompanion<WorkData> {
     if (backdropPath.present) {
       map['backdrop_path'] = Variable<String>(backdropPath.value);
     }
+    if (posterLocator.present) {
+      map['poster_locator'] = Variable<String>(posterLocator.value);
+    }
+    if (backdropLocator.present) {
+      map['backdrop_locator'] = Variable<String>(backdropLocator.value);
+    }
+    if (premiered.present) {
+      map['premiered'] = Variable<DateTime>(premiered.value);
+    }
     if (metadataSource.present) {
       map['metadata_source'] = Variable<String>(metadataSource.value);
     }
@@ -2871,6 +3029,9 @@ class WorksCompanion extends UpdateCompanion<WorkData> {
           ..write('overview: $overview, ')
           ..write('posterPath: $posterPath, ')
           ..write('backdropPath: $backdropPath, ')
+          ..write('posterLocator: $posterLocator, ')
+          ..write('backdropLocator: $backdropLocator, ')
+          ..write('premiered: $premiered, ')
           ..write('metadataSource: $metadataSource, ')
           ..write('metadataLocked: $metadataLocked, ')
           ..write('createdAt: $createdAt, ')
@@ -3196,6 +3357,15 @@ class $EpisodesTable extends Episodes
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
   $EpisodesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _tmdbIdMeta = const VerificationMeta('tmdbId');
+  @override
+  late final GeneratedColumn<int> tmdbId = GeneratedColumn<int>(
+    'tmdb_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _idMeta = const VerificationMeta('id');
   @override
   late final GeneratedColumn<int> id = GeneratedColumn<int>(
@@ -3267,6 +3437,7 @@ class $EpisodesTable extends Episodes
   );
   @override
   List<GeneratedColumn> get $columns => [
+    tmdbId,
     id,
     seasonId,
     episodeNumber,
@@ -3286,6 +3457,12 @@ class $EpisodesTable extends Episodes
   }) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
+    if (data.containsKey('tmdb_id')) {
+      context.handle(
+        _tmdbIdMeta,
+        tmdbId.isAcceptableOrUnknown(data['tmdb_id']!, _tmdbIdMeta),
+      );
+    }
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     }
@@ -3339,6 +3516,10 @@ class $EpisodesTable extends Episodes
   EpisodeData map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return EpisodeData(
+      tmdbId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}tmdb_id'],
+      ),
       id: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}id'],
@@ -3373,6 +3554,7 @@ class $EpisodesTable extends Episodes
 }
 
 class EpisodeData extends DataClass implements Insertable<EpisodeData> {
+  final int? tmdbId;
   final int id;
   final int seasonId;
   final int episodeNumber;
@@ -3380,6 +3562,7 @@ class EpisodeData extends DataClass implements Insertable<EpisodeData> {
   final String? overview;
   final DateTime? airDate;
   const EpisodeData({
+    this.tmdbId,
     required this.id,
     required this.seasonId,
     required this.episodeNumber,
@@ -3390,6 +3573,9 @@ class EpisodeData extends DataClass implements Insertable<EpisodeData> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
+    if (!nullToAbsent || tmdbId != null) {
+      map['tmdb_id'] = Variable<int>(tmdbId);
+    }
     map['id'] = Variable<int>(id);
     map['season_id'] = Variable<int>(seasonId);
     map['episode_number'] = Variable<int>(episodeNumber);
@@ -3407,6 +3593,9 @@ class EpisodeData extends DataClass implements Insertable<EpisodeData> {
 
   EpisodesCompanion toCompanion(bool nullToAbsent) {
     return EpisodesCompanion(
+      tmdbId: tmdbId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(tmdbId),
       id: Value(id),
       seasonId: Value(seasonId),
       episodeNumber: Value(episodeNumber),
@@ -3428,6 +3617,7 @@ class EpisodeData extends DataClass implements Insertable<EpisodeData> {
   }) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return EpisodeData(
+      tmdbId: serializer.fromJson<int?>(json['tmdbId']),
       id: serializer.fromJson<int>(json['id']),
       seasonId: serializer.fromJson<int>(json['seasonId']),
       episodeNumber: serializer.fromJson<int>(json['episodeNumber']),
@@ -3440,6 +3630,7 @@ class EpisodeData extends DataClass implements Insertable<EpisodeData> {
   Map<String, dynamic> toJson({ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
+      'tmdbId': serializer.toJson<int?>(tmdbId),
       'id': serializer.toJson<int>(id),
       'seasonId': serializer.toJson<int>(seasonId),
       'episodeNumber': serializer.toJson<int>(episodeNumber),
@@ -3450,6 +3641,7 @@ class EpisodeData extends DataClass implements Insertable<EpisodeData> {
   }
 
   EpisodeData copyWith({
+    Value<int?> tmdbId = const Value.absent(),
     int? id,
     int? seasonId,
     int? episodeNumber,
@@ -3457,6 +3649,7 @@ class EpisodeData extends DataClass implements Insertable<EpisodeData> {
     Value<String?> overview = const Value.absent(),
     Value<DateTime?> airDate = const Value.absent(),
   }) => EpisodeData(
+    tmdbId: tmdbId.present ? tmdbId.value : this.tmdbId,
     id: id ?? this.id,
     seasonId: seasonId ?? this.seasonId,
     episodeNumber: episodeNumber ?? this.episodeNumber,
@@ -3466,6 +3659,7 @@ class EpisodeData extends DataClass implements Insertable<EpisodeData> {
   );
   EpisodeData copyWithCompanion(EpisodesCompanion data) {
     return EpisodeData(
+      tmdbId: data.tmdbId.present ? data.tmdbId.value : this.tmdbId,
       id: data.id.present ? data.id.value : this.id,
       seasonId: data.seasonId.present ? data.seasonId.value : this.seasonId,
       episodeNumber: data.episodeNumber.present
@@ -3480,6 +3674,7 @@ class EpisodeData extends DataClass implements Insertable<EpisodeData> {
   @override
   String toString() {
     return (StringBuffer('EpisodeData(')
+          ..write('tmdbId: $tmdbId, ')
           ..write('id: $id, ')
           ..write('seasonId: $seasonId, ')
           ..write('episodeNumber: $episodeNumber, ')
@@ -3491,12 +3686,20 @@ class EpisodeData extends DataClass implements Insertable<EpisodeData> {
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, seasonId, episodeNumber, title, overview, airDate);
+  int get hashCode => Object.hash(
+    tmdbId,
+    id,
+    seasonId,
+    episodeNumber,
+    title,
+    overview,
+    airDate,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is EpisodeData &&
+          other.tmdbId == this.tmdbId &&
           other.id == this.id &&
           other.seasonId == this.seasonId &&
           other.episodeNumber == this.episodeNumber &&
@@ -3506,6 +3709,7 @@ class EpisodeData extends DataClass implements Insertable<EpisodeData> {
 }
 
 class EpisodesCompanion extends UpdateCompanion<EpisodeData> {
+  final Value<int?> tmdbId;
   final Value<int> id;
   final Value<int> seasonId;
   final Value<int> episodeNumber;
@@ -3513,6 +3717,7 @@ class EpisodesCompanion extends UpdateCompanion<EpisodeData> {
   final Value<String?> overview;
   final Value<DateTime?> airDate;
   const EpisodesCompanion({
+    this.tmdbId = const Value.absent(),
     this.id = const Value.absent(),
     this.seasonId = const Value.absent(),
     this.episodeNumber = const Value.absent(),
@@ -3521,6 +3726,7 @@ class EpisodesCompanion extends UpdateCompanion<EpisodeData> {
     this.airDate = const Value.absent(),
   });
   EpisodesCompanion.insert({
+    this.tmdbId = const Value.absent(),
     this.id = const Value.absent(),
     required int seasonId,
     required int episodeNumber,
@@ -3530,6 +3736,7 @@ class EpisodesCompanion extends UpdateCompanion<EpisodeData> {
   }) : seasonId = Value(seasonId),
        episodeNumber = Value(episodeNumber);
   static Insertable<EpisodeData> custom({
+    Expression<int>? tmdbId,
     Expression<int>? id,
     Expression<int>? seasonId,
     Expression<int>? episodeNumber,
@@ -3538,6 +3745,7 @@ class EpisodesCompanion extends UpdateCompanion<EpisodeData> {
     Expression<DateTime>? airDate,
   }) {
     return RawValuesInsertable({
+      if (tmdbId != null) 'tmdb_id': tmdbId,
       if (id != null) 'id': id,
       if (seasonId != null) 'season_id': seasonId,
       if (episodeNumber != null) 'episode_number': episodeNumber,
@@ -3548,6 +3756,7 @@ class EpisodesCompanion extends UpdateCompanion<EpisodeData> {
   }
 
   EpisodesCompanion copyWith({
+    Value<int?>? tmdbId,
     Value<int>? id,
     Value<int>? seasonId,
     Value<int>? episodeNumber,
@@ -3556,6 +3765,7 @@ class EpisodesCompanion extends UpdateCompanion<EpisodeData> {
     Value<DateTime?>? airDate,
   }) {
     return EpisodesCompanion(
+      tmdbId: tmdbId ?? this.tmdbId,
       id: id ?? this.id,
       seasonId: seasonId ?? this.seasonId,
       episodeNumber: episodeNumber ?? this.episodeNumber,
@@ -3568,6 +3778,9 @@ class EpisodesCompanion extends UpdateCompanion<EpisodeData> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
+    if (tmdbId.present) {
+      map['tmdb_id'] = Variable<int>(tmdbId.value);
+    }
     if (id.present) {
       map['id'] = Variable<int>(id.value);
     }
@@ -3592,6 +3805,7 @@ class EpisodesCompanion extends UpdateCompanion<EpisodeData> {
   @override
   String toString() {
     return (StringBuffer('EpisodesCompanion(')
+          ..write('tmdbId: $tmdbId, ')
           ..write('id: $id, ')
           ..write('seasonId: $seasonId, ')
           ..write('episodeNumber: $episodeNumber, ')
@@ -9289,6 +9503,9 @@ typedef $$WorksTableCreateCompanionBuilder = WorksCompanion Function({
   Value<String?> overview,
   Value<String?> posterPath,
   Value<String?> backdropPath,
+  Value<String?> posterLocator,
+  Value<String?> backdropLocator,
+  Value<DateTime?> premiered,
   Value<String> metadataSource,
   Value<bool> metadataLocked,
   Value<DateTime> createdAt,
@@ -9303,6 +9520,9 @@ typedef $$WorksTableUpdateCompanionBuilder = WorksCompanion Function({
   Value<String?> overview,
   Value<String?> posterPath,
   Value<String?> backdropPath,
+  Value<String?> posterLocator,
+  Value<String?> backdropLocator,
+  Value<DateTime?> premiered,
   Value<String> metadataSource,
   Value<bool> metadataLocked,
   Value<DateTime> createdAt,
@@ -9440,6 +9660,21 @@ class $$WorksTableFilterComposer extends Composer<_$AppDatabase, $WorksTable> {
 
   ColumnFilters<String> get backdropPath => $composableBuilder(
     column: $table.backdropPath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get posterLocator => $composableBuilder(
+    column: $table.posterLocator,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get backdropLocator => $composableBuilder(
+    column: $table.backdropLocator,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get premiered => $composableBuilder(
+    column: $table.premiered,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -9613,6 +9848,21 @@ class $$WorksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get posterLocator => $composableBuilder(
+    column: $table.posterLocator,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get backdropLocator => $composableBuilder(
+    column: $table.backdropLocator,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get premiered => $composableBuilder(
+    column: $table.premiered,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get metadataSource => $composableBuilder(
     column: $table.metadataSource,
     builder: (column) => ColumnOrderings(column),
@@ -9672,6 +9922,19 @@ class $$WorksTableAnnotationComposer
     column: $table.backdropPath,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get posterLocator => $composableBuilder(
+    column: $table.posterLocator,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get backdropLocator => $composableBuilder(
+    column: $table.backdropLocator,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get premiered =>
+      $composableBuilder(column: $table.premiered, builder: (column) => column);
 
   GeneratedColumn<String> get metadataSource => $composableBuilder(
     column: $table.metadataSource,
@@ -9832,6 +10095,9 @@ class $$WorksTableTableManager
                 Value<String?> overview = const Value.absent(),
                 Value<String?> posterPath = const Value.absent(),
                 Value<String?> backdropPath = const Value.absent(),
+                Value<String?> posterLocator = const Value.absent(),
+                Value<String?> backdropLocator = const Value.absent(),
+                Value<DateTime?> premiered = const Value.absent(),
                 Value<String> metadataSource = const Value.absent(),
                 Value<bool> metadataLocked = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
@@ -9845,6 +10111,9 @@ class $$WorksTableTableManager
                 overview: overview,
                 posterPath: posterPath,
                 backdropPath: backdropPath,
+                posterLocator: posterLocator,
+                backdropLocator: backdropLocator,
+                premiered: premiered,
                 metadataSource: metadataSource,
                 metadataLocked: metadataLocked,
                 createdAt: createdAt,
@@ -9860,6 +10129,9 @@ class $$WorksTableTableManager
                 Value<String?> overview = const Value.absent(),
                 Value<String?> posterPath = const Value.absent(),
                 Value<String?> backdropPath = const Value.absent(),
+                Value<String?> posterLocator = const Value.absent(),
+                Value<String?> backdropLocator = const Value.absent(),
+                Value<DateTime?> premiered = const Value.absent(),
                 Value<String> metadataSource = const Value.absent(),
                 Value<bool> metadataLocked = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
@@ -9873,6 +10145,9 @@ class $$WorksTableTableManager
                 overview: overview,
                 posterPath: posterPath,
                 backdropPath: backdropPath,
+                posterLocator: posterLocator,
+                backdropLocator: backdropLocator,
+                premiered: premiered,
                 metadataSource: metadataSource,
                 metadataLocked: metadataLocked,
                 createdAt: createdAt,
@@ -10386,6 +10661,7 @@ typedef $$SeasonsTableProcessedTableManager =
       PrefetchHooks Function({bool seriesId, bool episodesRefs})
     >;
 typedef $$EpisodesTableCreateCompanionBuilder = EpisodesCompanion Function({
+  Value<int?> tmdbId,
   Value<int> id,
   required int seasonId,
   required int episodeNumber,
@@ -10394,6 +10670,7 @@ typedef $$EpisodesTableCreateCompanionBuilder = EpisodesCompanion Function({
   Value<DateTime?> airDate,
 });
 typedef $$EpisodesTableUpdateCompanionBuilder = EpisodesCompanion Function({
+  Value<int?> tmdbId,
   Value<int> id,
   Value<int> seasonId,
   Value<int> episodeNumber,
@@ -10477,6 +10754,11 @@ class $$EpisodesTableFilterComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  ColumnFilters<int> get tmdbId => $composableBuilder(
+    column: $table.tmdbId,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<int> get id => $composableBuilder(
     column: $table.id,
     builder: (column) => ColumnFilters(column),
@@ -10585,6 +10867,11 @@ class $$EpisodesTableOrderingComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  ColumnOrderings<int> get tmdbId => $composableBuilder(
+    column: $table.tmdbId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get id => $composableBuilder(
     column: $table.id,
     builder: (column) => ColumnOrderings(column),
@@ -10643,6 +10930,9 @@ class $$EpisodesTableAnnotationComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  GeneratedColumn<int> get tmdbId =>
+      $composableBuilder(column: $table.tmdbId, builder: (column) => column);
+
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
@@ -10767,6 +11057,7 @@ class $$EpisodesTableTableManager
               $$EpisodesTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback:
               ({
+                Value<int?> tmdbId = const Value.absent(),
                 Value<int> id = const Value.absent(),
                 Value<int> seasonId = const Value.absent(),
                 Value<int> episodeNumber = const Value.absent(),
@@ -10774,6 +11065,7 @@ class $$EpisodesTableTableManager
                 Value<String?> overview = const Value.absent(),
                 Value<DateTime?> airDate = const Value.absent(),
               }) => EpisodesCompanion(
+                tmdbId: tmdbId,
                 id: id,
                 seasonId: seasonId,
                 episodeNumber: episodeNumber,
@@ -10783,6 +11075,7 @@ class $$EpisodesTableTableManager
               ),
           createCompanionCallback:
               ({
+                Value<int?> tmdbId = const Value.absent(),
                 Value<int> id = const Value.absent(),
                 required int seasonId,
                 required int episodeNumber,
@@ -10790,6 +11083,7 @@ class $$EpisodesTableTableManager
                 Value<String?> overview = const Value.absent(),
                 Value<DateTime?> airDate = const Value.absent(),
               }) => EpisodesCompanion.insert(
+                tmdbId: tmdbId,
                 id: id,
                 seasonId: seasonId,
                 episodeNumber: episodeNumber,

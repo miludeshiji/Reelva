@@ -11,6 +11,7 @@ class LibraryWork {
     this.year,
     this.overview,
     this.posterPath,
+    this.tmdbPosterPath,
     this.backdropPath,
     this.metadataSource = 'local',
     this.metadataLocked = false,
@@ -25,8 +26,9 @@ class LibraryWork {
   final int? year;
   final String? overview;
   final String? posterPath;
+  final String? tmdbPosterPath;
   final String? backdropPath;
-  final String metadataSource; // 'local' 或 'tmdb'
+  final String metadataSource; // 'local'、'tmdb' 或 'nfo'
   final bool metadataLocked;
   final int versionCount;
   final bool available;
@@ -39,6 +41,7 @@ class LibraryWork {
     int? year,
     String? overview,
     String? posterPath,
+    String? tmdbPosterPath,
     String? backdropPath,
     String? metadataSource,
     bool? metadataLocked,
@@ -53,6 +56,7 @@ class LibraryWork {
       year: year ?? this.year,
       overview: overview ?? this.overview,
       posterPath: posterPath ?? this.posterPath,
+      tmdbPosterPath: tmdbPosterPath ?? this.tmdbPosterPath,
       backdropPath: backdropPath ?? this.backdropPath,
       metadataSource: metadataSource ?? this.metadataSource,
       metadataLocked: metadataLocked ?? this.metadataLocked,
@@ -73,6 +77,7 @@ class LibraryWork {
           year == other.year &&
           overview == other.overview &&
           posterPath == other.posterPath &&
+          tmdbPosterPath == other.tmdbPosterPath &&
           backdropPath == other.backdropPath &&
           metadataSource == other.metadataSource &&
           metadataLocked == other.metadataLocked &&
@@ -88,6 +93,7 @@ class LibraryWork {
     year,
     overview,
     posterPath,
+    tmdbPosterPath,
     backdropPath,
     metadataSource,
     metadataLocked,

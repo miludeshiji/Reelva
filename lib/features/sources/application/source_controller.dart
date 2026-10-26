@@ -10,7 +10,10 @@ import '../../player/domain/playback_resource.dart';
 import '../domain/source_models.dart';
 import '../infrastructure/remote_credentials_store.dart';
 import 'source_providers.dart';
+import 'source_subtitles.dart';
 import '../../metadata/application/metadata_providers.dart';
+import '../../metadata/application/nfo_providers.dart';
+import '../../metadata/application/nfo_service.dart';
 
 /// 媒体源应用层控制器
 ///
@@ -83,7 +86,7 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
     return source;
   }
 
-  /// 添加或更新远程媒体源（WebDAV / OpenList / SMB）
+  /// 添加或更新远程媒体源（WebDAV / SMB）
   ///
   /// - 校验并清洗根目录定位符（移除嵌入的凭据与 query 参数）；
   /// - 重复添加相同类型的相同根目录时，更新凭据与配置，不产生孤儿凭据；
@@ -94,14 +97,12 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
     required String rootUrl,
     String? name,
     RemoteCredentials credentials = const RemoteCredentials(),
-    String? openListRootPath,
     List<String> extensions = defaultVideoExtensions,
     List<String> excludedDirectories = defaultExcludedDirectories,
   }) async {
     final sanitizedRoot = sanitizeAndValidateRootLocator(
       kind: kind,
       rawInput: rootUrl,
-      openListRootPath: openListRootPath,
     );
 
     final displayName = name != null && name.trim().isNotEmpty
@@ -364,6 +365,12 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
       return resource.copyWith(
         displayName: displayName,
         libraryFileId: () => fileId,
+        sourceId: source.id,
+        discoverSubtitles: () => discoverSourceSubtitles(
+          source: source,
+          adapter: adapter,
+          videoId: video.externalId,
+        ),
       );
     } on MediaSourceException {
       rethrow;
@@ -448,6 +455,8 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
         .map((e) => e.toLowerCase())
         .toSet();
 
+    final nfoContexts = <String, NfoDirectoryContext?>{};
+    final nfoService = ref.read(nfoServiceProvider);
     final queue = Queue<String>();
     queue.add(source.rootLocator);
     final visitedDirIds = <String>{source.rootLocator};
@@ -471,6 +480,8 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
           },
         );
 
+        final directoryEntries = <MediaEntry>[];
+        final childDirectories = <String>[];
         final stream = adapter.listEntries(source, currentDirId);
         await for (final entry in stream) {
           if (_cancellations[id] == true) {
@@ -482,6 +493,7 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
             continue;
           }
 
+          directoryEntries.add(entry);
           if (entry.isDirectory) {
             if (excludedDirs.contains(entry.name.toLowerCase())) {
               continue;
@@ -489,6 +501,7 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
 
             if (visitedDirIds.add(entry.externalId)) {
               queue.add(entry.externalId);
+              childDirectories.add(entry.externalId);
               batch.add(entry);
             }
           } else {
@@ -514,6 +527,23 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
                 id: s[id]!.copyWith(visited: visitedCount, videos: videoCount),
               },
             );
+          }
+        }
+        if (_cancellations[id] != true) {
+          if (batch.isNotEmpty) {
+            await repo.applyScanBatch(id, scanId, batch);
+            batch.clear();
+          }
+          final context = await nfoService.importDirectory(
+            source,
+            currentDirId,
+            directoryEntries,
+            inherited: nfoContexts[currentDirId],
+            onError: (message) =>
+                ref.read(nfoControllerProvider.notifier).reportError(message),
+          );
+          for (final child in childDirectories) {
+            nfoContexts[child] = context;
           }
         }
         _safeSetState(
@@ -634,14 +664,6 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
           return uri.host;
         }
         return 'WebDAV 源';
-      case 'openlist':
-        final uri = Uri.tryParse(locator);
-        if (uri != null && uri.host.isNotEmpty) {
-          return uri.fragment.isNotEmpty
-              ? '${uri.host}${uri.fragment}'
-              : uri.host;
-        }
-        return 'OpenList 源';
       case 'smb':
         final uri = Uri.tryParse(locator);
         if (uri != null && uri.host.isNotEmpty) {

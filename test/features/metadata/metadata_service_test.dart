@@ -1,3 +1,5 @@
+import 'package:reelva/features/metadata/domain/work_metadata.dart';
+
 import 'dart:async';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -177,8 +179,11 @@ class FakeMediaLibraryRepository implements MediaLibraryRepository {
   @override
   Future<int?> applyMetadataToFiles(
     Map<int, TmdbEpisode?> files,
-    TmdbWork metadata, {
+    WorkMetadata metadata, {
     bool manual = true,
+    String metadataSource = 'tmdb',
+    int? localWorkId,
+    bool respectExistingMetadata = true,
   }) => applyMetadata(files.keys.first, metadata, manual: manual);
 
   @override
@@ -187,9 +192,10 @@ class FakeMediaLibraryRepository implements MediaLibraryRepository {
   @override
   Future<int> applyMetadata(
     int workId,
-    TmdbWork metadata, {
+    WorkMetadata metadata, {
     bool manual = false,
     TmdbEpisode? episode,
+    String metadataSource = 'tmdb',
   }) async {
     appliedMetadata.add({
       'workId': workId,
@@ -373,11 +379,11 @@ void main() {
     );
 
     test(
-      'refresh stops progress at the failed work when credentials are invalid',
+      'refresh stops dispatching queued work when credentials are invalid',
       () async {
-        fakeRepo.unmatched = const [
-          LibraryWork(id: 1, title: 'First movie', type: 'movie', year: 2024),
-          LibraryWork(id: 2, title: 'Second movie', type: 'movie', year: 2024),
+        fakeRepo.unmatched = [
+          for (var n = 1; n <= 6; n++)
+            LibraryWork(id: n, title: 'Movie $n', type: 'movie', year: 2024),
         ];
         fakeClient.searchMovieHandler = (query, year) {
           throw const MetadataException('TMDB 凭据无效', code: 'unauthorized');
@@ -388,7 +394,9 @@ void main() {
             progress.add((phase, processed, total));
           },
         );
-        expect(progress.last, (MetadataPhase.matching, 1, 2));
+        expect(progress.last.$1, MetadataPhase.matching);
+        expect(progress.last.$2, inInclusiveRange(1, 4));
+        expect(progress.last.$3, 6);
         expect(result.errors, ['TMDB 凭据无效']);
       },
     );

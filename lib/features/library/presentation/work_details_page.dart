@@ -113,7 +113,9 @@ class _WorkDetailsPageState extends ConsumerState<WorkDetailsPage> {
       initialTitle: work.title,
       initialYear: work.year,
       initialOverview: work.overview,
-      initialPosterPath: work.posterPath,
+      initialPosterPath:
+          work.tmdbPosterPath ??
+          (work.posterPath?.contains('://') == false ? work.posterPath : null),
     );
   }
 
@@ -387,7 +389,11 @@ class _WorkDetailsPageState extends ConsumerState<WorkDetailsPage> {
             ),
             _buildChip(
               context,
-              label: work.metadataSource == 'tmdb' ? 'TMDB 匹配' : '本地识别',
+              label: switch (work.metadataSource) {
+                'tmdb' => 'TMDB 匹配',
+                'nfo' => '目录元数据',
+                _ => '本地识别',
+              },
               icon: work.metadataSource == 'tmdb'
                   ? Icons.cloud_done_outlined
                   : Icons.folder_outlined,

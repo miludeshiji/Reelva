@@ -10,6 +10,9 @@ import 'package:reelva/features/progress/domain/playback_progress.dart';
 import 'package:reelva/features/progress/infrastructure/playback_progress_repository.dart';
 
 class _FakeInnerEngine implements PlayerEngine {
+  @override
+  Future<void> loadSubtitle(PlaybackResource resource) async {}
+
   PlaybackSnapshot _snapshot = const PlaybackSnapshot();
   final StreamController<PlaybackSnapshot> _controller =
       StreamController<PlaybackSnapshot>.broadcast();

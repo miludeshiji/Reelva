@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../domain/playback_resource.dart';
+import '../domain/subtitle_files.dart';
 import 'android_media_documents.dart';
 
 /// 媒体选择操作失败异常
@@ -77,6 +78,41 @@ class MediaFilePicker {
       case TargetPlatform.linux:
       case TargetPlatform.macOS:
         throw UnsupportedError('当前平台暂不支持选择媒体文件');
+    }
+  }
+
+  Future<PlaybackResource?> pickSubtitle() async {
+    try {
+      final platform = platformOverride ?? defaultTargetPlatform;
+      final PlaybackResource? resource;
+      switch (platform) {
+        case TargetPlatform.windows:
+          final file = await (openFilePicker ?? openFile)(
+            acceptedTypeGroups: const [
+              XTypeGroup(label: '字幕', extensions: subtitleExtensions),
+            ],
+          );
+          resource = file == null
+              ? null
+              : PlaybackResource(
+                  uri: Uri.file(file.path, windows: true),
+                  displayName: file.name,
+                );
+        case TargetPlatform.android:
+          resource = await androidDocuments.pickSubtitle();
+        default:
+          throw UnsupportedError('当前平台暂不支持选择字幕文件');
+      }
+      if (resource != null && !isSubtitleFile(resource.displayName)) {
+        throw const MediaPickerException('请选择支持的字幕文件（SRT、ASS、SSA、VTT、SMI、SUP）');
+      }
+      return resource;
+    } on MediaPickerException {
+      rethrow;
+    } on MediaDocumentException catch (e) {
+      throw MediaPickerException(e.message, code: e.code);
+    } on PlatformException catch (e) {
+      throw MediaPickerException('选择字幕文件失败', code: e.code);
     }
   }
 

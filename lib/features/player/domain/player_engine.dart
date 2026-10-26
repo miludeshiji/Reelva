@@ -38,6 +38,9 @@ abstract interface class PlayerEngine {
   /// 切换字幕轨道
   Future<void> setSubtitleTrack(String id);
 
+  /// 加载并选中外挂字幕，失败不改变视频的播放状态。
+  Future<void> loadSubtitle(PlaybackResource resource);
+
   /// 执行逐帧、章节、字幕同步及画面调整等原生播放操作。
   Future<void> executeShortcut(PlayerShortcutAction action);
 

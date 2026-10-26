@@ -18,8 +18,10 @@ import '../domain/playback_resource.dart';
 import '../domain/playback_snapshot.dart';
 import '../domain/player_engine.dart';
 import '../domain/player_shortcuts.dart';
+import '../infrastructure/media_file_picker.dart';
 import 'network_address_dialog.dart';
 import 'player_controls.dart';
+import 'source_subtitle_dialog.dart';
 
 /// Reelva 核心播放页面
 ///
@@ -429,6 +431,55 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       AppLogger.instance.error('打开网络视频异常', error: e, stackTrace: st);
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('无法播放网络视频，请检查地址或格式')));
+    }
+  }
+
+  bool _pickingSubtitle = false;
+
+  Future<void> _pickSubtitle({required bool fromSource}) async {
+    if (_pickingSubtitle || !_canOperateMedia) return;
+    _pickingSubtitle = true;
+    final video = _currentResource;
+    final actionId = _actionCounter;
+    _controlsInteractions++;
+    _showControls();
+    try {
+      final subtitle = fromSource
+          ? await showDialog<PlaybackResource>(
+              context: context,
+              builder: (context) =>
+                  SourceSubtitleDialog(currentSourceId: video?.sourceId),
+            )
+          : await ref.read(mediaFilePickerProvider).pickSubtitle();
+      if (!mounted ||
+          _isExiting ||
+          actionId != _actionCounter ||
+          !identical(video, _currentResource) ||
+          subtitle == null) {
+        return;
+      }
+      await _session!.engine.loadSubtitle(subtitle);
+    } catch (error, stackTrace) {
+      AppLogger.instance.error(
+        '选择或加载字幕失败',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (mounted && !_isExiting && actionId == _actionCounter) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(switch (error) {
+              PlaybackResourceException() => error.message,
+              MediaPickerException() => error.message,
+              _ => '无法加载字幕，请检查文件或访问权限',
+            }),
+          ),
+        );
+      }
+    } finally {
+      _pickingSubtitle = false;
+      if (_controlsInteractions > 0) _controlsInteractions--;
+      if (mounted && !_isExiting) _showControls();
     }
   }
 
@@ -1044,6 +1095,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           overlay: overlay,
           isFullscreen: _isFullscreen,
           onToggleFullscreen: () => _setFullscreen(!_isFullscreen),
+          onPickLocalSubtitle: () => _pickSubtitle(fromSource: false),
+          onPickSourceSubtitle: () => _pickSubtitle(fromSource: true),
           onInteractionChanged: (interacting) {
             if (!mounted) return;
             if (interacting) {

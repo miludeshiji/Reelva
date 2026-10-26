@@ -9,7 +9,7 @@ import 'infrastructure/remote_credentials_store.dart';
 ///
 /// 遵循 M5 安全规范：
 /// - 保持稳定的媒体源根目录（只读显示，禁止修改）；
-/// - 密码与 Token 默认清空，绝不预填已存储机密；
+/// - 密码 默认清空，绝不预填已存储机密；
 /// - 保存时先行优雅取消正在运行的扫描，更新完成后安全持久化。
 class EditCredentialsDialog extends ConsumerStatefulWidget {
   const EditCredentialsDialog({super.key, required this.source});
@@ -34,10 +34,7 @@ class EditCredentialsDialog extends ConsumerStatefulWidget {
 class _EditCredentialsDialogState extends ConsumerState<EditCredentialsDialog> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _tokenController = TextEditingController();
   final _domainController = TextEditingController();
-  final _userAgentController = TextEditingController();
-  final _refererController = TextEditingController();
 
   bool _isSubmitting = false;
   String? _errorMessage;
@@ -46,10 +43,7 @@ class _EditCredentialsDialogState extends ConsumerState<EditCredentialsDialog> {
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
-    _tokenController.dispose();
     _domainController.dispose();
-    _userAgentController.dispose();
-    _refererController.dispose();
     super.dispose();
   }
 
@@ -59,20 +53,10 @@ class _EditCredentialsDialogState extends ConsumerState<EditCredentialsDialog> {
       _errorMessage = null;
     });
 
-    final playbackHeaders = <String, String>{};
-    if (_userAgentController.text.trim().isNotEmpty) {
-      playbackHeaders['User-Agent'] = _userAgentController.text.trim();
-    }
-    if (_refererController.text.trim().isNotEmpty) {
-      playbackHeaders['Referer'] = _refererController.text.trim();
-    }
-
     final credentials = RemoteCredentials(
       username: _usernameController.text.trim(),
       password: _passwordController.text,
-      token: _tokenController.text.trim(),
       domain: _domainController.text.trim(),
-      playbackHeaders: playbackHeaders,
     );
 
     try {
@@ -129,42 +113,6 @@ class _EditCredentialsDialogState extends ConsumerState<EditCredentialsDialog> {
                   decoration: const InputDecoration(
                     labelText: '新密码',
                     hintText: '出于安全考虑不预填，留空表示不设置',
-                  ),
-                ),
-              ] else if (kind == 'openlist') ...[
-                TextField(
-                  controller: _tokenController,
-                  key: const Key('edit_credentials_token_field'),
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: '新 API Token',
-                    hintText: '出于安全考虑不预填',
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _passwordController,
-                  key: const Key('edit_credentials_password_field'),
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: '新目录访问密码',
-                    hintText: '出于安全考虑不预填',
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _userAgentController,
-                  key: const Key('edit_credentials_user_agent_field'),
-                  decoration: const InputDecoration(
-                    labelText: 'User-Agent 请求头（可选）',
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _refererController,
-                  key: const Key('edit_credentials_referer_field'),
-                  decoration: const InputDecoration(
-                    labelText: 'Referer 请求头（可选）',
                   ),
                 ),
               ] else if (kind == 'smb') ...[

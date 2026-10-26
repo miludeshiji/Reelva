@@ -88,6 +88,9 @@ class Works extends Table {
   TextColumn get overview => text().nullable()();
   TextColumn get posterPath => text().nullable()();
   TextColumn get backdropPath => text().nullable()();
+  TextColumn get posterLocator => text().nullable()();
+  TextColumn get backdropLocator => text().nullable()();
+  DateTimeColumn get premiered => dateTime().nullable()();
   TextColumn get metadataSource =>
       text().withDefault(const Constant('local'))();
   BoolColumn get metadataLocked =>
@@ -120,6 +123,7 @@ class Seasons extends Table {
 
 @DataClassName('EpisodeData')
 class Episodes extends Table {
+  IntColumn get tmdbId => integer().nullable()();
   @override
   String get tableName => 'episodes';
 

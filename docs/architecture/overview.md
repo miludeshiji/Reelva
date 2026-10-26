@@ -8,9 +8,9 @@ Reelva 是客户端优先的跨平台影视库与播放器，首批目标平台�
 | --- | --- |
 | `lib/main.dart` | 绑定、错误处理、media_kit 与 Windows 窗口初始化，Riverpod 入口 |
 | `lib/app/` | 根应用、路由和自适应导航 |
-| `lib/core/database/` | SQLite / Drift 数据库结构定义与迁移管理（Schema v3，保留 v1/v2 数据） |
+| `lib/core/database/` | SQLite / Drift 数据库结构定义与迁移管理（Schema v4，保留 v1/v2/v3 数据） |
 | `lib/core/errors/`、`lib/core/logging/` | 错误处理与日志脱敏 |
-| `lib/features/sources/` | 本地/SAF、WebDAV、OpenList、SMB 媒体源管理与扫描，安全凭据、远程播放解析及按需读取桥接 |
+| `lib/features/sources/` | 本地/SAF、WebDAV、SMB 媒体源管理与扫描，安全凭据、远程播放解析及按需读取桥接 |
 | `lib/features/library/` | 作品分页海报墙、电影/季集详情、多版本选择与解析播放 |
 | `lib/features/metadata/` | 文件名解析、TMDB 请求与缓存、匹配评分、自动/手动匹配及安全凭据 |
 | `lib/features/player/` | 播放器领域、应用、基础设施与播放界面分层 |
@@ -23,13 +23,13 @@ Reelva 是客户端优先的跨平台影视库与播放器，首批目标平台�
 
 ## 核心数据流
 
-- UI 通过 `SourceController` 驱动媒体源操作与扫描，通过 `MediaSourceAdapter` 访问本地文件系统、SAF 或网络协议（WebDAV、OpenList、SMB），通过 `MediaLibraryRepository` 持久化索引和作品关联。
+- UI 通过 `SourceController` 驱动媒体源操作与扫描，通过 `MediaSourceAdapter` 访问本地文件系统、SAF 或网络协议（WebDAV、SMB），通过 `MediaLibraryRepository` 持久化索引和作品关联。
 - 播放使用 `PlaybackResource`：网络源在真正打开或重试时准备播放租约，退出、停止或切换时释放；SMB 随机读通过 libsmb2 在 worker isolate 中执行，读取分片最大 256 KiB，避免预先复制整部视频。
 - 播放器通过 `PlayerEngine` 和 `PlaybackSession` 管理生命周期，不依赖具体网络源协议。网络播放桥接仅监听随机端口的 IPv4 回环地址；HTTP 起播先探测 `Range: bytes=0-0` 并校验 `206`、`Content-Range` 与长度，仅返回 `200` 的服务器可顺序起播。
 
 ## 数据库与观看进度
 
-数据库使用 Drift Schema v3（SQLite），保留 v1/v2 的升级路径、媒体索引、元数据缓存、人工锁定与观看历史，并新增同步状态，不重建既有数据库。Windows 数据库默认保存在 `%APPDATA%\com.github.miludeshiji\Reelva\reelva.sqlite`，播放器设置与加密凭据也保存在该目录，不自动迁移旧目录数据。Android 数据库位于应用内部文档目录。
+数据库使用 Drift Schema v4（SQLite），保留 v1/v2/v3 的升级路径、媒体索引、元数据缓存、人工锁定与观看历史，并新增同步状态，不重建既有数据库。Windows 数据库默认保存在 `%APPDATA%\com.github.miludeshiji\Reelva\reelva.sqlite`，播放器设置与加密凭据也保存在该目录，不自动迁移旧目录数据。Android 数据库位于应用内部文档目录。
 
 - 观看进度按电影作品或具体剧集保存，不依赖文件路径；同一目标切换文件版本时共享进度。保存事务重新确认文件当前关联，兼容后台元数据合并；移除媒体源仍保留历史。
 - 播放中约每 10 秒异步保存一次；暂停、定位、停止、切换视频、退出页面及进入后台时保存变化。重开后，未完成且至少 5 秒的进度自动续播，不足 5 秒或达到总时长 90% 的记录从头播放。
@@ -88,3 +88,7 @@ Android 备份规则仅排除安全存储使用的 SharedPreferences，保留普
 - **Android**：SAF 目录真机验收未通过；原生播放、字幕音轨和生命周期仍待实机验收。平台实际备份恢复行为需设备验收。
 - **TMDB 在线**：未使用真实凭据，在线服务与海报下载未验证；Windows / Android 的原生安全存储和平台集成亦未验证。
 - **未验证平台**：Linux / macOS / iOS / Web 未验证。
+
+## 目录元数据
+
+`NfoService` 通过现有媒体源的 `MediaSidecarAdapter` 读写 NFO 和图片，数据库保留快速查询索引。扫描按目录导入 NFO，电视剧上下文沿扫描队列传给季目录；匹配及人工编辑在数据库事务完成后导出，保存失败单独反馈。图片定位符保存在独立索引字段，设备内定位符不进入跨设备同步载荷。Schema v4 新增作品完整上映日期、目录图片定位符和分集 TMDB ID；打开数据库时清理已移除源的配置及凭据，保留观看历史。

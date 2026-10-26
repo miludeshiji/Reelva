@@ -7,14 +7,13 @@ import '../domain/source_models.dart';
 
 /// 远程媒体源凭据模型
 ///
-/// 包含用户名、密码、Token、SMB域以及可选的播放请求头信息。
+/// 包含用户名、密码、SMB域以及可选的播放请求头信息。
 /// [toString] 绝不输出任何敏感字段，以防泄漏至日志。
 @immutable
 class RemoteCredentials {
   const RemoteCredentials({
     this.username = '',
     this.password = '',
-    this.token = '',
     this.domain = '',
     this.playbackHeaders = const {},
   });
@@ -22,27 +21,23 @@ class RemoteCredentials {
   const RemoteCredentials.anonymous()
     : username = '',
       password = '',
-      token = '',
       domain = '',
       playbackHeaders = const {};
 
   final String username;
   final String password;
-  final String token;
   final String domain;
   final Map<String, String> playbackHeaders;
 
   bool get isAnonymous =>
       username.isEmpty &&
       password.isEmpty &&
-      token.isEmpty &&
       domain.isEmpty &&
       playbackHeaders.isEmpty;
 
   Map<String, dynamic> toJson() => {
     'username': username,
     'password': password,
-    'token': token,
     'domain': domain,
     'playbackHeaders': playbackHeaders,
   };
@@ -60,7 +55,6 @@ class RemoteCredentials {
     return RemoteCredentials(
       username: json['username'] as String? ?? '',
       password: json['password'] as String? ?? '',
-      token: json['token'] as String? ?? '',
       domain: json['domain'] as String? ?? '',
       playbackHeaders: headers,
     );
@@ -69,14 +63,12 @@ class RemoteCredentials {
   RemoteCredentials copyWith({
     String? username,
     String? password,
-    String? token,
     String? domain,
     Map<String, String>? playbackHeaders,
   }) {
     return RemoteCredentials(
       username: username ?? this.username,
       password: password ?? this.password,
-      token: token ?? this.token,
       domain: domain ?? this.domain,
       playbackHeaders: playbackHeaders ?? this.playbackHeaders,
     );
@@ -92,7 +84,6 @@ class RemoteCredentials {
           runtimeType == other.runtimeType &&
           username == other.username &&
           password == other.password &&
-          token == other.token &&
           domain == other.domain &&
           mapEquals(playbackHeaders, other.playbackHeaders);
 
@@ -100,7 +91,6 @@ class RemoteCredentials {
   int get hashCode => Object.hash(
     username,
     password,
-    token,
     domain,
     Object.hashAll(
       playbackHeaders.entries.map((e) => Object.hash(e.key, e.value)),

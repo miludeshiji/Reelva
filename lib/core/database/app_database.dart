@@ -27,7 +27,7 @@ part 'app_database.g.dart';
   ],
 )
 class AppDatabase extends _$AppDatabase {
-  AppDatabase({QueryExecutor? executor})
+  AppDatabase({QueryExecutor? executor, this.removeRetiredCredentials})
     : super(
         executor ??
             driftDatabase(
@@ -41,7 +41,9 @@ class AppDatabase extends _$AppDatabase {
       );
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
+
+  final Future<void> Function(List<String>)? removeRetiredCredentials;
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) async {
@@ -117,9 +119,52 @@ class AppDatabase extends _$AppDatabase {
         await m.createTable(syncOutbox);
         await m.createTable(syncPending);
       }
+      if (from < 4) {
+        await m.addColumn(works, works.posterLocator);
+        await m.addColumn(works, works.backdropLocator);
+        await m.addColumn(works, works.premiered);
+        await m.addColumn(episodes, episodes.tmdbId);
+      }
     },
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON');
+      // 清理已移除的源类型；作品观看历史继续保留。
+      final retired = await customSelect(
+        "SELECT credential_ref FROM media_sources WHERE kind = 'openlist'",
+      ).get();
+      if (retired.isNotEmpty) {
+        await removeRetiredCredentials?.call(
+          retired
+              .map((row) => row.readNullable<String>('credential_ref'))
+              .whereType<String>()
+              .toList(),
+        );
+        final workIds = await customSelect(
+          '''SELECT DISTINCT COALESCE(a.work_id, s.series_id) AS work_id
+          FROM media_assignments a JOIN media_files f ON f.id = a.file_id
+          JOIN media_entries e ON e.id = f.entry_id JOIN media_sources ms ON ms.id = e.source_id
+          LEFT JOIN episodes ep ON ep.id = a.episode_id LEFT JOIN seasons s ON s.id = ep.season_id
+          WHERE ms.kind = 'openlist'
+        ''',
+        ).get();
+        await customStatement(
+          "DELETE FROM media_sources WHERE kind = 'openlist'",
+        );
+        final retiredWorkIds = workIds
+            .map((row) => row.read<int>('work_id'))
+            .toList();
+        if (retiredWorkIds.isNotEmpty) {
+          await customStatement(
+            '''DELETE FROM works
+          WHERE id IN (${List.filled(retiredWorkIds.length, '?').join(',')}) AND
+          NOT EXISTS (SELECT 1 FROM media_assignments a LEFT JOIN episodes e ON e.id = a.episode_id
+            LEFT JOIN seasons s ON s.id = e.season_id WHERE a.work_id = works.id OR s.series_id = works.id)
+          AND NOT EXISTS (SELECT 1 FROM playback_progress p LEFT JOIN episodes e ON e.id = p.episode_id
+            LEFT JOIN seasons s ON s.id = e.season_id WHERE p.work_id = works.id OR s.series_id = works.id)''',
+            retiredWorkIds,
+          );
+        }
+      }
     },
   );
 }

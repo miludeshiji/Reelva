@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../player/domain/playback_resource.dart';
 import '../domain/media_source_adapter.dart';
+import '../domain/media_sidecar_adapter.dart';
 import '../domain/source_models.dart';
 
 /// Android Storage Access Framework (SAF) 媒体源适配器
@@ -14,7 +15,8 @@ import '../domain/source_models.dart';
 /// - resolvePlayback 返回可以直接通过原生文件描述符只读打开的 content:// PlaybackResource，
 ///   避免全文件复制；
 /// - 枚举错误或权限撤销时不静默吞没为空列表，抛出安全的 [MediaSourceException]。
-class AndroidSafSourceAdapter implements MediaSourceAdapter {
+class AndroidSafSourceAdapter
+    implements MediaSourceAdapter, MediaSidecarAdapter {
   const AndroidSafSourceAdapter({
     this.channel = const MethodChannel('reelva/media_documents'),
     this.pageSize = 100,
@@ -25,6 +27,33 @@ class AndroidSafSourceAdapter implements MediaSourceAdapter {
 
   @override
   String get kind => 'androidSaf';
+
+  /// 文档 ID 不一定是路径，优先询问 provider；不支持路径查询时遍历授权树。
+  Future<String?> findParentDirectory(
+    MediaSourceConfig source,
+    String documentId,
+  ) async {
+    try {
+      final parent = await channel.invokeMethod<String>('parentDocument', {
+        'treeUri': source.rootLocator,
+        'documentUri': documentId,
+      });
+      if (parent != null) return parent;
+    } on PlatformException catch (e) {
+      throw _mapPlatformException(e, defaultMessage: '读取字幕所在目录失败');
+    }
+    final directories = [source.rootLocator];
+    final visited = <String>{};
+    for (var index = 0; index < directories.length; index++) {
+      final directory = directories[index];
+      if (!visited.add(directory)) continue;
+      await for (final entry in listEntries(source, directory)) {
+        if (entry.externalId == documentId) return directory;
+        if (entry.isDirectory) directories.add(entry.externalId);
+      }
+    }
+    return null;
+  }
 
   @override
   Future<DirectorySelection?> pickDirectory({String? initialLocator}) async {
@@ -203,6 +232,52 @@ class AndroidSafSourceAdapter implements MediaSourceAdapter {
       if (e is MediaSourceException) rethrow;
       AppLogger.instance.error('SAF statDocument 异常', error: e, stackTrace: st);
       throw MediaSourceException('查询条目状态失败: $e');
+    }
+  }
+
+  @override
+  Future<String?> parentDirectory(MediaSourceConfig source, String entryId) =>
+      findParentDirectory(source, entryId);
+
+  @override
+  Future<Uint8List> readBytes(
+    MediaSourceConfig source,
+    String entryId, {
+    int maxBytes = 2 * 1024 * 1024,
+  }) async {
+    try {
+      final bytes = await channel.invokeMethod<Uint8List>('readSidecar', {
+        'treeUri': source.rootLocator,
+        'uri': entryId,
+        'maxBytes': maxBytes,
+      });
+      if (bytes == null) throw const MediaSourceException('读取元数据文件失败');
+      return bytes;
+    } on PlatformException catch (e) {
+      throw _mapPlatformException(e, defaultMessage: '读取元数据文件失败');
+    }
+  }
+
+  @override
+  Future<void> writeBytes(
+    MediaSourceConfig source,
+    String directoryId,
+    String name,
+    Uint8List bytes, {
+    String? expectedEtag,
+    bool createOnly = false,
+  }) async {
+    validateSidecarName(name);
+    try {
+      await channel.invokeMethod<void>('writeSidecar', {
+        'treeUri': source.rootLocator,
+        'directoryUri': directoryId,
+        'name': name,
+        'bytes': bytes,
+        'createOnly': createOnly,
+      });
+    } on PlatformException catch (e) {
+      throw _mapPlatformException(e, defaultMessage: '保存元数据文件失败，请检查目录写入权限');
     }
   }
 

@@ -1,3 +1,7 @@
+import 'package:reelva/features/metadata/application/nfo_providers.dart';
+
+import '../metadata/nfo_test_helpers.dart';
+
 import 'dart:async';
 
 import 'package:drift/drift.dart' show DatabaseConnection;
@@ -243,6 +247,7 @@ void main() {
               overrides: [
                 appDatabaseProvider.overrideWithValue(memoryDb),
                 mediaLibraryRepositoryProvider.overrideWithValue(repository),
+                nfoServiceProvider.overrideWithValue(FakeNfoService()),
                 tmdbTokenStoreProvider.overrideWithValue(fakeTokenStore),
                 platformOverrideProvider.overrideWithValue(
                   TargetPlatform.windows,
@@ -390,6 +395,7 @@ void main() {
               overrides: [
                 appDatabaseProvider.overrideWithValue(memoryDb),
                 mediaLibraryRepositoryProvider.overrideWithValue(repository),
+                nfoServiceProvider.overrideWithValue(FakeNfoService()),
                 tmdbTokenStoreProvider.overrideWithValue(fakeTokenStore),
                 platformOverrideProvider.overrideWithValue(
                   TargetPlatform.windows,
@@ -461,6 +467,7 @@ void main() {
               overrides: [
                 appDatabaseProvider.overrideWithValue(memoryDb),
                 mediaLibraryRepositoryProvider.overrideWithValue(repository),
+                nfoServiceProvider.overrideWithValue(FakeNfoService()),
                 tmdbTokenStoreProvider.overrideWithValue(fakeTokenStore),
                 platformOverrideProvider.overrideWithValue(
                   TargetPlatform.windows,
@@ -604,6 +611,7 @@ void main() {
               overrides: [
                 appDatabaseProvider.overrideWithValue(memoryDb),
                 mediaLibraryRepositoryProvider.overrideWithValue(repository),
+                nfoServiceProvider.overrideWithValue(FakeNfoService()),
                 tmdbTokenStoreProvider.overrideWithValue(fakeTokenStore),
                 tmdbClientProvider.overrideWithValue(fakeTmdbClient),
                 platformOverrideProvider.overrideWithValue(
@@ -775,6 +783,7 @@ void main() {
               overrides: [
                 appDatabaseProvider.overrideWithValue(memoryDb),
                 mediaLibraryRepositoryProvider.overrideWithValue(repository),
+                nfoServiceProvider.overrideWithValue(FakeNfoService()),
                 tmdbTokenStoreProvider.overrideWithValue(fakeTokenStore),
                 tmdbClientProvider.overrideWithValue(fakeTmdbClient),
                 platformOverrideProvider.overrideWithValue(
@@ -932,6 +941,7 @@ void main() {
               overrides: [
                 appDatabaseProvider.overrideWithValue(memoryDb),
                 mediaLibraryRepositoryProvider.overrideWithValue(repository),
+                nfoServiceProvider.overrideWithValue(FakeNfoService()),
                 tmdbTokenStoreProvider.overrideWithValue(fakeTokenStore),
                 platformOverrideProvider.overrideWithValue(
                   TargetPlatform.windows,
@@ -1053,6 +1063,7 @@ void main() {
               overrides: [
                 appDatabaseProvider.overrideWithValue(memoryDb),
                 mediaLibraryRepositoryProvider.overrideWithValue(repository),
+                nfoServiceProvider.overrideWithValue(FakeNfoService()),
                 tmdbTokenStoreProvider.overrideWithValue(fakeTokenStore),
                 platformOverrideProvider.overrideWithValue(
                   TargetPlatform.windows,

@@ -11,6 +11,29 @@ void main() {
   const mediaChannel = MethodChannel('reelva/media_documents');
 
   group('AndroidMediaDocuments 边界与安全映射测试', () {
+    test('字幕选择使用独立通道方法，接受字幕文档并支持取消和格式校验', () async {
+      var name = '影片.zh.ASS';
+      var cancelled = false;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(mediaChannel, (call) async {
+            expect(call.method, 'pickSubtitle');
+            return cancelled
+                ? null
+                : {'uri': 'content://provider/document/subtitle', 'name': name};
+          });
+      const picker = MediaFilePicker(platformOverride: TargetPlatform.android);
+      final subtitle = await picker.pickSubtitle();
+      expect(subtitle!.uri.scheme, 'content');
+      expect(subtitle.displayName, name);
+      name = 'movie.mkv';
+      await expectLater(
+        picker.pickSubtitle(),
+        throwsA(isA<MediaPickerException>()),
+      );
+      cancelled = true;
+      expect(await picker.pickSubtitle(), isNull);
+    });
+
     tearDown(() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(mediaChannel, null);
@@ -88,6 +111,30 @@ void main() {
   });
 
   group('MediaFilePicker 路径转换与安全边界测试', () {
+    test('Windows 字幕选择器筛选字幕格式，保留含中文和百分号的路径', () async {
+      List<XTypeGroup>? types;
+      final picker = MediaFilePicker(
+        platformOverride: TargetPlatform.windows,
+        openFilePicker:
+            ({
+              List<XTypeGroup> acceptedTypeGroups = const [],
+              String? initialDirectory,
+              String? confirmButtonText,
+            }) async {
+              types = acceptedTypeGroups;
+              return XFile(r'C:\字幕\影片 100%.zh.srt');
+            },
+      );
+      final subtitle = await picker.pickSubtitle();
+      expect(
+        types!.single.extensions,
+        containsAll(['srt', 'ass', 'ssa', 'vtt']),
+      );
+      expect(types!.single.extensions, isNot(contains('mkv')));
+      expect(subtitle!.uri.toFilePath(windows: true), r'C:\字幕\影片 100%.zh.srt');
+      expect(subtitle.displayName, '影片 100%.zh.srt');
+    });
+
     test('Windows 用户取消时返回 null', () async {
       final picker = MediaFilePicker(
         platformOverride: TargetPlatform.windows,

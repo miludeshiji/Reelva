@@ -114,6 +114,15 @@ class FakePlayerEngine implements PlayerEngine {
     emit(_snapshot.copyWith(subtitleTrackId: () => id));
   }
 
+  PlaybackResource? lastSubtitleResource;
+  Future<void> Function(PlaybackResource)? onLoadSubtitle;
+
+  @override
+  Future<void> loadSubtitle(PlaybackResource resource) async {
+    lastSubtitleResource = resource;
+    await onLoadSubtitle?.call(resource);
+  }
+
   @override
   Future<void> stop() async {
     stopCount++;

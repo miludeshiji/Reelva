@@ -76,6 +76,7 @@ class MetadataStatusCard extends StatelessWidget {
             ),
             const SizedBox(height: ReelvaDesign.space8),
             if (total != null) Text('已处理 ${state.processed} / $total 个条目'),
+            if (state.activeCount > 0) Text('正在同时处理 ${state.activeCount} 项'),
             const Text('可切换页面，处理完成后会自动更新'),
           ] else if (hasError) ...[
             Text(state.error!),

@@ -8,6 +8,8 @@ import '../../shared/widgets/glass_widgets.dart';
 import '../../shared/widgets/poster_image.dart';
 import '../metadata/application/metadata_providers.dart';
 import '../metadata/presentation/metadata_status_card.dart';
+import '../metadata/presentation/nfo_status_card.dart';
+import '../metadata/application/nfo_providers.dart';
 import '../sources/application/source_providers.dart';
 import 'domain/library_work.dart';
 import 'presentation/manual_match_page.dart';
@@ -31,6 +33,18 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
   String? _type;
   bool _recentlyAdded = false;
   bool _hasInitialRefreshed = false;
+
+  Future<void> _exportMetadata() async {
+    final result = await ref.read(nfoControllerProvider.notifier).export();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '已保存 ${result.saved} 个视频的目录元数据${result.errors.isEmpty ? '' : '，部分文件未保存，请查看提示'}',
+        ),
+      ),
+    );
+  }
 
   bool get _hasFilters => _search.isNotEmpty || _type != null;
 
@@ -148,6 +162,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
         worksAsync.hasError &&
         !worksAsync.isLoading;
     final metaTaskState = ref.watch(metadataControllerProvider);
+    final nfoTask = ref.watch(nfoControllerProvider);
     final isScanning = ref.watch(
       sourceControllerProvider.select(
         (progress) => progress.values.any((scan) => scan.running),
@@ -188,6 +203,12 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                     keyboardDismissBehavior:
                         ScrollViewKeyboardDismissBehavior.onDrag,
                     slivers: [
+                      const SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(horizontal: padding),
+                          child: NfoStatusCard(),
+                        ),
+                      ),
                       SliverToBoxAdapter(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -523,6 +544,23 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                                       onPressed: () => context.pop(),
                                     )
                                   : null,
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(
+                              top: ReelvaDesign.space12,
+                            ),
+                            child: GlassIconButton(
+                              key: const Key('library_export_nfo_button'),
+                              icon: Icons.save_alt_outlined,
+                              size: ReelvaDesign.pageHeaderButtonSize,
+                              tooltip: '导出已有影视库的 NFO 与图片',
+                              onPressed:
+                                  nfoTask.running ||
+                                      metaTaskState.running ||
+                                      isScanning
+                                  ? null
+                                  : _exportMetadata,
                             ),
                           ),
                           Padding(

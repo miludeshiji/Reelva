@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -56,7 +57,7 @@ class FakeFlutterSecureStorage extends FlutterSecureStorage {
 }
 
 class FakeHttpClientAdapter implements HttpClientAdapter {
-  ResponseBody Function(RequestOptions options)? handler;
+  FutureOr<ResponseBody> Function(RequestOptions options)? handler;
   final List<RequestOptions> requested = [];
 
   @override
@@ -67,7 +68,7 @@ class FakeHttpClientAdapter implements HttpClientAdapter {
   ) async {
     requested.add(options);
     if (handler != null) {
-      return handler!(options);
+      return await handler!(options);
     }
     return ResponseBody.fromString(
       '{}',

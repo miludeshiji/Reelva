@@ -180,7 +180,7 @@ class PlaybackProgressRepository {
   }) => db.customSelect(
     '''
     WITH ranked_progress AS (
-      SELECT p.*, w.id AS library_work_id, w.title, w.poster_path,
+      SELECT p.*, w.id AS library_work_id, w.title, COALESCE(w.poster_locator, w.poster_path) AS poster_path,
         s.season_number, e.episode_number,
         ROW_NUMBER() OVER (
           PARTITION BY w.id ORDER BY p.updated_at DESC, p.id DESC

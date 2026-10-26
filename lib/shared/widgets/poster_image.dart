@@ -1,5 +1,13 @@
+import 'dart:typed_data';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../features/sources/application/source_providers.dart';
+import '../../features/sources/domain/media_sidecar_adapter.dart';
+import '../../features/sources/domain/source_models.dart';
+
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 /// 海报专用磁盘缓存管理器
@@ -86,8 +94,20 @@ class PosterImage extends StatelessWidget {
     Widget content;
     if (raw == null || raw.isEmpty) {
       content = _buildPlaceholder(context);
+    } else if (raw.startsWith('reelva-art:')) {
+      content = _SourcePosterImage(
+        locator: raw,
+        width: width,
+        height: height,
+        fit: fit,
+        cacheWidth: _memCacheWidth,
+        placeholder: _buildPlaceholder(context),
+      );
     } else {
-      final url = buildTmdbPosterUrl(raw, size: size);
+      final uri = Uri.tryParse(raw);
+      final url = uri != null && (uri.isScheme('https') || uri.isScheme('http'))
+          ? raw
+          : buildTmdbPosterUrl(raw, size: size);
       content = CachedNetworkImage(
         imageUrl: url,
         cacheManager: PosterCacheManager.instance,
@@ -171,4 +191,66 @@ class PosterImage extends StatelessWidget {
       ),
     );
   }
+}
+
+final _sourceArtworkProvider = FutureProvider.autoDispose
+    .family<Uint8List, String>((ref, locator) async {
+      final cache = PosterCacheManager.instance;
+      final cached = await cache.getFileFromCache(locator);
+      if (cached != null && cached.validTill.isAfter(DateTime.now())) {
+        return cached.file.readAsBytes();
+      }
+      final uri = Uri.parse(locator);
+      final sourceId = int.tryParse(uri.host);
+      final entryId = uri.queryParameters['entry'];
+      if (sourceId == null || entryId == null) {
+        throw const MediaSourceException('图片定位符无效');
+      }
+      final repository = ref.watch(mediaLibraryRepositoryProvider);
+      final adapters = ref.watch(sourceAdaptersProvider);
+      final source = await repository.getSource(sourceId);
+      if (!source.enabled) throw const MediaSourceException('媒体源已移除');
+      final adapter = adapters[source.kind];
+      if (adapter is! MediaSidecarAdapter) {
+        throw const MediaSourceException('媒体源不支持图片读取');
+      }
+      final bytes = await adapter.readBytes(
+        source,
+        entryId,
+        maxBytes: 16 * 1024 * 1024,
+      );
+      await cache.putFile(locator, bytes, maxAge: const Duration(days: 30));
+      return bytes;
+    });
+
+class _SourcePosterImage extends ConsumerWidget {
+  const _SourcePosterImage({
+    required this.locator,
+    required this.width,
+    required this.height,
+    required this.fit,
+    required this.cacheWidth,
+    required this.placeholder,
+  });
+  final String locator;
+  final double? width;
+  final double? height;
+  final BoxFit fit;
+  final int? cacheWidth;
+  final Widget placeholder;
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => ref
+      .watch(_sourceArtworkProvider(locator))
+      .when(
+        data: (bytes) => Image.memory(
+          bytes,
+          width: width,
+          height: height,
+          fit: fit,
+          cacheWidth: cacheWidth,
+          errorBuilder: (_, _, _) => placeholder,
+        ),
+        loading: () => placeholder,
+        error: (_, _) => placeholder,
+      );
 }

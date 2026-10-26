@@ -1,31 +1,27 @@
 import 'package:flutter/foundation.dart';
 
+import 'work_metadata.dart';
+
 /// TMDB 影视条目数据模型（兼作候选条目与详情）
 @immutable
-class TmdbWork {
+class TmdbWork extends WorkMetadata {
   final int id;
-  final String type; // 'movie' 或 'series'
-  final String title;
-  final String? originalTitle;
-  final String? overview;
-  final String? posterPath;
-  final String? backdropPath;
-  final int? year;
   final List<String> aliases;
   final List<int> seasonNumbers;
 
   const TmdbWork({
     required this.id,
-    required this.type,
-    required this.title,
-    this.originalTitle,
-    this.overview,
-    this.posterPath,
-    this.backdropPath,
-    this.year,
+    required super.type,
+    required super.title,
+    super.originalTitle,
+    super.overview,
+    super.posterPath,
+    super.backdropPath,
+    super.year,
+    super.premiered,
     this.aliases = const [],
     this.seasonNumbers = const [],
-  });
+  }) : super(tmdbId: id);
 
   /// 构造海报完整绝对 URL
   String? posterUrl({String size = 'w500'}) {
@@ -52,6 +48,7 @@ class TmdbWork {
     String? posterPath,
     String? backdropPath,
     int? year,
+    DateTime? premiered,
     List<String>? aliases,
     List<int>? seasonNumbers,
   }) {
@@ -64,6 +61,7 @@ class TmdbWork {
       posterPath: posterPath ?? this.posterPath,
       backdropPath: backdropPath ?? this.backdropPath,
       year: year ?? this.year,
+      premiered: premiered ?? this.premiered,
       aliases: aliases ?? this.aliases,
       seasonNumbers: seasonNumbers ?? this.seasonNumbers,
     );
@@ -79,6 +77,7 @@ class TmdbWork {
       if (posterPath != null) 'posterPath': posterPath,
       if (backdropPath != null) 'backdropPath': backdropPath,
       if (year != null) 'year': year,
+      if (premiered != null) 'premiered': premiered!.toIso8601String(),
       if (aliases.isNotEmpty) 'aliases': aliases,
       if (seasonNumbers.isNotEmpty) 'seasonNumbers': seasonNumbers,
     };
@@ -126,6 +125,7 @@ class TmdbWork {
           (json['backdrop_path'] as String?) ??
           (json['backdropPath'] as String?),
       year: year,
+      premiered: DateTime.tryParse((json['premiered'] as String?) ?? dateStr),
       aliases: aliases,
       seasonNumbers:
           (json['seasons'] as List<dynamic>? ?? const [])
@@ -159,6 +159,7 @@ class TmdbWork {
 /// TMDB 剧集分集数据模型
 @immutable
 class TmdbEpisode {
+  final int? tmdbId;
   final int seasonNumber;
   final int episodeNumber;
   final String? title;
@@ -166,6 +167,7 @@ class TmdbEpisode {
   final DateTime? airDate;
 
   const TmdbEpisode({
+    this.tmdbId,
     required this.seasonNumber,
     required this.episodeNumber,
     this.title,
@@ -174,6 +176,7 @@ class TmdbEpisode {
   });
 
   TmdbEpisode copyWith({
+    int? tmdbId,
     int? seasonNumber,
     int? episodeNumber,
     String? title,
@@ -181,6 +184,7 @@ class TmdbEpisode {
     DateTime? airDate,
   }) {
     return TmdbEpisode(
+      tmdbId: tmdbId ?? this.tmdbId,
       seasonNumber: seasonNumber ?? this.seasonNumber,
       episodeNumber: episodeNumber ?? this.episodeNumber,
       title: title ?? this.title,
@@ -191,6 +195,7 @@ class TmdbEpisode {
 
   Map<String, dynamic> toJson() {
     return {
+      if (tmdbId != null) 'tmdbId': tmdbId,
       'seasonNumber': seasonNumber,
       'episodeNumber': episodeNumber,
       if (title != null) 'title': title,
@@ -219,6 +224,7 @@ class TmdbEpisode {
     }
 
     return TmdbEpisode(
+      tmdbId: (json['id'] as int?) ?? (json['tmdbId'] as int?),
       seasonNumber: seasonNumber,
       episodeNumber: episodeNumber,
       title: (json['name'] as String?) ?? (json['title'] as String?),

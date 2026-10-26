@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -9,6 +10,7 @@ import 'package:xml/xml_events.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../player/domain/playback_resource.dart';
 import '../domain/media_source_adapter.dart';
+import '../domain/media_sidecar_adapter.dart';
 import '../domain/source_models.dart';
 import 'remote_credentials_store.dart';
 import 'remote_http_client.dart';
@@ -26,7 +28,7 @@ import 'remote_playback_bridge.dart';
 /// - 从安全存储读取 Basic Auth 凭据，并在起播/重试时重新读取；
 /// - 遇到枚举异常或子项拒绝访问 (403) 时显式失败，绝不静默返回假空列表，避免误删媒体库旧数据；
 /// - 在外部扫描流取消时联动取消底层 HTTP 请求与数据流。
-class WebDavSourceAdapter implements MediaSourceAdapter {
+class WebDavSourceAdapter implements MediaSourceAdapter, MediaSidecarAdapter {
   WebDavSourceAdapter({
     required this.credentials,
     required this.http,
@@ -261,6 +263,85 @@ class WebDavSourceAdapter implements MediaSourceAdapter {
       size: matchingItem.isDirectory ? null : matchingItem.size,
       modifiedAt: matchingItem.modifiedAt,
       etag: matchingItem.etag,
+    );
+  }
+
+  @override
+  Future<String?> parentDirectory(
+    MediaSourceConfig source,
+    String entryId,
+  ) async {
+    final uri = _resolveUri(source, entryId);
+    final root = _normalizeRootUri(source.rootLocator);
+    _validateContainment(uri, root);
+    final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+    if (segments.length <=
+        root.pathSegments.where((s) => s.isNotEmpty).length) {
+      return null;
+    }
+    return uri
+        .replace(pathSegments: [...segments.take(segments.length - 1), ''])
+        .toString();
+  }
+
+  Future<Map<String, String>> _sidecarHeaders(MediaSourceConfig source) async {
+    final creds = await credentials.read(source.credentialRef);
+    return {
+      if (creds.username.isNotEmpty || creds.password.isNotEmpty)
+        'Authorization':
+            'Basic ${base64Encode(utf8.encode('${creds.username}:${creds.password}'))}',
+    };
+  }
+
+  @override
+  Future<Uint8List> readBytes(
+    MediaSourceConfig source,
+    String entryId, {
+    int maxBytes = 2 * 1024 * 1024,
+  }) async {
+    final uri = _resolveUri(source, entryId);
+    _validateContainment(uri, _normalizeRootUri(source.rootLocator));
+    final response = await http.request(
+      uri,
+      headers: await _sidecarHeaders(source),
+      responseType: ResponseType.stream,
+    );
+    final body = response.data as ResponseBody;
+    return collectSidecarBytes(body.stream, maxBytes);
+  }
+
+  @override
+  Future<void> writeBytes(
+    MediaSourceConfig source,
+    String directoryId,
+    String name,
+    Uint8List bytes, {
+    String? expectedEtag,
+    bool createOnly = false,
+  }) async {
+    validateSidecarName(name);
+    final directory = _resolveUri(source, directoryId);
+    final uri = directory.replace(
+      pathSegments: [
+        ...directory.pathSegments.where((s) => s.isNotEmpty),
+        name,
+      ],
+    );
+    _validateContainment(uri, _normalizeRootUri(source.rootLocator));
+    await http.request(
+      uri,
+      method: 'PUT',
+      headers: {
+        ...await _sidecarHeaders(source),
+        'Content-Type': name.toLowerCase().endsWith('.nfo')
+            ? 'application/xml; charset=utf-8'
+            : 'application/octet-stream',
+        'Content-Length': '${bytes.length}',
+        if (createOnly) 'If-None-Match': '*',
+        if (!createOnly && expectedEtag != null) 'If-Match': expectedEtag,
+      },
+      data: Stream.value(bytes),
+      responseType: ResponseType.plain,
     );
   }
 

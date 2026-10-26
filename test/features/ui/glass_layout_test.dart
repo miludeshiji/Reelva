@@ -145,11 +145,6 @@ enum _Page {
   addSource('AddSourcePage', '/sources/add', AddSourcePage),
   localSource('LocalSourceSetupPage', '/sources/add/local', SourceSetupPage),
   webdavSource('WebDavSourceSetupPage', '/sources/add/webdav', SourceSetupPage),
-  openlistSource(
-    'OpenListSourceSetupPage',
-    '/sources/add/openlist',
-    SourceSetupPage,
-  ),
   smbSource('SmbSourceSetupPage', '/sources/add/smb', SourceSetupPage),
   details('WorkDetailsPage', '/library/work/2', WorkDetailsPage),
   player('PlayerPage', '/player', PlayerPage),
@@ -400,7 +395,6 @@ void main() {
                 _Page.addSource,
                 _Page.localSource,
                 _Page.webdavSource,
-                _Page.openlistSource,
                 _Page.smbSource,
                 _Page.tmdbSettings,
                 _Page.syncSettings,
@@ -575,10 +569,7 @@ Future<void> _exerciseContent(WidgetTester tester, _Page page) async {
           find.byKey(Key('add_source_type_${kind.name}')),
         );
       }
-    case _Page.localSource ||
-        _Page.webdavSource ||
-        _Page.openlistSource ||
-        _Page.smbSource:
+    case _Page.localSource || _Page.webdavSource || _Page.smbSource:
       expect(find.byType(Form), findsOneWidget);
       expect(find.byKey(const Key('add_source_name_field')), findsOneWidget);
       final advanced = find.byKey(const Key('add_source_advanced_options'));

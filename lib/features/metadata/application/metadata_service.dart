@@ -50,14 +50,23 @@ class MetadataService {
   final TmdbClient tmdbClient;
   final MediaLibraryRepository mediaLibraryRepository;
   final TmdbTokenStore tokenStore;
+  final Future<void> Function({
+    int? workId,
+    List<int>? fileIds,
+    bool replaceIdentity,
+  })?
+  saveMetadataFiles;
 
   Future<MetadataRefreshResult>? _inFlightRefresh;
   final Set<int> _activeLocks = {};
+  static const int _automaticConcurrency = 4;
+  Future<void> _automaticWrites = Future.value();
 
   MetadataService({
     required this.tmdbClient,
     required this.mediaLibraryRepository,
     required this.tokenStore,
+    this.saveMetadataFiles,
   });
 
   /// 搜索 TMDB 影视条目，按置信度排序返回候选列表
@@ -164,45 +173,148 @@ class MetadataService {
       for (final file in files) file.file.fileId: file.episode,
     }, metadata);
     if (workId == null) throw const MetadataException('没有可匹配的文件');
+    await saveMetadataFiles?.call(
+      fileIds: files.map((file) => file.file.fileId).toList(),
+      replaceIdentity: true,
+    );
     return workId;
   }
 
   Future<MetadataRefreshResult> matchFilesAutomatically(
     List<MatchingFile> files, {
     void Function(int processed, int total)? onProgress,
+    void Function(int active)? onActiveChanged,
     bool Function()? isCancelled,
-  }) => _matchFiles(
-    files,
-    _MatchSession(),
-    onProgress: onProgress,
-    isCancelled: isCancelled,
+  }) {
+    final groups = <(String?, int?, String), List<MatchingFile>>{};
+    for (final file in files) {
+      (groups[_groupKey(file.parsed)] ??= []).add(file);
+    }
+    final tasks = groups.values.toList();
+    var completed = 0;
+    onProgress?.call(0, files.length);
+    return _runMatchingTasks(
+      tasks.length,
+      (index, session) => _matchFiles(
+        tasks[index],
+        session,
+        isCancelled: isCancelled,
+        onFileCompleted: () {
+          completed++;
+          onProgress?.call(completed, files.length);
+        },
+      ),
+      onActiveChanged: onActiveChanged,
+      isCancelled: isCancelled,
+    );
+  }
+
+  Future<MetadataRefreshResult> _runMatchingTasks(
+    int total,
+    Future<MetadataRefreshResult> Function(int index, _MatchSession session)
+    run, {
+    void Function(int processed, int total)? onProgress,
+    void Function(int active)? onActiveChanged,
+    bool Function()? isCancelled,
+  }) async {
+    final session = _MatchSession();
+    var next = 0;
+    var completed = 0;
+    var active = 0;
+    var matched = 0;
+    var needsReview = 0;
+    var skipped = 0;
+    final errors = <String>{};
+    final reasons = <MatchReason, int>{};
+    onProgress?.call(0, total);
+    onActiveChanged?.call(0);
+    Future<void> worker() async {
+      while (!session.stopped &&
+          !(isCancelled?.call() ?? false) &&
+          next < total) {
+        final index = next++;
+        active++;
+        onActiveChanged?.call(active);
+        try {
+          final result = await run(index, session);
+          matched += result.matched;
+          needsReview += result.needsReview;
+          skipped += result.skipped;
+          errors.addAll(result.errors);
+          for (final entry in result.reviewReasons.entries) {
+            reasons.update(
+              entry.key,
+              (count) => count + entry.value,
+              ifAbsent: () => entry.value,
+            );
+          }
+        } catch (_) {
+          session.stopped = true;
+          rethrow;
+        } finally {
+          completed++;
+          onProgress?.call(completed, total);
+          active--;
+          onActiveChanged?.call(active);
+        }
+      }
+    }
+
+    await Future.wait([
+      for (var i = 0; i < math.min(_automaticConcurrency, total); i++) worker(),
+    ]);
+    return MetadataRefreshResult(
+      matched: matched,
+      needsReview: needsReview,
+      skipped: skipped,
+      errors: errors.toList(),
+      reviewReasons: reasons,
+    );
+  }
+
+  Future<T> _writeAutomatically<T>(Future<T> Function() write) {
+    final result = _automaticWrites.then((_) => write());
+    _automaticWrites = result.then<void>(
+      (_) {},
+      onError: (Object error, StackTrace stackTrace) {},
+    );
+    return result;
+  }
+
+  static List<String> _queries(ParsedMediaFilename parsed) => {
+    ...parsed.titleCandidates,
+    parsed.title,
+    ?parsed.secondaryTitle,
+  }.where((title) => _normalize(title).isNotEmpty).take(3).toList();
+
+  static (String?, int?, String) _groupKey(ParsedMediaFilename parsed) => (
+    parsed.type,
+    (parsed.seasonNumber ?? 1) > 1 ? null : parsed.year,
+    _queries(parsed).map(_normalize).join('|'),
   );
 
   Future<MetadataRefreshResult> _matchFiles(
     List<MatchingFile> files,
     _MatchSession session, {
-    void Function(int processed, int total)? onProgress,
+    void Function()? onFileCompleted,
     bool Function()? isCancelled,
   }) async {
     var matched = 0;
+    final matchedFileIds = <int>[];
     var needsReview = 0;
     var skipped = 0;
     final errors = <String>[];
     final reasons = <MatchReason, int>{};
-    onProgress?.call(0, files.length);
-    for (final (index, file) in files.indexed) {
-      if (isCancelled?.call() ?? false) break;
+    bool cancelled() => session.stopped || (isCancelled?.call() ?? false);
+    for (final file in files) {
+      if (cancelled()) break;
       try {
         if (await mediaLibraryRepository.isFileMetadataProtected(file.fileId)) {
           skipped++;
           continue;
         }
         final parsed = file.parsed;
-        final decision = await _decide(
-          parsed,
-          session,
-          isCancelled: isCancelled,
-        );
+        final decision = await _decide(parsed, session, isCancelled: cancelled);
         var reason = decision.reason;
         final metadata = decision.automatic;
         TmdbEpisode? episode;
@@ -211,7 +323,7 @@ class MetadataService {
             parsed,
             metadata,
             session,
-            isCancelled: isCancelled,
+            isCancelled: cancelled,
           );
           reason = mapping.reason;
           episode = mapping.episode;
@@ -224,30 +336,40 @@ class MetadataService {
           } else {
             needsReview++;
           }
-          await mediaLibraryRepository.recordMatchingReview(
-            [file.fileId],
-            MatchDecision(
-              reason: actualReason,
-              candidates: decision.candidates,
-            ),
-          );
+          await _writeAutomatically(() async {
+            if (cancelled()) return;
+            await mediaLibraryRepository.recordMatchingReview(
+              [file.fileId],
+              MatchDecision(
+                reason: actualReason,
+                candidates: decision.candidates,
+              ),
+            );
+          });
           continue;
         }
-        if (isCancelled?.call() ?? false) break;
-        final workId = await mediaLibraryRepository.applyMetadataToFiles(
-          {file.fileId: episode},
-          metadata,
-          manual: false,
-        );
+        if (cancelled()) break;
+        final workId = await _writeAutomatically(() async {
+          if (cancelled()) return null;
+          return mediaLibraryRepository.applyMetadataToFiles(
+            {file.fileId: episode},
+            metadata,
+            manual: false,
+          );
+        });
         if (workId == null) {
           skipped++;
         } else {
           matched++;
+          matchedFileIds.add(file.fileId);
         }
       } on MetadataException catch (error) {
         if (error.code == 'cancelled') break;
         errors.add(error.message);
-        if (error.code == 'unauthorized' || error.code == 'rate_limit') break;
+        if (error.code == 'unauthorized' || error.code == 'rate_limit') {
+          session.stopped = true;
+          break;
+        }
       } catch (error, stackTrace) {
         AppLogger.instance.error(
           '自动匹配失败',
@@ -256,8 +378,14 @@ class MetadataService {
         );
         errors.add('匹配请求失败，请检查网络后重试');
       } finally {
-        onProgress?.call(index + 1, files.length);
+        onFileCompleted?.call();
       }
+    }
+    if (matchedFileIds.isNotEmpty) {
+      await saveMetadataFiles?.call(
+        fileIds: matchedFileIds,
+        replaceIdentity: false,
+      );
     }
     return MetadataRefreshResult(
       matched: matched,
@@ -279,17 +407,13 @@ class MetadataService {
     if (parsed.isMultiEpisode) {
       return const MatchDecision(reason: MatchReason.specialUnverified);
     }
-    final queries = {
-      ...parsed.titleCandidates,
-      parsed.title,
-      if (parsed.secondaryTitle != null) parsed.secondaryTitle!,
-    }.where((title) => _normalize(title).isNotEmpty).take(3).toList();
+    final queries = _queries(parsed);
     if (queries.isEmpty) {
       return const MatchDecision(reason: MatchReason.noTitleEvidence);
     }
     // 后续季目录中的年份可能是该季播出年，不能用它筛选全剧首播年。
     final year = (parsed.seasonNumber ?? 1) > 1 ? null : parsed.year;
-    final key = (parsed.type, year, queries.map(_normalize).join('|'));
+    final key = _groupKey(parsed);
     final decision = await (session.decisions[key] ??= _retrieveAndDecide(
       queries,
       parsed.type,
@@ -582,6 +706,10 @@ class MetadataService {
           details,
           manual: true,
         );
+        await saveMetadataFiles?.call(
+          workId: canonicalId,
+          replaceIdentity: true,
+        );
         return canonicalId;
       } else {
         if (localWork.work.type != 'series' && episode == null) {
@@ -655,6 +783,10 @@ class MetadataService {
           );
         }
 
+        await saveMetadataFiles?.call(
+          workId: canonicalId,
+          replaceIdentity: true,
+        );
         return canonicalId;
       }
     } finally {
@@ -668,18 +800,24 @@ class MetadataService {
   /// 缺少密钥或离线不擦除已有数据与缓存。
   Future<MetadataRefreshResult> refresh({
     void Function(MetadataPhase phase, int processed, int? total)? onProgress,
+    void Function(int active)? onActiveChanged,
   }) {
     if (_inFlightRefresh != null) {
       return _inFlightRefresh!;
     }
-    _inFlightRefresh = _doRefresh(onProgress: onProgress).whenComplete(() {
-      _inFlightRefresh = null;
-    });
+    _inFlightRefresh =
+        _doRefresh(
+          onProgress: onProgress,
+          onActiveChanged: onActiveChanged,
+        ).whenComplete(() {
+          _inFlightRefresh = null;
+        });
     return _inFlightRefresh!;
   }
 
   Future<MetadataRefreshResult> _doRefresh({
     void Function(MetadataPhase phase, int processed, int? total)? onProgress,
+    void Function(int active)? onActiveChanged,
   }) async {
     onProgress?.call(MetadataPhase.recognizing, 0, null);
     try {
@@ -696,46 +834,37 @@ class MetadataService {
       return const MetadataRefreshResult(localOnly: true);
     }
     final works = await mediaLibraryRepository.unmatchedWorks();
-    final session = _MatchSession();
-    var matched = 0;
-    var needsReview = 0;
-    var skipped = 0;
-    var processed = 0;
-    final errors = <String>[];
-    final reasons = <MatchReason, int>{};
-    for (final work in works) {
-      onProgress?.call(MetadataPhase.matching, processed, works.length);
-      processed++;
-      if (work.metadataLocked || work.metadataSource != 'local') {
-        skipped++;
-        continue;
-      }
-      final files = await mediaLibraryRepository.matchingFilesForWork(work.id);
-      if (files.isEmpty) {
-        skipped++;
-        continue;
-      }
-      final result = await _matchFiles(files, session);
-      if (result.needsReview > 0) {
-        needsReview++;
-      } else if (result.matched > 0) {
-        matched++;
-      } else if (result.errors.isEmpty) {
-        skipped++;
-      }
-      for (final reason in result.reviewReasons.keys) {
-        reasons.update(reason, (count) => count + 1, ifAbsent: () => 1);
-      }
-      errors.addAll(result.errors);
-      if (result.errors.isNotEmpty) break;
-    }
-    onProgress?.call(MetadataPhase.matching, processed, works.length);
-    return MetadataRefreshResult(
-      matched: matched,
-      needsReview: needsReview,
-      skipped: skipped,
-      errors: errors.toSet().toList(),
-      reviewReasons: reasons,
+    return _runMatchingTasks(
+      works.length,
+      (index, session) async {
+        final work = works[index];
+        if (work.metadataLocked || work.metadataSource != 'local') {
+          return const MetadataRefreshResult(skipped: 1);
+        }
+        final files = await mediaLibraryRepository.matchingFilesForWork(
+          work.id,
+        );
+        if (files.isEmpty) return const MetadataRefreshResult(skipped: 1);
+        final result = await _matchFiles(files, session);
+        if (result.errors.isNotEmpty) session.stopped = true;
+        return MetadataRefreshResult(
+          matched: result.needsReview == 0 && result.matched > 0 ? 1 : 0,
+          needsReview: result.needsReview > 0 ? 1 : 0,
+          skipped:
+              result.needsReview == 0 &&
+                  result.matched == 0 &&
+                  result.errors.isEmpty
+              ? 1
+              : 0,
+          errors: result.errors,
+          reviewReasons: {
+            for (final reason in result.reviewReasons.keys) reason: 1,
+          },
+        );
+      },
+      onProgress: (completed, total) =>
+          onProgress?.call(MetadataPhase.matching, completed, total),
+      onActiveChanged: onActiveChanged,
     );
   }
 
@@ -793,6 +922,7 @@ class MetadataService {
       overview: overview?.trim(),
       posterPath: cleanPosterPath,
     );
+    await saveMetadataFiles?.call(workId: workId, replaceIdentity: true);
   }
 
   /// 综合置信度得分算法
@@ -903,6 +1033,7 @@ class MetadataService {
 
 /// 单次任务内复用请求，跨任务仍沿用 TmdbClient 的持久缓存与限流。
 class _MatchSession {
+  bool stopped = false;
   final searches = <(String, String, int?), Future<List<TmdbWork>>>{};
   final details = <TmdbWork, Future<TmdbWork>>{};
   final seasons = <(int, int), Future<List<TmdbEpisode>>>{};

@@ -31,19 +31,10 @@ class DirectoryContextResolver {
           root.pathSegments.where((part) => part.isNotEmpty).lastOrNull ?? '';
       if (Uri.tryParse(locator)?.hasScheme ?? true) return const [];
       relative = locator;
-    } else if (kind == 'openlist' || kind == 'smb') {
+    } else if (kind == 'smb') {
       final root = Uri.tryParse(rootLocator);
       if (root == null || root.userInfo.isNotEmpty) return const [];
-      String rootPath;
-      if (kind == 'openlist') {
-        try {
-          rootPath = Uri.decodeComponent(root.fragment);
-        } on FormatException {
-          return const [];
-        }
-      } else {
-        rootPath = '/${root.pathSegments.skip(1).join('/')}';
-      }
+      final rootPath = '/${root.pathSegments.skip(1).join('/')}';
       final base = rootPath
           .split('/')
           .where((part) => part.isNotEmpty)

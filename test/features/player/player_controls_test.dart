@@ -8,6 +8,42 @@ import 'fake_player_engine.dart';
 
 void main() {
   group('PlayerControls State & Interaction Tests', () {
+    testWidgets('没有内嵌轨道也能通过字幕菜单选择本地和源文件', (tester) async {
+      final engine = FakePlayerEngine();
+      var local = 0;
+      var source = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PlayerControls(
+              snapshot: const PlaybackSnapshot(status: PlaybackStatus.playing),
+              engine: engine,
+              isFullscreen: false,
+              onToggleFullscreen: () {},
+              onPickLocalSubtitle: () {
+                local++;
+              },
+              onPickSourceSubtitle: () {
+                source++;
+              },
+            ),
+          ),
+        ),
+      );
+      final menu = find.byKey(const Key('player_subtitle_track_button'));
+      await tester.tap(menu);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('选择本地字幕'));
+      await tester.pumpAndSettle();
+      expect(local, 1);
+      await tester.tap(menu);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('选择媒体源字幕'));
+      await tester.pumpAndSettle();
+      expect(source, 1);
+      expect(engine.setSubtitleTrackCount, 0);
+    });
+
     testWidgets('音量面板遵循会话上限，可调节到 100% 以上', (tester) async {
       const snapshot = PlaybackSnapshot(
         status: PlaybackStatus.paused,

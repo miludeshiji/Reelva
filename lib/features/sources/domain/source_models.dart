@@ -340,7 +340,6 @@ void _checkRawDotSegments(String raw, String contextName) {
 String sanitizeAndValidateRootLocator({
   required String kind,
   required String rawInput,
-  String? openListRootPath,
 }) {
   final trimmed = rawInput.trim();
   if (trimmed.isEmpty) {
@@ -424,109 +423,6 @@ String sanitizeAndValidateRootLocator({
       );
       return cleanUri.toString();
 
-    case 'openlist':
-      final uri = Uri.tryParse(trimmed);
-      if (uri == null || (!uri.isScheme('http') && !uri.isScheme('https'))) {
-        throw const MediaSourceException(
-          'OpenList 地址必须是以 http:// 或 https:// 开头的有效网址',
-          code: 'invalid_url',
-        );
-      }
-      if (uri.host.isEmpty) {
-        throw const MediaSourceException(
-          'OpenList 地址主机名不能为空',
-          code: 'invalid_url',
-        );
-      }
-      if (uri.userInfo.isNotEmpty) {
-        throw const MediaSourceException(
-          'OpenList 根目录 URL 中包含用户名或密码，请移除并在下方凭据输入框中填写',
-          code: 'credentials_in_url',
-        );
-      }
-      if (uri.hasQuery) {
-        throw const MediaSourceException(
-          'OpenList 根目录 URL 不支持携带 Query 参数，请移除',
-          code: 'query_in_url',
-        );
-      }
-      for (final segment in uri.pathSegments) {
-        if (segment == '.' || segment == '..') {
-          throw const MediaSourceException(
-            '根目录路径不能包含相对路径或点段 (.)/(..)',
-            code: 'invalid_path_segments',
-          );
-        }
-        if (segment.contains(r'\')) {
-          throw const MediaSourceException(
-            'HTTP 协议路径不能包含反斜杠',
-            code: 'invalid_path_separators',
-          );
-        }
-      }
-
-      final baseSegments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
-
-      String cleanRootPath;
-      if (openListRootPath != null && openListRootPath.trim().isNotEmpty) {
-        final rawRoot = openListRootPath.trim();
-        _checkRawDotSegments(rawRoot, 'OpenList 根路径');
-        if (rawRoot.contains('%2f') ||
-            rawRoot.contains('%2F') ||
-            rawRoot.contains('%5c') ||
-            rawRoot.contains('%5C')) {
-          throw const MediaSourceException(
-            'OpenList 根路径不能包含编码的目录分隔符 (%2F / %5C)',
-            code: 'invalid_path_separators',
-          );
-        }
-        final segments = rawRoot
-            .replaceAll(r'\', '/')
-            .split('/')
-            .where((s) => s.isNotEmpty)
-            .toList();
-        final encodedSegments = segments
-            .map((s) => Uri.encodeComponent(s))
-            .toList();
-        cleanRootPath = encodedSegments.isEmpty
-            ? '/'
-            : '/${encodedSegments.join('/')}';
-      } else {
-        final hashIndex = trimmed.indexOf('#');
-        final rawFragment = hashIndex != -1
-            ? trimmed.substring(hashIndex + 1).trim()
-            : '';
-
-        if (rawFragment.isNotEmpty) {
-          _checkRawDotSegments(rawFragment, 'OpenList 根路径');
-          if (rawFragment.contains('%2f') ||
-              rawFragment.contains('%2F') ||
-              rawFragment.contains('%5c') ||
-              rawFragment.contains('%5C')) {
-            throw const MediaSourceException(
-              'OpenList 根路径不能包含编码的目录分隔符 (%2F / %5C)',
-              code: 'invalid_path_separators',
-            );
-          }
-          final segments = rawFragment
-              .replaceAll(r'\', '/')
-              .split('/')
-              .where((s) => s.isNotEmpty)
-              .toList();
-          cleanRootPath = segments.isEmpty ? '/' : '/${segments.join('/')}';
-        } else {
-          cleanRootPath = '/';
-        }
-      }
-
-      final cleanUri = Uri(
-        scheme: uri.scheme.toLowerCase(),
-        host: uri.host.toLowerCase(),
-        port: uri.hasPort ? uri.port : null,
-        pathSegments: baseSegments.isEmpty ? const [] : baseSegments,
-        fragment: cleanRootPath,
-      );
-      return cleanUri.toString();
     case 'smb':
       var normalized = trimmed.replaceAll(r'\', '/');
       if (normalized.startsWith('//')) {

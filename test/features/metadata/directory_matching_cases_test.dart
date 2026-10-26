@@ -69,22 +69,6 @@ void main() {
       resolve('webdav', 'https://example.test/dav/', '../other/01.mkv'),
       isEmpty,
     );
-    expect(
-      resolve('openlist', 'https://example.test/#/media', '/media/B_冰果/01.mkv'),
-      ['media', 'B_冰果'],
-    );
-    expect(
-      resolve(
-        'openlist',
-        'https://example.test/#%2Fmedia%2F%E5%8A%A8%E6%BC%AB',
-        '/media/动漫/B_冰果/01.mkv',
-      ),
-      ['动漫', 'B_冰果'],
-    );
-    expect(
-      resolve('openlist', 'https://example.test/#/media', '/outside/01.mkv'),
-      isEmpty,
-    );
     expect(resolve('smb', 'smb://server/share/media', '/media/B_冰果/01.mkv'), [
       'media',
       'B_冰果',

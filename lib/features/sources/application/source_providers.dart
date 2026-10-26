@@ -12,7 +12,6 @@ import '../infrastructure/remote_credentials_store.dart';
 import '../infrastructure/remote_http_client.dart';
 import '../infrastructure/remote_playback_bridge.dart';
 import '../infrastructure/webdav_source_adapter.dart';
-import '../infrastructure/openlist_source_adapter.dart';
 import '../infrastructure/smb_source_adapter.dart';
 import 'scan_progress.dart';
 import 'source_controller.dart';
@@ -27,7 +26,14 @@ final platformOverrideProvider = Provider<TargetPlatform?>((ref) => null);
 ///
 /// 在 Provider 销毁时安全关闭数据库连接，异常由 [AppLogger] 统一脱敏记录。
 final appDatabaseProvider = Provider<AppDatabase>((ref) {
-  final db = AppDatabase();
+  final credentials = ref.watch(remoteCredentialsStoreProvider);
+  final db = AppDatabase(
+    removeRetiredCredentials: (references) async {
+      for (final reference in references) {
+        await credentials.delete(reference);
+      }
+    },
+  );
   ref.onDispose(() async {
     try {
       await db.close();
@@ -76,11 +82,6 @@ final sourceAdaptersProvider = Provider<Map<String, MediaSourceAdapter>>((ref) {
     'local': const LocalSourceAdapter(),
     'androidSaf': const AndroidSafSourceAdapter(),
     'webdav': WebDavSourceAdapter(
-      credentials: credentials,
-      http: http,
-      playback: playback,
-    ),
-    'openlist': OpenListSourceAdapter(
       credentials: credentials,
       http: http,
       playback: playback,

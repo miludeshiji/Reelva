@@ -60,14 +60,12 @@ void main() {
       const creds = RemoteCredentials(
         username: 'super_admin',
         password: 'my_super_secret_password',
-        token: 'secret_token_value',
         domain: 'CORP_DOMAIN',
       );
 
       final str = creds.toString();
       expect(str, contains('[REDACTED]'));
       expect(str, isNot(contains('my_super_secret_password')));
-      expect(str, isNot(contains('secret_token_value')));
       expect(str, isNot(contains('super_admin')));
     });
   });
@@ -106,7 +104,6 @@ void main() {
       const creds = RemoteCredentials(
         username: 'webdav_user',
         password: 'webdav_password',
-        token: 'openlist_token',
         domain: 'WORKGROUP',
         playbackHeaders: {
           'User-Agent': 'CustomUA/1.0',
@@ -119,7 +116,6 @@ void main() {
 
       expect(loaded.username, 'webdav_user');
       expect(loaded.password, 'webdav_password');
-      expect(loaded.token, 'openlist_token');
       expect(loaded.domain, 'WORKGROUP');
       expect(loaded.playbackHeaders, {
         'User-Agent': 'CustomUA/1.0',

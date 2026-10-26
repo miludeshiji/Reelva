@@ -10,7 +10,6 @@ import 'infrastructure/remote_credentials_store.dart';
 enum SourceSetupKind {
   local('本地目录', '添加设备上的视频文件夹', Icons.folder_outlined),
   webdav('WebDAV', '连接 NAS 或 WebDAV 服务', Icons.cloud_outlined),
-  openlist('OpenList', '连接 OpenList 中的媒体目录', Icons.layers_outlined),
   smb('SMB', '访问局域网共享文件夹', Icons.lan_outlined);
 
   const SourceSetupKind(this.label, this.description, this.icon);
@@ -35,11 +34,7 @@ class _SourceSetupPageState extends ConsumerState<SourceSetupPage> {
   final _urlController = TextEditingController();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _tokenController = TextEditingController();
   final _domainController = TextEditingController();
-  final _openListPathController = TextEditingController();
-  final _userAgentController = TextEditingController();
-  final _refererController = TextEditingController();
   final _extensionsController = TextEditingController(
     text: defaultVideoExtensions.join(', '),
   );
@@ -49,7 +44,6 @@ class _SourceSetupPageState extends ConsumerState<SourceSetupPage> {
 
   bool _isSubmitting = false;
   bool _obscurePassword = true;
-  bool _obscureToken = true;
   String? _errorMessage;
 
   bool get _isLocal => widget.kind == SourceSetupKind.local;
@@ -60,11 +54,7 @@ class _SourceSetupPageState extends ConsumerState<SourceSetupPage> {
     _urlController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
-    _tokenController.dispose();
     _domainController.dispose();
-    _openListPathController.dispose();
-    _userAgentController.dispose();
-    _refererController.dispose();
     _extensionsController.dispose();
     _excludedController.dispose();
     super.dispose();
@@ -103,13 +93,6 @@ class _SourceSetupPageState extends ConsumerState<SourceSetupPage> {
         );
         if (source == null) return;
       } else {
-        final headers = <String, String>{};
-        if (_userAgentController.text.trim().isNotEmpty) {
-          headers['User-Agent'] = _userAgentController.text.trim();
-        }
-        if (_refererController.text.trim().isNotEmpty) {
-          headers['Referer'] = _refererController.text.trim();
-        }
         await controller.addRemoteSource(
           kind: widget.kind.name,
           rootUrl: _urlController.text.trim(),
@@ -117,13 +100,8 @@ class _SourceSetupPageState extends ConsumerState<SourceSetupPage> {
           credentials: RemoteCredentials(
             username: _usernameController.text.trim(),
             password: _passwordController.text,
-            token: _tokenController.text.trim(),
             domain: _domainController.text.trim(),
-            playbackHeaders: headers,
           ),
-          openListRootPath: _openListPathController.text.trim().isEmpty
-              ? null
-              : _openListPathController.text.trim(),
           extensions: extensions.isEmpty ? defaultVideoExtensions : extensions,
           excludedDirectories: excluded.isEmpty
               ? defaultExcludedDirectories
@@ -411,12 +389,10 @@ class _SourceSetupPageState extends ConsumerState<SourceSetupPage> {
           decoration: InputDecoration(
             labelText: switch (widget.kind) {
               SourceSetupKind.webdav => 'WebDAV 地址',
-              SourceSetupKind.openlist => 'OpenList 服务器地址',
               _ => 'SMB 共享路径',
             },
             hintText: switch (widget.kind) {
               SourceSetupKind.webdav => 'https://example.com/dav/',
-              SourceSetupKind.openlist => 'https://example.com/base#/Movies',
               _ => 'smb://192.168.1.100/share/media',
             },
           ),
@@ -431,37 +407,6 @@ class _SourceSetupPageState extends ConsumerState<SourceSetupPage> {
           enabled: !_isSubmitting,
           decoration: const InputDecoration(labelText: '用户名（可选）'),
         ),
-      if (widget.kind == SourceSetupKind.openlist) ...[
-        TextFormField(
-          key: const Key('remote_source_openlist_path_field'),
-          controller: _openListPathController,
-          enabled: !_isSubmitting,
-          decoration: const InputDecoration(
-            labelText: '根目录路径（可选，或在 URL # 中指定）',
-            hintText: '/Movies',
-          ),
-        ),
-        TextFormField(
-          key: const Key('remote_source_token_field'),
-          controller: _tokenController,
-          enabled: !_isSubmitting,
-          obscureText: _obscureToken,
-          decoration: InputDecoration(
-            labelText: 'API Token（可选）',
-            suffixIcon: IconButton(
-              tooltip: _obscureToken ? '显示令牌' : '隐藏令牌',
-              onPressed: _isSubmitting
-                  ? null
-                  : () => setState(() => _obscureToken = !_obscureToken),
-              icon: Icon(
-                _obscureToken
-                    ? Icons.visibility_outlined
-                    : Icons.visibility_off_outlined,
-              ),
-            ),
-          ),
-        ),
-      ],
       if (!_isLocal)
         TextFormField(
           key: const Key('remote_source_password_field'),
@@ -469,9 +414,7 @@ class _SourceSetupPageState extends ConsumerState<SourceSetupPage> {
           enabled: !_isSubmitting,
           obscureText: _obscurePassword,
           decoration: InputDecoration(
-            labelText: widget.kind == SourceSetupKind.openlist
-                ? '目录访问密码（可选）'
-                : '密码（可选）',
+            labelText: '密码（可选）',
             suffixIcon: IconButton(
               tooltip: _obscurePassword ? '显示密码' : '隐藏密码',
               onPressed: _isSubmitting
@@ -506,20 +449,6 @@ class _SourceSetupPageState extends ConsumerState<SourceSetupPage> {
             hintText: 'WORKGROUP',
           ),
         ),
-      if (widget.kind == SourceSetupKind.openlist) ...[
-        TextFormField(
-          key: const Key('remote_source_user_agent_field'),
-          controller: _userAgentController,
-          enabled: !_isSubmitting,
-          decoration: const InputDecoration(labelText: 'User-Agent 请求头（可选）'),
-        ),
-        TextFormField(
-          key: const Key('remote_source_referer_field'),
-          controller: _refererController,
-          enabled: !_isSubmitting,
-          decoration: const InputDecoration(labelText: 'Referer 请求头（可选）'),
-        ),
-      ],
       TextFormField(
         key: const Key('add_source_extensions_field'),
         controller: _extensionsController,

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
@@ -12,6 +13,7 @@ import '../domain/playback_snapshot.dart';
 import '../domain/player_engine.dart';
 import '../domain/player_settings.dart';
 import '../domain/player_shortcuts.dart';
+import '../domain/subtitle_files.dart';
 import 'android_media_documents.dart';
 import 'mpv_player_configuration.dart';
 import 'mpv_shortcut_commands.dart';
@@ -74,6 +76,11 @@ class MediaKitPlayerEngine implements PlayerEngine {
   Duration? _recoverableErrorPosition;
   Future<void>? _disposeFuture;
   Future<void> _operationQueue = Future<void>.value();
+  final _subtitleLeases =
+      <Uri, ({PlaybackResource resource, int? descriptor, String trackId})>{};
+  int _subtitleSelectionVersion = 0;
+  bool _addingSubtitle = false;
+  final _subtitleLogErrors = <String>{};
 
   @override
   PlaybackSnapshot get snapshot => _snapshot;
@@ -224,7 +231,24 @@ class MediaKitPlayerEngine implements PlayerEngine {
     );
 
     _subscriptions.add(
+      _player.stream.log.listen((log) {
+        // sub-add 的文件读取错误只属于外挂字幕；解码器错误仍走视频错误处理。
+        if (_addingSubtitle &&
+            log.level == 'error' &&
+            (const ['file', 'stream', 'ffmpeg'].contains(log.prefix) ||
+                (log.prefix == 'cplayer' &&
+                    RegExp(
+                      r'subtitle|external file',
+                      caseSensitive: false,
+                    ).hasMatch(log.text)))) {
+          _subtitleLogErrors.add(log.text);
+        }
+      }),
+    );
+    _subscriptions.add(
       _player.stream.error.listen((err) {
+        // 日志流会去重，错误流不会；重复选择坏字幕时仍需识别相同诊断。
+        if (_addingSubtitle && _subtitleLogErrors.contains(err)) return;
         if (_isEventIgnored) return;
         AppLogger.instance.error('底层播放异常', error: err);
         _setPlaybackError(_safeErrorMessage(err), recoverable: true);
@@ -368,10 +392,20 @@ class MediaKitPlayerEngine implements PlayerEngine {
     }
   }
 
+  Future<void> _releaseSubtitles() async {
+    final leases = _subtitleLeases.values.toList();
+    _subtitleLeases.clear();
+    for (final lease in leases) {
+      if (lease.descriptor != null) await _closeDescriptor(lease.descriptor!);
+      await _releaseLease(lease.resource);
+    }
+  }
+
   @override
   Future<void> open(PlaybackResource resource, {Duration? resumeAt}) {
     if (_disposed) return Future.value();
     final epoch = ++_openEpoch;
+    _subtitleSelectionVersion = 0;
     _isOpening = true;
     _pendingResumeAt = resumeAt;
     _recoverableErrorPosition = null;
@@ -410,6 +444,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
       }
       await _closeActiveDescriptor();
       await _releaseActiveLease();
+      await _releaseSubtitles();
 
       if (_disposed || epoch != _openEpoch) {
         _isOpening = false;
@@ -488,7 +523,14 @@ class MediaKitPlayerEngine implements PlayerEngine {
         if (nativePlayer is NativePlayer) {
           // 等待视频控制器就绪后应用，避免平台初始化覆盖用户偏好。
           for (final entry in mpvPlayerProperties(_settings).entries) {
-            await nativePlayer.setProperty(entry.key, entry.value);
+            await nativePlayer.setProperty(
+              entry.key,
+              entry.key == 'sub-auto' &&
+                      resource.discoverSubtitles != null &&
+                      !resource.uri.isScheme('file')
+                  ? 'no'
+                  : entry.value,
+            );
           }
         }
         // 先以 play: false 打开，等待底层就绪后再次确认 epoch
@@ -561,7 +603,175 @@ class MediaKitPlayerEngine implements PlayerEngine {
       _syncTracks(_player.state.tracks, _player.state.track);
       _syncVideoSize(_player.state.videoParams);
       _checkResumeRange(_player.state.duration);
+      unawaited(_autoLoadSubtitles(resource, epoch));
     });
+  }
+
+  Future<void> _autoLoadSubtitles(PlaybackResource video, int epoch) async {
+    final discover = video.discoverSubtitles;
+    // 可直接访问的本地目录仍由 libmpv 枚举，保留其配套字幕等原有能力。
+    if (discover == null ||
+        video.uri.isScheme('file') ||
+        _settings.subtitleAutoLoad == TrackAutoLoad.disabled) {
+      return;
+    }
+    final selectionVersion = _subtitleSelectionVersion;
+    try {
+      final subtitles = (await discover())
+          .where(
+            (subtitle) => matchesSubtitle(
+              video.displayName,
+              subtitle.displayName,
+              _settings.subtitleAutoLoad,
+            ),
+          )
+          .toList();
+      subtitles.sort((a, b) {
+        final priority =
+            subtitleLanguagePriority(
+              a.displayName,
+              _settings.subtitleLanguages,
+            ).compareTo(
+              subtitleLanguagePriority(
+                b.displayName,
+                _settings.subtitleLanguages,
+              ),
+            );
+        return priority != 0
+            ? priority
+            : a.displayName.compareTo(b.displayName);
+      });
+      var selected = false;
+      for (final subtitle in subtitles) {
+        if (_disposed || epoch != _openEpoch) return;
+        try {
+          final loaded = await _loadSubtitle(
+            subtitle,
+            epoch,
+            select: () =>
+                !selected && selectionVersion == _subtitleSelectionVersion,
+          );
+          selected = selected || loaded;
+        } catch (error, stackTrace) {
+          AppLogger.instance.error(
+            '自动加载字幕失败',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
+      }
+    } catch (error, stackTrace) {
+      AppLogger.instance.error(
+        '发现同目录字幕失败',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  @override
+  Future<void> loadSubtitle(PlaybackResource resource) {
+    _subtitleSelectionVersion++;
+    return _loadSubtitle(resource, _openEpoch, select: () => true).then((_) {});
+  }
+
+  Future<bool> _loadSubtitle(
+    PlaybackResource resource,
+    int epoch, {
+    required bool Function() select,
+  }) async {
+    if (_disposed || epoch != _openEpoch || _isEventIgnored) return false;
+    PlaybackResource? lease;
+    int? descriptor;
+    var retained = false;
+    try {
+      // 准备连接在队列外进行，避免字幕目录或网络访问阻塞播放控制。
+      lease = resource.prepare == null ? resource : await resource.prepare!();
+      if (_disposed || epoch != _openEpoch) return false;
+      if (lease.uri.isScheme('content')) {
+        descriptor = await _documents.openRead(lease.uri);
+      }
+      if (_disposed || epoch != _openEpoch) return false;
+      final target = descriptor == null
+          ? lease.uri.toString()
+          : 'fd://$descriptor';
+      return await _enqueue(() async {
+        if (_disposed || epoch != _openEpoch || _isEventIgnored) return false;
+        final previous = _subtitleLeases[resource.uri];
+        if (previous != null) {
+          if (identical(lease, previous.resource)) lease = null;
+          if (select()) {
+            await _player.setSubtitleTrack(
+              SubtitleTrack(previous.trackId, null, null),
+            );
+          }
+          return true;
+        }
+        final native = _player.platform;
+        final String trackId;
+        _addingSubtitle = true;
+        try {
+          if (native is NativePlayer) {
+            final before = await _nativeSubtitleIds(native);
+            await native.command([
+              'sub-add',
+              target,
+              select() ? 'select' : 'auto',
+              resource.displayName,
+              subtitleLanguage(resource.displayName) ?? 'und',
+            ]);
+            final added = (await _nativeSubtitleIds(native)).difference(before);
+            if (added.isEmpty) {
+              throw const PlaybackResourceException('字幕文件无法识别或读取');
+            }
+            trackId = added.first;
+          } else {
+            final previousTrack = _player.state.track.subtitle;
+            await _player.setSubtitleTrack(
+              SubtitleTrack.uri(target, title: resource.displayName),
+            );
+            trackId = target;
+            if (!select()) await _player.setSubtitleTrack(previousTrack);
+          }
+        } finally {
+          // media_kit 的日志与错误控制器异步派发；先处理本次命令已发出的事件。
+          await Future<void>.delayed(Duration.zero);
+          _addingSubtitle = false;
+        }
+        _subtitleLeases[resource.uri] = (
+          resource: lease!,
+          descriptor: descriptor,
+          trackId: trackId,
+        );
+        retained = true;
+        _syncTracks(_player.state.tracks, _player.state.track);
+        return true;
+      });
+    } catch (error, stackTrace) {
+      if (_disposed || epoch != _openEpoch) return false;
+      AppLogger.instance.error(
+        '加载外挂字幕失败',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      throw const PlaybackResourceException('加载字幕失败，请检查文件格式、连接或访问权限');
+    } finally {
+      if (!retained) {
+        if (descriptor != null) await _closeDescriptor(descriptor);
+        final toRelease = lease;
+        if (toRelease != null) await _releaseLease(toRelease);
+      }
+    }
+  }
+
+  Future<Set<String>> _nativeSubtitleIds(NativePlayer native) async {
+    final tracks =
+        jsonDecode(await native.getProperty('track-list')) as List<dynamic>;
+    return tracks
+        .whereType<Map<String, dynamic>>()
+        .where((track) => track['type'] == 'sub')
+        .map((track) => track['id'].toString())
+        .toSet();
   }
 
   @override
@@ -669,6 +879,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
 
   @override
   Future<void> setSubtitleTrack(String id) {
+    _subtitleSelectionVersion++;
     if (_disposed) return Future.value();
     return _enqueue(() async {
       if (_disposed) return;
@@ -731,6 +942,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
       }
       await _closeActiveDescriptor();
       await _releaseActiveLease();
+      await _releaseSubtitles();
     });
   }
 
@@ -759,6 +971,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
 
       await _closeActiveDescriptor();
       await _releaseActiveLease();
+      await _releaseSubtitles();
 
       if (!_snapshotController.isClosed) {
         await _snapshotController.close();

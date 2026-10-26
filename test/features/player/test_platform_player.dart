@@ -193,6 +193,10 @@ class TestPlatformPlayer extends PlatformPlayer {
     errorController.add(error);
   }
 
+  void emitLog(PlayerLog log) {
+    logController.add(log);
+  }
+
   void emitTracks(Tracks tracks) {
     state = state.copyWith(tracks: tracks);
     tracksController.add(tracks);

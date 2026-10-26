@@ -12,7 +12,7 @@ import 'tmdb_token_store.dart';
 ///
 /// 封装 TMDB v3 API 交互，集成：
 /// 1. Drift 本地元数据缓存（优先新鲜缓存，离线/无 Key 时回退陈旧缓存，缓存键绝不包含凭据）
-/// 2. 请求串行化（默认 300ms 间隔）
+/// 2. 最多 4 个在途请求，全局启动间隔默认 300ms
 /// 3. 429 Retry-After 有限次数重试与安全熔断
 /// 4. 禁用重定向防止 Token 泄露
 /// 5. 统一脱敏与安全异常映射
@@ -24,9 +24,16 @@ class TmdbClient {
   final Duration requestInterval;
 
   static const Duration _maxBoundedRetryWait = Duration(seconds: 10);
+  static const int _maxConcurrentRequests = 4;
   DateTime _lastRequestTime = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _nextAllowedRequestTime = DateTime.fromMillisecondsSinceEpoch(0);
-  Future<void> _queue = Future.value();
+  Future<void> _startQueue = Future.value();
+  int _activeRequests = 0;
+  Completer<void>? _slotAvailable;
+  String? _rejectedToken;
+  int _authFailureVersion = 0;
+  bool _disposed = false;
+  final _inFlight = <String, Future<Map<String, dynamic>>>{};
   TmdbClient({
     required this.tokenStore,
     this.cache,
@@ -42,29 +49,82 @@ class TmdbClient {
     _dio.options.maxRedirects = 0;
   }
 
-  /// 串行化请求调度器，保证相邻请求至少间隔 [_requestInterval]
-  Future<T> _serialized<T>(Future<T> Function() action) {
+  /// 只串行分配启动时刻，网络响应可重叠，所有请求共享限流与鉴权状态。
+  Future<T> _schedule<T>(
+    String token,
+    int authVersion,
+    Future<T> Function() action,
+  ) {
     final completer = Completer<T>();
-    _queue = _queue.then((_) async {
+    _startQueue = _startQueue.then((_) async {
       try {
-        final now = DateTime.now();
-        // 必须等到满足 429 冷却允许时间
-        if (now.isBefore(_nextAllowedRequestTime)) {
-          await Future<void>.delayed(_nextAllowedRequestTime.difference(now));
+        while (_activeRequests >= _maxConcurrentRequests) {
+          await (_slotAvailable ??= Completer<void>()).future;
         }
-        final afterWaitNow = DateTime.now();
-        final elapsed = afterWaitNow.difference(_lastRequestTime);
-        if (elapsed < requestInterval) {
-          await Future<void>.delayed(requestInterval - elapsed);
+        while (true) {
+          if (_disposed) {
+            throw const MetadataException('TMDB 请求已取消', code: 'cancelled');
+          }
+          if (_rejectedToken == token && authVersion < _authFailureVersion) {
+            throw const MetadataException(
+              'TMDB API 密钥无效或未授权 (401/403)，请在设置中检查',
+              code: 'unauthorized',
+            );
+          }
+          final now = DateTime.now();
+          final cooldown = _nextAllowedRequestTime.difference(now);
+          if (cooldown > _maxBoundedRetryWait) {
+            throw const MetadataException(
+              'TMDB 请求正在限流冷却，请稍后重试',
+              code: 'rate_limit',
+            );
+          }
+          final interval = _lastRequestTime
+              .add(requestInterval)
+              .difference(now);
+          final wait = cooldown > interval ? cooldown : interval;
+          if (wait <= Duration.zero) break;
+          await Future<void>.delayed(wait);
+          // 等待期间其他在途请求可能延长了共享冷却，启动前重新检查。
         }
         _lastRequestTime = DateTime.now();
-        final result = await action();
-        completer.complete(result);
+        _activeRequests++;
+        unawaited(() async {
+          try {
+            completer.complete(await action());
+          } catch (error, stackTrace) {
+            if (error is DioException) {
+              final status = error.response?.statusCode;
+              if (status == 429) {
+                final next = DateTime.now().add(_retryAfter(error));
+                if (next.isAfter(_nextAllowedRequestTime)) {
+                  _nextAllowedRequestTime = next;
+                }
+              } else if (status == 401 || status == 403) {
+                _rejectedToken = token;
+                _authFailureVersion++;
+              }
+            }
+            completer.completeError(error, stackTrace);
+          } finally {
+            _activeRequests--;
+            final available = _slotAvailable;
+            _slotAvailable = null;
+            available?.complete();
+          }
+        }());
       } catch (e, st) {
         completer.completeError(e, st);
       }
     });
     return completer.future;
+  }
+
+  static Duration _retryAfter(DioException error) {
+    final seconds = int.tryParse(
+      error.response?.headers.value('retry-after') ?? '',
+    );
+    return Duration(seconds: seconds != null && seconds > 0 ? seconds : 2);
   }
 
   /// 执行安全请求并自动管理缓存
@@ -74,7 +134,28 @@ class TmdbClient {
     required Duration ttl,
     Map<String, dynamic>? queryParameters,
     int max429Retries = 2,
+  }) => _inFlight.putIfAbsent(
+    cacheKey,
+    () =>
+        _loadJson(
+          path: path,
+          cacheKey: cacheKey,
+          ttl: ttl,
+          queryParameters: queryParameters,
+          max429Retries: max429Retries,
+        ).whenComplete(() {
+          _inFlight.remove(cacheKey);
+        }),
+  );
+
+  Future<Map<String, dynamic>> _loadJson({
+    required String path,
+    required String cacheKey,
+    required Duration ttl,
+    Map<String, dynamic>? queryParameters,
+    int max429Retries = 2,
   }) async {
+    final authVersion = _authFailureVersion;
     // 1. 检查本地缓存（优先新鲜缓存）
     final cached = await cache?.get(cacheKey);
     if (cached != null && !DateTime.now().isAfter(cached.expiresAt)) {
@@ -116,12 +197,14 @@ class TmdbClient {
       qParams['api_key'] = token;
     }
 
-    // 4. 发送网络请求（包含串行调度与 429 智能重试）
+    // 4. 发送网络请求（共享并发限制、启动节奏和 429 冷却）
     int attempts = 0;
     while (true) {
       attempts++;
       try {
-        final response = await _serialized(
+        final response = await _schedule(
+          token,
+          authVersion,
           () => _dio.get<Map<String, dynamic>>(
             path,
             queryParameters: qParams,
@@ -151,22 +234,8 @@ class TmdbClient {
 
         // 429 Rate Limit 处理：更新共享允许时间，有界范围内重试，超限绝不过早重试
         if (statusCode == 429) {
-          int waitSeconds = 2;
-          final retryAfterHeader = dioErr.response?.headers.value(
-            'retry-after',
-          );
-          if (retryAfterHeader != null) {
-            final parsed = int.tryParse(retryAfterHeader);
-            if (parsed != null && parsed > 0) {
-              waitSeconds = parsed;
-            }
-          }
-          final waitDuration = Duration(seconds: waitSeconds);
-          final now = DateTime.now();
-          final targetNextTime = now.add(waitDuration);
-          if (targetNextTime.isAfter(_nextAllowedRequestTime)) {
-            _nextAllowedRequestTime = targetNextTime;
-          }
+          final waitDuration = _retryAfter(dioErr);
+          final waitSeconds = waitDuration.inSeconds;
 
           // 超过有界等待阈值（如 10 秒）绝不能过早重试，直接抛出 rate_limit
           if (waitDuration > _maxBoundedRetryWait || attempts > max429Retries) {
@@ -176,7 +245,7 @@ class TmdbClient {
             );
           }
 
-          // 在允许的有界等待范围内，下次循环调用 _serialized 会在 _nextAllowedRequestTime 之后执行
+          // 调度器已在释放并发名额前更新冷却，其他排队请求也必须遵守。
           continue;
         }
 
@@ -422,6 +491,7 @@ class TmdbClient {
 
   /// 释放底层 HTTP 客户端资源
   void dispose() {
+    _disposed = true;
     _dio.close();
   }
 }

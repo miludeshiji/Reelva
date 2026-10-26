@@ -446,7 +446,6 @@ class _SourceCard extends ConsumerWidget {
       'androidSaf' => ('Android 存储目录', const Color(0xFFC38A28)),
       'smb' => ('SMB', const Color(0xFF159B77)),
       'webdav' => ('WebDAV', const Color(0xFF637ACC)),
-      'openlist' => ('OpenList', const Color(0xFFA261B6)),
       _ => ('本地目录', ReelvaDesign.accent),
     };
     final status = isScanning
@@ -565,9 +564,7 @@ class _SourceCard extends ConsumerWidget {
                     },
                     itemBuilder: (context) {
                       final isRemote =
-                          source.kind == 'webdav' ||
-                          source.kind == 'openlist' ||
-                          source.kind == 'smb';
+                          source.kind == 'webdav' || source.kind == 'smb';
                       return [
                         const GlassPopupMenuItem(
                           value: 'rename',
@@ -821,8 +818,6 @@ class _SourceCard extends ConsumerWidget {
         return Icons.folder_shared_outlined;
       case 'webdav':
         return Icons.cloud_outlined;
-      case 'openlist':
-        return Icons.dns_outlined;
       case 'smb':
         return Icons.lan_outlined;
       default:

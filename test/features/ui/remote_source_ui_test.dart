@@ -107,7 +107,6 @@ void main() {
           ),
           'androidSaf': const _FakeStubAdapter('androidSaf'),
           'webdav': const _FakeStubAdapter('webdav'),
-          'openlist': const _FakeStubAdapter('openlist'),
           'smb': const _FakeStubAdapter('smb'),
         }),
       ],
@@ -437,7 +436,7 @@ void main() {
     }
   });
 
-  for (final kind in [SourceSetupKind.openlist, SourceSetupKind.smb]) {
+  for (final kind in [SourceSetupKind.smb]) {
     testWidgets('${kind.label} 独立配置保留凭据、路径和高级扫描选项', (tester) async {
       try {
         await tester.pumpWidget(buildTestApp());
@@ -450,26 +449,9 @@ void main() {
         await tester.pumpAndSettle();
         await tester.enterText(
           find.byKey(const Key('remote_source_url_field')),
-          kind == SourceSetupKind.openlist
-              ? 'https://files.example/base'
-              : 'smb://nas.example/Movies',
+          'smb://nas.example/Movies',
         );
-        if (kind == SourceSetupKind.openlist) {
-          final token = find.byKey(const Key('remote_source_token_field'));
-          expect(
-            tester
-                .widget<TextField>(
-                  find.descendant(of: token, matching: find.byType(TextField)),
-                )
-                .obscureText,
-            isTrue,
-          );
-          await tester.enterText(token, 'test-token');
-          await tester.enterText(
-            find.byKey(const Key('remote_source_openlist_path_field')),
-            '/Movies',
-          );
-        } else {
+        {
           expect(
             find.byKey(const Key('remote_source_token_field')),
             findsNothing,
@@ -488,17 +470,10 @@ void main() {
         await tester.tap(advanced);
         await tester.pumpAndSettle();
         final credentialField = find.byKey(
-          Key(
-            kind == SourceSetupKind.openlist
-                ? 'remote_source_user_agent_field'
-                : 'remote_source_domain_field',
-          ),
+          const Key('remote_source_domain_field'),
         );
         await tester.ensureVisible(credentialField);
-        await tester.enterText(
-          credentialField,
-          kind == SourceSetupKind.openlist ? 'Reelva Test' : 'WORKGROUP',
-        );
+        await tester.enterText(credentialField, 'WORKGROUP');
         final extensions = find.byKey(const Key('add_source_extensions_field'));
         await tester.ensureVisible(extensions);
         await tester.enterText(extensions, 'mp4, mkv');
@@ -518,11 +493,7 @@ void main() {
         final credentials = await tester.runAsync(
           () => credStore.read(source.credentialRef!),
         );
-        if (kind == SourceSetupKind.openlist) {
-          expect(source.rootLocator, 'https://files.example/base#/Movies');
-          expect(credentials!.token, 'test-token');
-          expect(credentials.playbackHeaders['User-Agent'], 'Reelva Test');
-        } else {
+        {
           expect(credentials!.domain, 'WORKGROUP');
         }
       } finally {

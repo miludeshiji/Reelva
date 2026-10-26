@@ -130,7 +130,7 @@ class _FakeRemotePlaybackBridge extends RemotePlaybackBridge {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const openListFixtureXml =
+  const alternateDavFixtureXml =
       '<?xml version="1.0" encoding="UTF-8"?>'
       '<D:multistatus xmlns:D="DAV:">'
       '<D:response>'
@@ -204,7 +204,7 @@ void main() {
       source = const MediaSourceConfig(
         id: 1,
         kind: 'webdav',
-        name: 'OpenList DAV',
+        name: 'WebDAV server',
         rootLocator: 'http://127.0.0.1:15244/dav/Media/',
       );
     });
@@ -311,7 +311,7 @@ void main() {
                 return Response<dynamic>(
                   requestOptions: RequestOptions(path: uri.toString()),
                   statusCode: 207,
-                  data: Stream.value(openListFixtureXml),
+                  data: Stream.value(alternateDavFixtureXml),
                 );
               };
 
@@ -365,7 +365,7 @@ void main() {
               return Response<dynamic>(
                 requestOptions: RequestOptions(path: uri.toString()),
                 statusCode: 207,
-                data: Stream.value(openListFixtureXml),
+                data: Stream.value(alternateDavFixtureXml),
               );
             };
 

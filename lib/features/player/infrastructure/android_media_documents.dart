@@ -27,11 +27,13 @@ class AndroidMediaDocuments {
   /// 调用原生选择器选择单个视频文档
   ///
   /// 若用户取消返回 `null`；若成功返回对应的 [PlaybackResource]。
-  Future<PlaybackResource?> pick() async {
+  Future<PlaybackResource?> pick() => _pick('pickVideo');
+
+  Future<PlaybackResource?> pickSubtitle() => _pick('pickSubtitle');
+
+  Future<PlaybackResource?> _pick(String method) async {
     try {
-      final result = await channel.invokeMapMethod<String, dynamic>(
-        'pickVideo',
-      );
+      final result = await channel.invokeMapMethod<String, dynamic>(method);
       if (result == null) {
         return null;
       }

@@ -11,6 +11,7 @@ import '../infrastructure/tmdb_cache.dart';
 import '../infrastructure/tmdb_client.dart';
 import '../infrastructure/tmdb_token_store.dart';
 import 'metadata_service.dart';
+import 'nfo_providers.dart';
 
 export 'metadata_service.dart';
 
@@ -23,6 +24,7 @@ class MetadataTaskState {
   final MetadataPhase phase;
   final int processed;
   final int? total;
+  final int activeCount;
 
   const MetadataTaskState({
     this.running = false,
@@ -31,6 +33,7 @@ class MetadataTaskState {
     this.phase = MetadataPhase.recognizing,
     this.processed = 0,
     this.total,
+    this.activeCount = 0,
   });
 
   MetadataTaskState copyWith({
@@ -41,6 +44,7 @@ class MetadataTaskState {
     MetadataPhase? phase,
     int? processed,
     int? total,
+    int? activeCount,
   }) {
     return MetadataTaskState(
       running: running ?? this.running,
@@ -49,6 +53,7 @@ class MetadataTaskState {
       phase: phase ?? this.phase,
       processed: processed ?? this.processed,
       total: total ?? this.total,
+      activeCount: activeCount ?? this.activeCount,
     );
   }
 
@@ -62,11 +67,12 @@ class MetadataTaskState {
           error == other.error &&
           phase == other.phase &&
           processed == other.processed &&
-          total == other.total;
+          total == other.total &&
+          activeCount == other.activeCount;
 
   @override
   int get hashCode =>
-      Object.hash(running, result, error, phase, processed, total);
+      Object.hash(running, result, error, phase, processed, total, activeCount);
 
   @override
   String toString() =>
@@ -104,6 +110,20 @@ final metadataServiceProvider = Provider<MetadataService>((ref) {
     tmdbClient: client,
     mediaLibraryRepository: repo,
     tokenStore: tokenStore,
+    saveMetadataFiles:
+        ({
+          int? workId,
+          List<int>? fileIds,
+          bool replaceIdentity = false,
+        }) async {
+          await ref
+              .read(nfoControllerProvider.notifier)
+              .export(
+                workId: workId,
+                fileIds: fileIds,
+                replaceIdentity: replaceIdentity,
+              );
+        },
   );
 });
 
@@ -142,6 +162,9 @@ class MetadataController extends Notifier<MetadataTaskState> {
               total: total,
             );
           },
+          onActiveChanged: (active) {
+            if (ref.mounted) state = state.copyWith(activeCount: active);
+          },
         );
         if (!ref.mounted) return;
 
@@ -150,6 +173,7 @@ class MetadataController extends Notifier<MetadataTaskState> {
 
         state = state.copyWith(
           running: false,
+          activeCount: 0,
           result: res,
           error: res.errors.isNotEmpty ? res.errors.join('; ') : null,
         );
@@ -160,7 +184,11 @@ class MetadataController extends Notifier<MetadataTaskState> {
         final safeMessage = e is MetadataException
             ? e.message
             : '元数据刷新失败，请检查网络或密钥设置';
-        state = state.copyWith(running: false, error: safeMessage);
+        state = state.copyWith(
+          running: false,
+          activeCount: 0,
+          error: safeMessage,
+        );
       }
     } while (_hasQueuedRefresh && ref.mounted);
   }

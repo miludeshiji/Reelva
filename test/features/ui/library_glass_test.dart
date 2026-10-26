@@ -1,3 +1,7 @@
+import 'package:reelva/features/metadata/application/nfo_providers.dart';
+
+import '../metadata/nfo_test_helpers.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -181,6 +185,34 @@ Future<void> _pumpDetails(
 }
 
 void main() {
+  testWidgets('影视库可导出已有元数据，失败提示支持重试', (tester) async {
+    final files = FakeNfoService()..fail = true;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          metadataControllerProvider.overrideWith(_IdleMetadataController.new),
+          libraryWorksProvider.overrideWith(
+            (ref, limit) => Stream.value(const [_movie]),
+          ),
+          nfoServiceProvider.overrideWithValue(files),
+        ],
+        child: MaterialApp(theme: ReelvaTheme.light, home: const LibraryPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('library_export_nfo_button')));
+    await tester.pumpAndSettle();
+    expect(files.exports, 1);
+    expect(find.byKey(const Key('nfo_status_card')), findsOneWidget);
+    expect(find.text('目录不可写'), findsOneWidget);
+    files.fail = false;
+    await tester.tap(find.text('重试导出 NFO 与图片'));
+    await tester.pumpAndSettle();
+    expect(files.exports, 2);
+    expect(find.byKey(const Key('nfo_status_card')), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   for (final unmatchedOnly in [false, true]) {
     testWidgets('加载更多保留列表和滚动位置，失败可重试（待匹配：$unmatchedOnly）', (tester) async {
       final works = List.generate(
@@ -430,6 +462,7 @@ void main() {
         overrides: [
           appDatabaseProvider.overrideWithValue(db),
           mediaLibraryRepositoryProvider.overrideWithValue(repo),
+          nfoServiceProvider.overrideWithValue(FakeNfoService()),
           metadataControllerProvider.overrideWith(() => metadata),
           tmdbClientProvider.overrideWithValue(client),
         ],
@@ -574,6 +607,7 @@ void main() {
                 phase: MetadataPhase.matching,
                 processed: 2,
                 total: 5,
+                activeCount: 4,
               ),
               onRetry: () {},
               margin: const EdgeInsets.all(24),
@@ -584,6 +618,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('已处理 2 / 5 个条目'), findsOneWidget);
+    expect(find.text('正在同时处理 4 项'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

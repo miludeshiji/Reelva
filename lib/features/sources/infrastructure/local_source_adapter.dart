@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import '../../../core/logging/app_logger.dart';
 import '../../player/domain/playback_resource.dart';
 import '../domain/media_source_adapter.dart';
+import '../domain/media_sidecar_adapter.dart';
 import '../domain/source_models.dart';
 
 /// 文件夹选择器函数签名（供测试注入）
@@ -26,7 +27,7 @@ typedef OpenDirectoryPicker = Future<String?> Function({
 /// - 仅在 Windows 下对 externalId 进行 lowercase 规整以保证身份稳定；
 /// - 严格校验相对路径不可逃出已授权根目录；
 /// - stat 失败或 notFound 显式抛出异常，绝不回退空成功。
-class LocalSourceAdapter implements MediaSourceAdapter {
+class LocalSourceAdapter implements MediaSourceAdapter, MediaSidecarAdapter {
   const LocalSourceAdapter({this.openDirectoryPicker, this.platformOverride});
 
   final OpenDirectoryPicker? openDirectoryPicker;
@@ -193,6 +194,52 @@ class LocalSourceAdapter implements MediaSourceAdapter {
     }
 
     throw const MediaSourceException('文件或目录不存在', code: 'not_found');
+  }
+
+  @override
+  Future<String?> parentDirectory(
+    MediaSourceConfig source,
+    String entryId,
+  ) async {
+    final path = _resolvePath(source.rootLocator, entryId);
+    if (_pathContext.equals(path, source.rootLocator)) return null;
+    return _pathContext.dirname(path);
+  }
+
+  @override
+  Future<Uint8List> readBytes(
+    MediaSourceConfig source,
+    String entryId, {
+    int maxBytes = 2 * 1024 * 1024,
+  }) {
+    return collectSidecarBytes(
+      File(_resolvePath(source.rootLocator, entryId)).openRead(),
+      maxBytes,
+    );
+  }
+
+  @override
+  Future<void> writeBytes(
+    MediaSourceConfig source,
+    String directoryId,
+    String name,
+    Uint8List bytes, {
+    String? expectedEtag,
+    bool createOnly = false,
+  }) async {
+    validateSidecarName(name);
+    final directory = _resolvePath(source.rootLocator, directoryId);
+    final file = File(_pathContext.join(directory, name));
+    if (createOnly && await file.exists()) return;
+    final temporary = File(
+      '${file.path}.${DateTime.now().microsecondsSinceEpoch}.tmp',
+    );
+    try {
+      await temporary.writeAsBytes(bytes, flush: true);
+      await temporary.rename(file.path);
+    } finally {
+      if (await temporary.exists()) await temporary.delete();
+    }
   }
 
   @override

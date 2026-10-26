@@ -189,6 +189,10 @@ class ProgressPlayerEngine implements PlayerEngine {
       _disposed ? Future.value() : _inner.setSubtitleTrack(id);
 
   @override
+  Future<void> loadSubtitle(PlaybackResource resource) =>
+      _disposed ? Future.value() : _inner.loadSubtitle(resource);
+
+  @override
   Future<void> stop() async {
     if (_disposed) return;
     _captureCurrent();

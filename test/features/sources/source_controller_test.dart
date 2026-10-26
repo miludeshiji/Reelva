@@ -553,6 +553,17 @@ void main() {
         expect(resource.displayName, 'play_me.mp4');
         expect(resource.uri.toString(), 'file:///videos/play_me.mp4');
         expect(resource.libraryFileId, video.fileId);
+        expect(resource.sourceId, source.id);
+        fakeAdapter.entriesByDir['/playback_test']!.add(
+          const MediaEntry(
+            externalId: 'play_me.zh.ass',
+            locator: 'play_me.zh.ass',
+            name: 'play_me.zh.ass',
+            isDirectory: false,
+          ),
+        );
+        final subtitles = await resource.discoverSubtitles!();
+        expect(subtitles.single.displayName, 'play_me.zh.ass');
         // 当媒体源停用时，抛出 source_disabled 异常
         await controller.removeSource(source.id);
         expect(

@@ -8,6 +8,8 @@ import '../../metadata/domain/matching_file.dart';
 import '../../metadata/domain/match_decision.dart';
 import '../../metadata/domain/media_filename_parser.dart';
 import '../../metadata/domain/tmdb_models.dart';
+import '../../metadata/domain/work_metadata.dart';
+import '../../metadata/domain/metadata_file.dart';
 import '../../sources/domain/source_models.dart';
 import '../domain/library_work.dart';
 
@@ -327,8 +329,11 @@ class MediaLibraryRepository {
   /// 仅重绑明确选中的文件，保留其他版本、季集关联与观看历史。
   Future<int?> applyMetadataToFiles(
     Map<int, TmdbEpisode?> files,
-    TmdbWork metadata, {
+    WorkMetadata metadata, {
     bool manual = true,
+    String metadataSource = 'tmdb',
+    int? localWorkId,
+    bool respectExistingMetadata = true,
   }) => db.transaction(() async {
     final assignments = <int, MediaAssignmentData>{};
     for (final fileId in files.keys) {
@@ -355,7 +360,10 @@ class MediaLibraryRepository {
         throw const MetadataException('所选文件已不可用，请刷新目录后重试');
       }
       final assignment = row.readTable(db.mediaAssignments);
-      if (!manual && await _isProtectedWork(await _assignedWork(assignment))) {
+      if (!manual &&
+          (respectExistingMetadata
+              ? await _isProtectedWork(await _assignedWork(assignment))
+              : (await _assignedWork(assignment))?.metadataLocked == true)) {
         continue;
       }
       final episode = files[fileId];
@@ -369,10 +377,12 @@ class MediaLibraryRepository {
     }
     if (assignments.isEmpty) return null;
 
-    var workId = await _getWorkIdByExternalId(
-      'tmdb',
-      '${metadata.type}:${metadata.id}',
-    );
+    var workId = metadata.tmdbId == null
+        ? localWorkId
+        : await _getWorkIdByExternalId(
+            'tmdb',
+            '${metadata.type}:${metadata.tmdbId}',
+          );
     workId ??= await db
         .into(db.works)
         .insert(
@@ -381,7 +391,12 @@ class MediaLibraryRepository {
             type: Value(metadata.type),
           ),
         );
-    workId = await applyMetadata(workId, metadata, manual: manual);
+    workId = await applyMetadata(
+      workId,
+      metadata,
+      manual: manual,
+      metadataSource: metadataSource,
+    );
     final targetEpisodes = <(int, int), int>{};
     final targets = <int, int?>{};
     for (final fileId in assignments.keys) {
@@ -426,6 +441,7 @@ class MediaLibraryRepository {
                       title: Value(episode.title),
                       overview: Value(episode.overview),
                       airDate: Value(episode.airDate),
+                      tmdbId: Value(episode.tmdbId),
                     ),
                   );
           targetEpisodes[key] = episodeId;
@@ -1234,6 +1250,8 @@ class MediaLibraryRepository {
       w.overview,
       w.poster_path,
       w.backdrop_path,
+      w.poster_locator,
+      w.backdrop_locator,
       w.metadata_source,
       w.metadata_locked,
       (
@@ -1278,8 +1296,13 @@ class MediaLibraryRepository {
       originalTitle: row.readNullable<String>('original_title'),
       year: row.readNullable<int>('year'),
       overview: row.readNullable<String>('overview'),
-      posterPath: row.readNullable<String>('poster_path'),
-      backdropPath: row.readNullable<String>('backdrop_path'),
+      posterPath:
+          row.readNullable<String>('poster_locator') ??
+          row.readNullable<String>('poster_path'),
+      tmdbPosterPath: row.readNullable<String>('poster_path'),
+      backdropPath:
+          row.readNullable<String>('backdrop_locator') ??
+          row.readNullable<String>('backdrop_path'),
       metadataSource: row.read<String>('metadata_source'),
       metadataLocked: (row.read<int>('metadata_locked')) == 1,
       versionCount: row.read<int>('version_count'),
@@ -1560,9 +1583,10 @@ class MediaLibraryRepository {
   /// 返回最终的规范作品 ID。
   Future<int> applyMetadata(
     int workId,
-    TmdbWork metadata, {
+    WorkMetadata metadata, {
     bool manual = false,
     TmdbEpisode? episode,
+    String metadataSource = 'tmdb',
   }) async {
     return await db.transaction(() async {
       final currentWork = await (db.select(
@@ -1619,11 +1643,10 @@ class MediaLibraryRepository {
         }
 
         // 1. 先根据 tmdb series 身份复用 canonical，否则创建合法 series 作品
-        final providerEntityId = '${metadata.type}:${metadata.id}';
-        final existingCanonicalId = await _getWorkIdByExternalId(
-          'tmdb',
-          providerEntityId,
-        );
+        final providerEntityId = '${metadata.type}:${metadata.tmdbId}';
+        final existingCanonicalId = metadata.tmdbId == null
+            ? null
+            : await _getWorkIdByExternalId('tmdb', providerEntityId);
 
         final int targetSeriesId;
         if (existingCanonicalId != null) {
@@ -1682,6 +1705,7 @@ class MediaLibraryRepository {
                   title: Value(episode.title),
                   overview: Value(episode.overview),
                   airDate: Value(episode.airDate),
+                  tmdbId: Value(episode.tmdbId),
                 ),
               );
         } else {
@@ -1731,7 +1755,12 @@ class MediaLibraryRepository {
         }
 
         // 6. 之后复用既有 applyMetadata 应用元数据、manual 锁和外部 ID（可递归对 targetSeriesId 调用，仍在外层事务）
-        return await applyMetadata(targetSeriesId, metadata, manual: true);
+        return await applyMetadata(
+          targetSeriesId,
+          metadata,
+          manual: true,
+          metadataSource: metadataSource,
+        );
       }
 
       if (currentWork.type != null && currentWork.type != metadata.type) {
@@ -1740,11 +1769,10 @@ class MediaLibraryRepository {
         );
       }
 
-      final providerEntityId = '${metadata.type}:${metadata.id}';
-      final existingCanonicalId = await _getWorkIdByExternalId(
-        'tmdb',
-        providerEntityId,
-      );
+      final providerEntityId = '${metadata.type}:${metadata.tmdbId}';
+      final existingCanonicalId = metadata.tmdbId == null
+          ? null
+          : await _getWorkIdByExternalId('tmdb', providerEntityId);
 
       int targetWorkId = workId;
 
@@ -1842,7 +1870,10 @@ class MediaLibraryRepository {
             overview: Value(metadata.overview),
             posterPath: Value(metadata.posterPath),
             backdropPath: Value(metadata.backdropPath),
-            metadataSource: const Value('tmdb'),
+            metadataSource: Value(metadataSource),
+            premiered: Value(metadata.premiered),
+            posterLocator: const Value(null),
+            backdropLocator: const Value(null),
             metadataLocked: Value(lockValue),
             updatedAt: Value(DateTime.now()),
           ),
@@ -1853,7 +1884,9 @@ class MediaLibraryRepository {
           'DELETE FROM external_ids WHERE work_id = ? AND provider = ?',
           [targetWorkId, 'tmdb'],
         );
-        await _linkWorkExternalId(targetWorkId, 'tmdb', providerEntityId);
+        if (metadata.tmdbId != null) {
+          await _linkWorkExternalId(targetWorkId, 'tmdb', providerEntityId);
+        }
 
         final lockValue = manual ? true : currentWork.metadataLocked;
         await (db.update(
@@ -1867,7 +1900,10 @@ class MediaLibraryRepository {
             overview: Value(metadata.overview),
             posterPath: Value(metadata.posterPath),
             backdropPath: Value(metadata.backdropPath),
-            metadataSource: const Value('tmdb'),
+            metadataSource: Value(metadataSource),
+            premiered: Value(metadata.premiered),
+            posterLocator: const Value(null),
+            backdropLocator: const Value(null),
             metadataLocked: Value(lockValue),
             updatedAt: Value(DateTime.now()),
           ),
@@ -1878,6 +1914,101 @@ class MediaLibraryRepository {
   }
 
   /// 手动编辑本地元数据并显式加锁。
+
+  Future<List<MetadataFile>> metadataFiles({
+    int? sourceId,
+    int? workId,
+    List<int>? fileIds,
+    List<String>? entryIds,
+    bool matchedOnly = true,
+  }) async {
+    if (fileIds != null && fileIds.isEmpty ||
+        entryIds != null && entryIds.isEmpty) {
+      return [];
+    }
+    final rows = await db
+        .customSelect(
+          '''
+      SELECT mf.id AS file_id, me.source_id, me.external_entry_id, me.name,
+        w.id AS work_id, w.type, w.title, w.original_title, w.overview, w.year,
+        w.poster_path, w.backdrop_path, w.premiered, w.metadata_source, w.metadata_locked,
+        s.season_number, ep.episode_number, ep.title AS episode_title,
+        ep.overview AS episode_overview, ep.air_date, ep.tmdb_id AS episode_tmdb_id,
+        ei.provider_entity_id
+      FROM media_files mf JOIN media_entries me ON me.id = mf.entry_id
+      JOIN media_sources ms ON ms.id = me.source_id
+      JOIN media_assignments ma ON ma.file_id = mf.id
+      LEFT JOIN episodes ep ON ep.id = ma.episode_id
+      LEFT JOIN seasons s ON s.id = ep.season_id
+      JOIN works w ON w.id = COALESCE(ma.work_id, s.series_id)
+      LEFT JOIN external_ids ei ON ei.work_id = w.id AND ei.provider = 'tmdb'
+      WHERE ms.enabled = 1 AND me.available = 1
+        ${sourceId == null ? '' : 'AND me.source_id = ?'}
+        ${workId == null ? '' : 'AND w.id = ?'}
+        ${fileIds == null ? '' : 'AND mf.id IN (${List.filled(fileIds.length, '?').join(',')})'}
+        ${entryIds == null ? '' : 'AND me.external_entry_id IN (${List.filled(entryIds.length, '?').join(',')})'}
+        ${matchedOnly ? "AND (w.metadata_source != 'local' OR w.metadata_locked = 1)" : ''}
+      ORDER BY me.source_id, me.external_entry_id
+    ''',
+          variables: [
+            if (sourceId != null) Variable.withInt(sourceId),
+            if (workId != null) Variable.withInt(workId),
+            for (final id in fileIds ?? <int>[]) Variable.withInt(id),
+            for (final id in entryIds ?? <String>[]) Variable.withString(id),
+          ],
+        )
+        .get();
+    return rows.map((row) {
+      final season = row.readNullable<int>('season_number');
+      return MetadataFile(
+        fileId: row.read<int>('file_id'),
+        sourceId: row.read<int>('source_id'),
+        entryId: row.read<String>('external_entry_id'),
+        name: row.read<String>('name'),
+        workId: row.read<int>('work_id'),
+        metadataSource: row.read<String>('metadata_source'),
+        locked: row.read<int>('metadata_locked') == 1,
+        metadata: WorkMetadata(
+          type: row.readNullable<String>('type') ?? 'movie',
+          title: row.read<String>('title'),
+          originalTitle: row.readNullable<String>('original_title'),
+          overview: row.readNullable<String>('overview'),
+          year: row.readNullable<int>('year'),
+          posterPath: row.readNullable<String>('poster_path'),
+          backdropPath: row.readNullable<String>('backdrop_path'),
+          premiered: row.readNullable<DateTime>('premiered'),
+          tmdbId: int.tryParse(
+            row.readNullable<String>('provider_entity_id')?.split(':').last ??
+                '',
+          ),
+        ),
+        episode: season == null
+            ? null
+            : TmdbEpisode(
+                seasonNumber: season,
+                episodeNumber: row.read<int>('episode_number'),
+                title: row.readNullable<String>('episode_title'),
+                overview: row.readNullable<String>('episode_overview'),
+                airDate: row.readNullable<DateTime>('air_date'),
+                tmdbId: row.readNullable<int>('episode_tmdb_id'),
+              ),
+      );
+    }).toList();
+  }
+
+  Future<void> setWorkArtwork(
+    int workId, {
+    String? poster,
+    String? fanart,
+  }) async {
+    await (db.update(db.works)..where((w) => w.id.equals(workId))).write(
+      WorksCompanion(
+        posterLocator: poster == null ? const Value.absent() : Value(poster),
+        backdropLocator: fanart == null ? const Value.absent() : Value(fanart),
+      ),
+    );
+  }
+
   Future<void> editMetadata(
     int workId, {
     required String title,
@@ -1947,6 +2078,7 @@ class MediaLibraryRepository {
               title: Value(tmdbEp.title),
               overview: Value(tmdbEp.overview),
               airDate: Value(tmdbEp.airDate),
+              tmdbId: Value(tmdbEp.tmdbId),
             ),
           );
         }

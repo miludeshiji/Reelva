@@ -15,7 +15,7 @@ Reelva 参考独立 mpv 配置中的画质、缓存、音频与字幕偏好，�
 | 最大音量 | 200% | 200% | `volume-max`；控制栏滑块、键盘及引擎遵循同一会话上限 |
 | 同目录音频 | 模糊匹配 | 仅对可访问目录有效 | `audio-file-auto=fuzzy`，可改为 exact/no |
 | 字幕语言 | 中文优先，英文其次 | 相同 | `slang=zh,chi,chs,sc,zh-hans,en,eng`；可修改顺序或留空 |
-| 同目录字幕 | 模糊匹配 | 授权单文件无法枚举同目录 | `sub-auto=fuzzy`，可改为 exact/no |
+| 同目录字幕 | 模糊匹配 | 授权目录同样支持，单文件可手动选择字幕 | 本地目录使用 `sub-auto`；媒体源目录由应用发现，均可改为精确匹配或关闭 |
 | 字体 | Microsoft YaHei | Noto Sans CJK SC | `sub-font` |
 | 字幕字号 / 描边 / 柔化 / 垂直边距 | 60 / 8 / 1 / 40 | 相同 | `sub-font-size`、`sub-border-size`、`sub-blur`、`sub-margin-y`，白字黑边 |
 | ASS 样式 | 保留原始样式并允许兼容调整 | 相同 | `sub-ass-override=yes`，可选 no/force；yes 不强制覆盖 ASS 字体和字号 |
@@ -30,6 +30,8 @@ Reelva 参考独立 mpv 配置中的画质、缓存、音频与字幕偏好，�
 - 携带视频进入播放页时，首帧直接显示沉浸式播放布局，读取续播进度、解析与缓冲均在其中显示加载状态；单独打开播放器时保留文件选择界面。
 - 创建播放会话时固定配置；视频控制器继续由 media_kit 创建。加载媒体前等待控制器就绪，再应用原生参数，避免 Android 初始化覆盖字体边距等设置。保存配置不会重建当前会话，下次进入播放器生效。
 - 开启 `PlayerConfiguration.libass`，由 libmpv 绘制普通文本和 ASS 字幕，避免同时绘制 Flutter 文本字幕。Android 通过 `libassAndroidFont` 加载随应用提供的字体，无需枚举整个系统字体目录。
+- WebDAV、SMB 和 SAF 媒体源通过源适配器枚举同目录字幕，起播后异步加载，不阻塞视频资源解析。精确模式匹配视频同名文件；模糊模式另接受带语言等分隔后缀的字幕，避免把相近集号混配。按语言偏好优先选择，用户手动切换后，迟到的自动字幕只加入可选轨道。
+- 播放页字幕菜单可选择本地字幕或浏览已启用媒体源中的字幕目录。远程字幕复用原有认证和回环播放桥接，Android 复用只读 FD；停止、切换和销毁后释放字幕租约及句柄，字幕加载失败不将视频置为播放失败。
 
 ## 快捷键与鼠标
 
@@ -50,7 +52,7 @@ Reelva 参考独立 mpv 配置中的画质、缓存、音频与字幕偏好，�
 - **显示同步与 ICC**：显示同步插帧依赖显示时序；libmpv Render API 的 ICC 自动管理要求宿主提供 ICC 数据。当前 Flutter 嵌入未接入这些能力，因此不暴露无法保证生效的开关，也不强制 `vf=format=gamma=gamma2.2` 改写视频色彩标记。相关说明见 [mpv 官方手册](https://mpv.io/manual/stable/#options-icc-profile-auto)。
 - **字幕黑边**：黑边由 Flutter 视频布局处理，不能保证 `sub-ass-force-margins` 把原生字幕放入该区域，故未提供该选项。
 - **外围功能**：窗口、快捷键、播放结束和观看进度由应用管理，不套用 `keep-open`、播放列表循环、mpv OSC/OSD、`watch-later`、个人日志和截图目录。未接入的截图、SVP IPC、VapourSynth 和外部 shader 保持独立，不执行个人配置中的脚本或路径。
-- **外挂轨道**：自动加载仅适用于 libmpv 能枚举的本地目录。SAF 单文件的 fd、网络播放代理都不能枚举源目录；没有新增这些来源的字幕发现或手动外挂选择功能。
+- **外挂轨道**：自动字幕发现需要可枚举的媒体源目录；单独输入 HTTP/HTTPS 视频地址、Android 单文件授权没有源目录信息，可手动选择字幕。手动和媒体源自动发现支持 SRT、ASS、SSA、VTT、SMI/SAMI、SUP；可直接访问的本地目录保留 libmpv 原有的自动发现。SAF 文档 ID 按不透明标识处理，优先调用 Android 的 [findDocumentPath](https://developer.android.com/reference/android/provider/DocumentsContract#findDocumentPath(android.content.ContentResolver,%20android.net.Uri)) 查询父目录，provider 不支持时遍历授权树。字幕添加使用 [sub-add](https://mpv.io/manual/stable/#track-manipulation)，并核对原生轨道列表确认加载结果。
 
 ## 字体来源与许可
 

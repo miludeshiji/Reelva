@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../player/domain/playback_resource.dart';
 import '../domain/media_source_adapter.dart';
+import '../domain/media_sidecar_adapter.dart';
 import '../domain/source_models.dart';
 import 'remote_credentials_store.dart';
 import 'remote_playback_bridge.dart';
@@ -65,7 +66,7 @@ class ParsedSmbLocator {
 ///   并将有界随机偏移读取器交付给 `playback.openReader`；
 /// - 读取器分片大小最大 256 KiB 并提供背压，为每次分段读取维护独立的 `Smb2CancelToken`，短读/文件截断严格抛出 `unexpected_eof`；
 /// - 读取器关闭时依序取消在途读取 -> 关闭文件句柄 -> 断开 pool，彻底杜绝孤儿 isolate 泄漏；`prepare` 失败确保关闭 pool。
-class SmbSourceAdapter implements MediaSourceAdapter {
+class SmbSourceAdapter implements MediaSourceAdapter, MediaSidecarAdapter {
   SmbSourceAdapter({required this.credentials, required this.playback});
 
   final RemoteCredentialsStore credentials;
@@ -203,6 +204,97 @@ class SmbSourceAdapter implements MediaSourceAdapter {
           );
         }
       }
+    }
+  }
+
+  @override
+  Future<String?> parentDirectory(
+    MediaSourceConfig source,
+    String entryId,
+  ) async {
+    final root = parseRootLocator(source.rootLocator);
+    final path = resolveWithinSharePath(root, entryId, source.rootLocator);
+    if (path == root.rootPath) return null;
+    final split = path.lastIndexOf('/');
+    return split <= 0 ? '/' : path.substring(0, split);
+  }
+
+  @override
+  Future<Uint8List> readBytes(
+    MediaSourceConfig source,
+    String entryId, {
+    int maxBytes = 2 * 1024 * 1024,
+  }) async {
+    final root = parseRootLocator(source.rootLocator);
+    final path = toShareRelativePath(
+      resolveWithinSharePath(root, entryId, source.rootLocator),
+    );
+    final pool = await _connectPool(
+      parsedRoot: root,
+      credentials: await credentials.read(source.credentialRef),
+      workers: 1,
+    );
+    try {
+      final info = await pool.stat(path);
+      if (info.size > maxBytes) {
+        throw const MediaSourceException('元数据文件过大', code: 'file_too_large');
+      }
+      return await collectSidecarBytes(pool.streamFile(path), maxBytes);
+    } on Smb2Exception catch (e) {
+      throw mapSmbException(e);
+    } finally {
+      await pool.disconnect();
+    }
+  }
+
+  @override
+  Future<void> writeBytes(
+    MediaSourceConfig source,
+    String directoryId,
+    String name,
+    Uint8List bytes, {
+    String? expectedEtag,
+    bool createOnly = false,
+  }) async {
+    validateSidecarName(name);
+    final root = parseRootLocator(source.rootLocator);
+    final directory = resolveWithinSharePath(
+      root,
+      directoryId,
+      source.rootLocator,
+    );
+    final path = toShareRelativePath('$directory/$name'.replaceAll('//', '/'));
+    final pool = await _connectPool(
+      parsedRoot: root,
+      credentials: await credentials.read(source.credentialRef),
+      workers: 1,
+    );
+    final temporary = '$path.${DateTime.now().microsecondsSinceEpoch}.tmp';
+    var created = false;
+    try {
+      if (createOnly) {
+        try {
+          await pool.stat(path);
+          return;
+        } on Smb2Exception catch (e) {
+          if (mapSmbException(e).code != 'not_found') rethrow;
+        }
+      }
+      created = true;
+      await pool.writeFile(temporary, bytes);
+      await pool.rename(temporary, path);
+      created = false;
+    } on Smb2Exception catch (e) {
+      throw mapSmbException(e);
+    } finally {
+      if (created) {
+        try {
+          await pool.deleteFile(temporary);
+        } catch (e, st) {
+          AppLogger.instance.error('清理元数据临时文件失败', error: e, stackTrace: st);
+        }
+      }
+      await pool.disconnect();
     }
   }
 

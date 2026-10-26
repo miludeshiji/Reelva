@@ -14,6 +14,7 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import java.io.ByteArrayOutputStream
 import java.io.FileNotFoundException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -61,26 +62,30 @@ class MainActivity : FlutterActivity() {
 
     private fun handleMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
-            "pickVideo" -> handlePickVideo(result)
+            "pickVideo" -> handlePickDocument(result, "video/*")
+            "pickSubtitle" -> handlePickDocument(result, "*/*")
             "openRead" -> handleOpenRead(call, result)
             "close" -> handleClose(call, result)
             "pickDirectory" -> handlePickDirectory(call, result)
             "listChildren" -> handleListChildren(call, result)
             "statDocument" -> handleStatDocument(call, result)
             "checkPermission" -> handleCheckPermission(call, result)
+            "parentDocument" -> handleParentDocument(call, result)
+            "readSidecar" -> handleSidecar(call, result, false)
+            "writeSidecar" -> handleSidecar(call, result, true)
             else -> result.notImplemented()
         }
     }
 
-    private fun handlePickVideo(result: MethodChannel.Result) {
-        if (pendingPickerResult != null) {
+    private fun handlePickDocument(result: MethodChannel.Result, mimeType: String) {
+        if (pendingPickerResult != null || pendingDirectoryPickerResult != null) {
             result.error("ALREADY_ACTIVE", "A media picker is already active", null)
             return
         }
 
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
-            type = "video/*"
+            type = mimeType
             flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
         }
 
@@ -107,6 +112,7 @@ class MainActivity : FlutterActivity() {
         val initialLocator = call.argument<String>("initialLocator")
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
                     Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
                     Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
             if (!initialLocator.isNullOrBlank()) {
@@ -212,8 +218,8 @@ class MainActivity : FlutterActivity() {
             return
         }
 
-        val takeFlags = data.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION
-        if (takeFlags == 0) {
+        val takeFlags = data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        if ((takeFlags and Intent.FLAG_GRANT_READ_URI_PERMISSION) == 0) {
             callback.error("SECURITY_ERROR", "Read permission not granted for directory", null)
             return
         }
@@ -529,6 +535,147 @@ class MainActivity : FlutterActivity() {
                         result.error("IO_ERROR", "Failed to query document stat", null)
                     }
                 }
+            }
+        }
+    }
+
+    private fun handleParentDocument(call: MethodCall, result: MethodChannel.Result) {
+        val treeUriString = call.argument<String>("treeUri")
+        val documentUriString = call.argument<String>("documentUri")
+        if (treeUriString.isNullOrBlank() || documentUriString.isNullOrBlank()) {
+            result.error("INVALID_ARGUMENT", "Tree and document URI are required", null)
+            return
+        }
+        val requestGeneration = lifecycleGeneration
+        ioExecutor.execute {
+            try {
+                val treeUri = Uri.parse(treeUriString)
+                val documentUri = Uri.parse(documentUriString)
+                require(treeUri.scheme == "content" && documentUri.authority == treeUri.authority)
+                val scopedUri = DocumentsContract.buildDocumentUriUsingTree(
+                    treeUri, DocumentsContract.getDocumentId(documentUri)
+                )
+                val path = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    try {
+                        DocumentsContract.findDocumentPath(contentResolver, scopedUri)?.path
+                    } catch (e: UnsupportedOperationException) {
+                        null
+                    }
+                } else null
+                val parent = if (path != null && path.size >= 2 &&
+                    path.first() == DocumentsContract.getTreeDocumentId(treeUri)) {
+                    DocumentsContract.buildDocumentUriUsingTree(treeUri, path[path.size - 2]).toString()
+                } else null
+                mainHandler.post {
+                    if (lifecycleGeneration != requestGeneration || isDestroyed || isFinishing) {
+                        result.error("ACTIVITY_DESTROYED", "Activity detached before query finished", null)
+                    } else {
+                        result.success(parent)
+                    }
+                }
+            } catch (e: SecurityException) {
+                mainHandler.post { result.error("SECURITY_ERROR", "Permission denied accessing document", null) }
+            } catch (e: Exception) {
+                mainHandler.post { result.error("IO_ERROR", "Unable to locate document directory", null) }
+            }
+        }
+    }
+
+
+    private fun handleSidecar(call: MethodCall, result: MethodChannel.Result, write: Boolean) {
+        val treeString = call.argument<String>("treeUri")
+        val targetString = call.argument<String>(if (write) "directoryUri" else "uri")
+        if (treeString.isNullOrBlank() || targetString.isNullOrBlank()) {
+            result.error("INVALID_ARGUMENT", "Directory and document are required", null)
+            return
+        }
+        val generation = lifecycleGeneration
+        ioExecutor.execute {
+            try {
+                val tree = Uri.parse(treeString)
+                val target = Uri.parse(targetString)
+                require(tree.scheme == "content" && target.authority == tree.authority)
+                val treeId = DocumentsContract.getTreeDocumentId(tree)
+                val documentId = if (target == tree) treeId else DocumentsContract.getDocumentId(target)
+                val scoped = DocumentsContract.buildDocumentUriUsingTree(tree, documentId)
+                val value: Any? = if (!write) {
+                    val limit = (call.argument<Number>("maxBytes")?.toInt() ?: 2097152).coerceIn(1, 16777216)
+                    contentResolver.openInputStream(scoped).use { input ->
+                        requireNotNull(input)
+                        val output = ByteArrayOutputStream()
+                        val buffer = ByteArray(65536)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            require(output.size() + count <= limit) { "File too large" }
+                            output.write(buffer, 0, count)
+                        }
+                        output.toByteArray()
+                    }
+                } else {
+                    if (!contentResolver.persistedUriPermissions.any {
+                        it.uri == tree && it.isWritePermission
+                    }) throw SecurityException("Write permission is required")
+                    val name = call.argument<String>("name") ?: ""
+                    require(name.isNotEmpty() && name != "." && name != ".." &&
+                        !name.contains('/') && !name.contains('\\') && !name.contains('\u0000'))
+                    val bytes = requireNotNull(call.argument<ByteArray>("bytes"))
+                    require(bytes.size <= 16777216)
+                    val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, documentId)
+                    var existing: Uri? = null
+                    contentResolver.query(children, arrayOf(
+                        DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                        DocumentsContract.Document.COLUMN_DISPLAY_NAME
+                    ), null, null, null).use { cursor ->
+                        requireNotNull(cursor)
+                        while (cursor.moveToNext()) {
+                            if (cursor.getString(1) == name) {
+                                existing = DocumentsContract.buildDocumentUriUsingTree(tree, cursor.getString(0))
+                                break
+                            }
+                        }
+                    }
+                    if (existing == null || call.argument<Boolean>("createOnly") != true) {
+                        val mime = if (name.endsWith(".jpg", true)) "image/jpeg" else "application/octet-stream"
+                        val outputUri = existing ?: requireNotNull(DocumentsContract.createDocument(contentResolver, scoped, mime, name))
+                        val previous = existing?.let { uri ->
+                            contentResolver.openInputStream(uri).use { input ->
+                                requireNotNull(input)
+                                val old = ByteArrayOutputStream()
+                                val buffer = ByteArray(65536)
+                                while (true) {
+                                    val count = input.read(buffer)
+                                    if (count < 0) break
+                                    require(old.size() + count <= 16777216)
+                                    old.write(buffer, 0, count)
+                                }
+                                old.toByteArray()
+                            }
+                        }
+                        try {
+                            contentResolver.openOutputStream(outputUri, "wt").use { output ->
+                                requireNotNull(output)
+                                output.write(bytes)
+                                output.flush()
+                            }
+                        } catch (e: Exception) {
+                            try {
+                                if (previous == null) DocumentsContract.deleteDocument(contentResolver, outputUri)
+                                else contentResolver.openOutputStream(outputUri, "wt").use { it?.write(previous) }
+                            } catch (_: Exception) { }
+                            throw e
+                        }
+                    }
+                    null
+                }
+                mainHandler.post {
+                    if (lifecycleGeneration == generation && !isDestroyed && !isFinishing) result.success(value)
+                    else result.error("ACTIVITY_DESTROYED", "Activity detached", null)
+                }
+            } catch (e: SecurityException) {
+                mainHandler.post { result.error("SECURITY_ERROR", "Directory write permission is required", null) }
+            } catch (e: Exception) {
+                mainHandler.post { result.error("IO_ERROR", "Unable to access metadata file", null) }
             }
         }
     }

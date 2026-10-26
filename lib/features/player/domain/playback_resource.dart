@@ -14,12 +14,18 @@ class PlaybackResource {
     this.prepare,
     this.release,
     this.errors,
+    this.sourceId,
+    this.discoverSubtitles,
   });
 
   final Uri uri;
   final String displayName;
   final Map<String, String> httpHeaders;
   final int? libraryFileId;
+  final int? sourceId;
+
+  /// 按需枚举源目录中的外挂字幕，不随视频准备过程分配字幕租约。
+  final Future<List<PlaybackResource>> Function()? discoverSubtitles;
 
   /// 延迟准备具体播放资源租约的回调
   ///
@@ -40,6 +46,8 @@ class PlaybackResource {
     Future<PlaybackResource> Function()? prepare,
     Future<void> Function()? release,
     Stream<String>? errors,
+    int? sourceId,
+    Future<List<PlaybackResource>> Function()? discoverSubtitles,
   }) {
     return PlaybackResource(
       uri: uri ?? this.uri,
@@ -51,6 +59,8 @@ class PlaybackResource {
       prepare: prepare ?? this.prepare,
       release: release ?? this.release,
       errors: errors ?? this.errors,
+      sourceId: sourceId ?? this.sourceId,
+      discoverSubtitles: discoverSubtitles ?? this.discoverSubtitles,
     );
   }
 
@@ -67,6 +77,8 @@ class PlaybackResource {
           uri == other.uri &&
           displayName == other.displayName &&
           libraryFileId == other.libraryFileId &&
+          sourceId == other.sourceId &&
+          discoverSubtitles == other.discoverSubtitles &&
           prepare == other.prepare &&
           release == other.release &&
           errors == other.errors &&
@@ -77,6 +89,8 @@ class PlaybackResource {
     uri,
     displayName,
     libraryFileId,
+    sourceId,
+    discoverSubtitles,
     prepare,
     release,
     errors,

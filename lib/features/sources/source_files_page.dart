@@ -33,6 +33,7 @@ class _SourceFilesPageState extends ConsumerState<SourceFilesPage> {
   bool _matching = false;
   int _processed = 0;
   int _total = 0;
+  int _activeCount = 0;
 
   @override
   void initState() {
@@ -182,6 +183,7 @@ class _SourceFilesPageState extends ConsumerState<SourceFilesPage> {
       _result = null;
       _processed = 0;
       _total = selected.length;
+      _activeCount = 0;
     });
     try {
       final ids = await repo.indexSourceFiles(
@@ -215,6 +217,9 @@ class _SourceFilesPageState extends ConsumerState<SourceFilesPage> {
         final result = await service.matchFilesAutomatically(
           files,
           isCancelled: () => !mounted,
+          onActiveChanged: (active) {
+            if (mounted) setState(() => _activeCount = active);
+          },
           onProgress: (processed, total) {
             if (mounted) {
               setState(() {
@@ -355,6 +360,8 @@ class _SourceFilesPageState extends ConsumerState<SourceFilesPage> {
                                   ),
                                   const SizedBox(height: 8),
                                   Text('正在匹配：已处理 $_processed / $_total 个视频'),
+                                  if (_activeCount > 0)
+                                    Text('正在同时处理 $_activeCount 项'),
                                 ],
                                 if (_result != null) Text(_result!),
                                 if (_error != null)

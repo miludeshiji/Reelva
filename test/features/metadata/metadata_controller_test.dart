@@ -67,12 +67,15 @@ class FakeMetadataService implements MetadataService {
   int refreshCallCount = 0;
   void Function(MetadataPhase phase, int processed, int? total)?
   progressCallback;
+  void Function(int active)? activeCallback;
 
   @override
   Future<MetadataRefreshResult> refresh({
     void Function(MetadataPhase phase, int processed, int? total)? onProgress,
+    void Function(int active)? onActiveChanged,
   }) async {
     progressCallback = onProgress;
+    activeCallback = onActiveChanged;
     refreshCallCount++;
     if (customRefreshHandler != null) {
       return customRefreshHandler!();
@@ -183,12 +186,14 @@ void main() {
         final notifier = container.read(metadataControllerProvider.notifier);
         final refresh = notifier.refresh();
         fakeService.progressCallback!(MetadataPhase.matching, 2, 5);
+        fakeService.activeCallback!(3);
 
         final progress = container.read(metadataControllerProvider);
         expect(progress.running, isTrue);
         expect(progress.phase, MetadataPhase.matching);
         expect(progress.processed, 2);
         expect(progress.total, 5);
+        expect(progress.activeCount, 3);
 
         completer.complete(const MetadataRefreshResult(matched: 2));
         await refresh;
@@ -198,6 +203,7 @@ void main() {
         expect(nextState.processed, 0);
         expect(nextState.total, isNull);
         expect(nextState.result, isNull);
+        expect(nextState.activeCount, 0);
         await nextRefresh;
       },
     );
