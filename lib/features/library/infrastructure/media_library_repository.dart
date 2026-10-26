@@ -168,6 +168,56 @@ class MediaLibraryRepository {
     return row?.readTable(db.works);
   }
 
+  /// 按当前目录的文件身份批量监视已确认的作品与季集关联。
+  Stream<Map<String, LibraryFileMatch>> watchSourceFileMatches(
+    int sourceId,
+    List<String> externalIds,
+  ) {
+    if (externalIds.isEmpty) return Stream.value({});
+    final placeholders = List.filled(externalIds.length, '?').join(',');
+    return db
+        .customSelect(
+          '''
+      SELECT me.external_entry_id, w.title, w.year,
+        s.season_number, ep.episode_number, ep.title AS episode_title
+      FROM media_entries me
+      JOIN media_files mf ON mf.entry_id = me.id
+      JOIN media_assignments ma ON ma.file_id = mf.id
+      LEFT JOIN episodes ep ON ep.id = ma.episode_id
+      LEFT JOIN seasons s ON s.id = ep.season_id
+      JOIN works w ON w.id = COALESCE(ma.work_id, s.series_id)
+      WHERE me.source_id = ? AND me.is_directory = 0
+        AND me.external_entry_id IN ($placeholders)
+        AND (w.metadata_source != 'local' OR w.metadata_locked = 1)
+      ''',
+          variables: [
+            Variable.withInt(sourceId),
+            ...externalIds.map(Variable.withString),
+          ],
+          readsFrom: {
+            db.mediaEntries,
+            db.mediaFiles,
+            db.mediaAssignments,
+            db.works,
+            db.seasons,
+            db.episodes,
+          },
+        )
+        .watch()
+        .map(
+          (rows) => {
+            for (final row in rows)
+              row.read<String>('external_entry_id'): LibraryFileMatch(
+                title: row.read<String>('title'),
+                year: row.readNullable<int>('year'),
+                seasonNumber: row.readNullable<int>('season_number'),
+                episodeNumber: row.readNullable<int>('episode_number'),
+                episodeTitle: row.readNullable<String>('episode_title'),
+              ),
+          },
+        );
+  }
+
   Future<bool> isFileMetadataLocked(int fileId) async {
     final assignment = await (db.select(
       db.mediaAssignments,
@@ -1229,6 +1279,7 @@ class MediaLibraryRepository {
     String? type,
     bool recentlyAdded = false,
     bool unmatchedOnly = false,
+    bool matchedOnly = false,
   }) async* {
     await recognizePendingFiles();
     yield* _watchWorksInternal(
@@ -1237,6 +1288,7 @@ class MediaLibraryRepository {
       type: type,
       recentlyAdded: recentlyAdded,
       unmatchedOnly: unmatchedOnly,
+      matchedOnly: matchedOnly,
     );
   }
 
@@ -1316,11 +1368,14 @@ class MediaLibraryRepository {
     required String? type,
     required bool recentlyAdded,
     required bool unmatchedOnly,
+    required bool matchedOnly,
   }) {
     final variables = <Variable<Object>>[];
     var filters = '';
     if (unmatchedOnly) {
       filters += " AND w.metadata_source = 'local' AND w.metadata_locked = 0";
+    } else if (matchedOnly) {
+      filters += " AND (w.metadata_source != 'local' OR w.metadata_locked = 1)";
     }
     if (search.isNotEmpty) {
       final pattern =

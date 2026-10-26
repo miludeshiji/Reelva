@@ -292,7 +292,20 @@ void main() {
           );
           await tester.pumpAndSettle();
 
-          // 3. 切换至 LibraryPage（呈现逻辑作品海报墙：两个画质聚合成一张卡片）
+          // 确认作品后，两个画质版本在影视库中聚合成一张卡片。
+          await tester.runAsync(() async {
+            final works = await repository.watchWorks().first;
+            await repository.applyMetadata(
+              works.single.id,
+              const TmdbWork(
+                id: 19995,
+                type: 'movie',
+                title: 'Avatar',
+                year: 2009,
+              ),
+            );
+          });
+          // 3. 切换至 LibraryPage，展示已匹配作品。
           testRouter.go('/library');
           await tester.pumpAndSettle();
 
@@ -1007,7 +1020,7 @@ void main() {
           expect(savedVideo!.available, isTrue);
           expect(savedVideo.fileName, 'saved_video.mp4');
 
-          testRouter.go('/library');
+          testRouter.go('/library/unmatched');
           await tester.pumpAndSettle();
           expect(find.byType(LibraryPage), findsOneWidget);
           expect(
@@ -1049,6 +1062,9 @@ void main() {
               await repository.finishScan(source.id, scanId);
 
               final allWorks = await repository.watchWorks(limit: 200).first;
+              for (final work in allWorks) {
+                await repository.editMetadata(work.id, title: work.title);
+              }
               return (allWorks.length, allWorks.last.id);
             }) ??
             (0, 0);

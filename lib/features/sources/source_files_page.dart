@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/logging/app_logger.dart';
 import '../../shared/widgets/empty_state_view.dart';
 import '../../shared/widgets/glass_widgets.dart';
+import '../library/domain/library_work.dart';
 import '../library/presentation/manual_match_page.dart';
 import '../metadata/application/metadata_providers.dart';
 import '../metadata/domain/matching_file.dart';
@@ -12,6 +13,11 @@ import '../metadata/domain/tmdb_models.dart';
 import 'application/source_browser.dart';
 import 'application/source_providers.dart';
 import 'domain/source_models.dart';
+
+typedef _SourceDirectory = ({
+  List<MediaEntry> entries,
+  Stream<Map<String, LibraryFileMatch>> matches,
+});
 
 class SourceFilesPage extends ConsumerStatefulWidget {
   const SourceFilesPage({super.key, required this.sourceId});
@@ -26,7 +32,7 @@ class _SourceFilesPageState extends ConsumerState<SourceFilesPage> {
   SourceBrowser? _browser;
   final _path = <({String id, String name})>[];
   final _selected = <String, BrowsedMediaFile>{};
-  Future<List<MediaEntry>>? _entries;
+  Future<_SourceDirectory>? _entries;
   String? _error;
   String? _result;
   bool _selecting = false;
@@ -53,7 +59,7 @@ class _SourceFilesPageState extends ConsumerState<SourceFilesPage> {
       setState(() {
         _browser = SourceBrowser(source: source, adapter: adapter);
         _path.add((id: source.rootLocator, name: source.name));
-        _entries = _browser!.listDirectory(source.rootLocator);
+        _entries = _readDirectory(source.rootLocator);
         _error = null;
       });
     } catch (error, stackTrace) {
@@ -72,10 +78,22 @@ class _SourceFilesPageState extends ConsumerState<SourceFilesPage> {
     }
   }
 
+  Future<_SourceDirectory> _readDirectory(String id) async {
+    final repo = ref.read(mediaLibraryRepositoryProvider);
+    final entries = await _browser!.listDirectory(id);
+    return (
+      entries: entries,
+      matches: repo.watchSourceFileMatches(widget.sourceId, [
+        for (final entry in entries)
+          if (!entry.isDirectory) entry.externalId,
+      ]),
+    );
+  }
+
   void _navigateTo(int index) {
     setState(() {
       _path.removeRange(index + 1, _path.length);
-      _entries = _browser!.listDirectory(_path.last.id);
+      _entries = _readDirectory(_path.last.id);
       _error = null;
     });
   }
@@ -83,7 +101,7 @@ class _SourceFilesPageState extends ConsumerState<SourceFilesPage> {
   void _openFolder(MediaEntry entry) {
     setState(() {
       _path.add((id: entry.externalId, name: entry.name));
-      _entries = _browser!.listDirectory(entry.externalId);
+      _entries = _readDirectory(entry.externalId);
       _error = null;
     });
   }
@@ -93,7 +111,7 @@ class _SourceFilesPageState extends ConsumerState<SourceFilesPage> {
       _loadSource();
     } else {
       _browser!.refreshDirectory(_path.last.id);
-      setState(() => _entries = _browser!.listDirectory(_path.last.id));
+      setState(() => _entries = _readDirectory(_path.last.id));
     }
   }
 
@@ -131,9 +149,14 @@ class _SourceFilesPageState extends ConsumerState<SourceFilesPage> {
       });
       return;
     }
-    final select = _selectionState(entry) != true;
-    final ids = [..._path.map((part) => part.id), entry.externalId];
-    final names = [..._path.map((part) => part.name), entry.name];
+    await _toggleDirectory(
+      [..._path.map((part) => part.id), entry.externalId],
+      [..._path.map((part) => part.name), entry.name],
+    );
+  }
+
+  Future<void> _toggleDirectory(List<String> ids, List<String> names) async {
+    if (_selecting || _matching) return;
     setState(() {
       _selecting = true;
       _error = null;
@@ -145,6 +168,9 @@ class _SourceFilesPageState extends ConsumerState<SourceFilesPage> {
         directoryNames: names,
       );
       if (!mounted) return;
+      final select = !files.every(
+        (file) => _selected.containsKey(file.entry.externalId),
+      );
       setState(() {
         for (final file in files) {
           if (select) {
@@ -388,7 +414,7 @@ class _SourceFilesPageState extends ConsumerState<SourceFilesPage> {
                                       child: const Text('重试'),
                                     ),
                             )
-                          : FutureBuilder<List<MediaEntry>>(
+                          : FutureBuilder<_SourceDirectory>(
                               future: _entries,
                               builder: (context, snapshot) {
                                 if (snapshot.connectionState !=
@@ -420,7 +446,8 @@ class _SourceFilesPageState extends ConsumerState<SourceFilesPage> {
                                     onAction: _refresh,
                                   );
                                 }
-                                final entries = snapshot.data!;
+                                final directory = snapshot.data!;
+                                final entries = directory.entries;
                                 if (entries.isEmpty) {
                                   return const EmptyStateView(
                                     icon: Icons.folder_open,
@@ -428,70 +455,95 @@ class _SourceFilesPageState extends ConsumerState<SourceFilesPage> {
                                     message: '可返回上级目录查看其他文件夹。',
                                   );
                                 }
-                                return ListView.separated(
-                                  key: const Key('source_files_list'),
-                                  padding: const EdgeInsets.fromLTRB(
-                                    24,
-                                    8,
-                                    24,
-                                    24,
-                                  ),
-                                  itemCount: entries.length,
-                                  separatorBuilder: (_, index) =>
-                                      const SizedBox(height: 12),
-                                  itemBuilder: (context, index) =>
-                                      _entryCard(entries[index], busy),
+                                return StreamBuilder<
+                                  Map<String, LibraryFileMatch>
+                                >(
+                                  stream: directory.matches,
+                                  builder: (context, matches) =>
+                                      ListView.separated(
+                                        key: const Key('source_files_list'),
+                                        padding: const EdgeInsets.fromLTRB(
+                                          24,
+                                          8,
+                                          24,
+                                          24,
+                                        ),
+                                        itemCount: entries.length,
+                                        separatorBuilder: (_, index) =>
+                                            const SizedBox(height: 12),
+                                        itemBuilder: (context, index) {
+                                          final entry = entries[index];
+                                          final subtitle = entry.isDirectory
+                                              ? '文件夹'
+                                              : matches.hasError
+                                              ? '匹配状态读取失败，请刷新目录'
+                                              : !matches.hasData ||
+                                                    matches.connectionState ==
+                                                        ConnectionState.waiting
+                                              ? '正在读取匹配状态…'
+                                              : _matchLabel(
+                                                  matches.data![entry
+                                                      .externalId],
+                                                );
+                                          return _entryCard(
+                                            entry,
+                                            busy,
+                                            subtitle,
+                                          );
+                                        },
+                                      ),
                                 );
                               },
                             ),
                     ),
-                    if (_selected.isNotEmpty || _selecting)
-                      GlassCard(
-                        key: const Key('source_files_selection_bar'),
-                        margin: const EdgeInsets.fromLTRB(24, 8, 24, 12),
-                        padding: const EdgeInsets.all(12),
-                        child: Wrap(
-                          spacing: 12,
-                          runSpacing: 8,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            Text(
-                              _selecting
-                                  ? '正在读取文件夹…'
-                                  : '已选 ${_selected.length} 个视频',
-                            ),
-                            GlassButton(
-                              key: const Key('source_files_auto_match_button'),
-                              primary: true,
-                              style: actionStyle,
-                              icon: Icons.auto_awesome_outlined,
-                              onPressed: busy
-                                  ? null
-                                  : () => _match(manual: false),
-                              child: const Text('自动匹配'),
-                            ),
-                            GlassButton(
-                              key: const Key(
-                                'source_files_manual_match_button',
-                              ),
-                              icon: Icons.search,
-                              style: actionStyle,
-                              onPressed: busy
-                                  ? null
-                                  : () => _match(manual: true),
-                              child: const Text('手动匹配'),
-                            ),
-                            GlassIconButton(
-                              icon: Icons.clear_all,
-                              tooltip: '清空选择',
-                              size: 40,
-                              onPressed: busy
-                                  ? null
-                                  : () => setState(_selected.clear),
-                            ),
-                          ],
-                        ),
+                    GlassCard(
+                      key: const Key('source_files_selection_bar'),
+                      margin: const EdgeInsets.fromLTRB(24, 8, 24, 12),
+                      padding: const EdgeInsets.all(12),
+                      child: Wrap(
+                        spacing: 12,
+                        runSpacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            _selecting
+                                ? '正在读取文件夹…'
+                                : '已选 ${_selected.length} 个视频',
+                          ),
+                          GlassButton(
+                            key: const Key('source_files_auto_match_button'),
+                            primary: true,
+                            style: actionStyle,
+                            icon: Icons.auto_awesome_outlined,
+                            onPressed: busy || _selected.isEmpty
+                                ? null
+                                : () => _match(manual: false),
+                            child: const Text('自动匹配'),
+                          ),
+                          GlassButton(
+                            key: const Key('source_files_manual_match_button'),
+                            icon: Icons.search,
+                            style: actionStyle,
+                            onPressed: busy || _selected.isEmpty
+                                ? null
+                                : () => _match(manual: true),
+                            child: const Text('手动匹配'),
+                          ),
+                          GlassButton(
+                            key: const Key('source_files_toggle_all_button'),
+                            icon: Icons.select_all,
+                            style: actionStyle,
+                            onPressed: busy || _browser == null || _path.isEmpty
+                                ? null
+                                : () => _toggleDirectory(
+                                    _path.map((part) => part.id).toList(),
+                                    _path.map((part) => part.name).toList(),
+                                  ),
+                            child: const Text('全选/清空'),
+                          ),
+                        ],
                       ),
+                    ),
                   ],
                 ),
               ),
@@ -502,7 +554,18 @@ class _SourceFilesPageState extends ConsumerState<SourceFilesPage> {
     );
   }
 
-  Widget _entryCard(MediaEntry entry, bool busy) => GlassCard(
+  String _matchLabel(LibraryFileMatch? match) {
+    if (match == null) return '未匹配';
+    return [
+      '已匹配',
+      '${match.title}${match.year == null ? '' : '（${match.year}）'}',
+      if (match.seasonNumber != null && match.episodeNumber != null)
+        'S${match.seasonNumber.toString().padLeft(2, '0')}E${match.episodeNumber.toString().padLeft(2, '0')}',
+      if (match.episodeTitle?.isNotEmpty == true) match.episodeTitle!,
+    ].join(' · ');
+  }
+
+  Widget _entryCard(MediaEntry entry, bool busy, String subtitle) => GlassCard(
     padding: const EdgeInsets.all(12),
     onTap: entry.isDirectory
         ? () => _openFolder(entry)
@@ -537,7 +600,9 @@ class _SourceFilesPageState extends ConsumerState<SourceFilesPage> {
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               Text(
-                entry.isDirectory ? '文件夹' : '视频文件',
+                subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: ReelvaDesign.muted, fontSize: 12),
               ),
             ],

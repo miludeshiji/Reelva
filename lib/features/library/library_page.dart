@@ -416,10 +416,12 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                                   : EmptyStateView(
                                       key: const Key('library_empty_view'),
                                       icon: Icons.video_library_outlined,
-                                      title: '影视库为空',
-                                      message: '配置媒体源并完成扫描后，影视库将呈现影视作品与海报。',
-                                      actionLabel: '前往媒体源',
-                                      onAction: () => context.go('/sources'),
+                                      title: '暂无已匹配作品',
+                                      message:
+                                          '影视库仅展示已匹配或人工确认的作品，可前往待匹配页处理其他条目。',
+                                      actionLabel: '查看待匹配条目',
+                                      onAction: () =>
+                                          context.push('/library/unmatched'),
                                     ),
                             );
                           }

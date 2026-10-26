@@ -1,5 +1,22 @@
 import 'package:flutter/foundation.dart';
 
+@immutable
+class LibraryFileMatch {
+  const LibraryFileMatch({
+    required this.title,
+    this.year,
+    this.seasonNumber,
+    this.episodeNumber,
+    this.episodeTitle,
+  });
+
+  final String title;
+  final int? year;
+  final int? seasonNumber;
+  final int? episodeNumber;
+  final String? episodeTitle;
+}
+
 /// 媒体作品领域模型（电影或剧集）
 @immutable
 class LibraryWork {

@@ -204,7 +204,7 @@ final metadataControllerProvider =
 final libraryWorksProvider = StreamProvider.autoDispose
     .family<List<LibraryWork>, int>((ref, limit) {
       final repo = ref.watch(mediaLibraryRepositoryProvider);
-      return repo.watchWorks(limit: limit);
+      return repo.watchWorks(limit: limit, matchedOnly: true);
     });
 
 typedef LibraryWorksFilter = ({
@@ -224,6 +224,7 @@ final filteredLibraryWorksProvider = StreamProvider.autoDispose
         type: filter.type,
         recentlyAdded: filter.recentlyAdded,
         unmatchedOnly: filter.unmatchedOnly,
+        matchedOnly: !filter.unmatchedOnly,
       );
     });
 

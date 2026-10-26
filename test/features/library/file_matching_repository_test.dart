@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:reelva/core/database/app_database.dart';
@@ -36,6 +38,68 @@ void main() {
       ]);
 
   const series = TmdbWork(id: 123, type: 'series', title: '新剧集', year: 2024);
+
+  test('目录文件匹配信息限定来源与文件，实时反映电影、季集和重新匹配', () async {
+    final files = await index(['Movie.mkv', 'Show.S02E03.mkv', 'Pending.mkv']);
+    await repo.applyMetadataToFiles({
+      files['Movie.mkv']!: null,
+    }, const TmdbWork(id: 1, type: 'movie', title: '电影', year: 2025));
+    final other = await repo.upsertSource(
+      kind: 'local',
+      rootLocator: 'C:/other',
+      name: '另一个来源',
+    );
+    final otherFile = await repo.indexSourceFiles(other.id, [
+      const MediaEntry(
+        externalId: 'Pending.mkv',
+        locator: 'Pending.mkv',
+        name: 'Pending.mkv',
+        isDirectory: false,
+      ),
+    ]);
+    await repo.applyMetadataToFiles({
+      otherFile.values.single: null,
+    }, const TmdbWork(id: 2, type: 'movie', title: '其他来源的电影'));
+    final matches = StreamIterator(
+      repo.watchSourceFileMatches(sourceId, [
+        'Movie.mkv',
+        'Show.S02E03.mkv',
+        'Pending.mkv',
+        'NotIndexed.mkv',
+      ]),
+    );
+    addTearDown(matches.cancel);
+    expect(await matches.moveNext(), isTrue);
+    expect(matches.current.keys, ['Movie.mkv']);
+    expect(matches.current['Movie.mkv']!.title, '电影');
+    expect(matches.current['Movie.mkv']!.year, 2025);
+    expect(matches.current['Movie.mkv']!.seasonNumber, isNull);
+
+    await repo.applyMetadataToFiles({
+      files['Show.S02E03.mkv']!: const TmdbEpisode(
+        seasonNumber: 2,
+        episodeNumber: 3,
+        title: '重逢',
+      ),
+    }, series);
+    expect(await matches.moveNext(), isTrue);
+    final episode = matches.current['Show.S02E03.mkv']!;
+    expect(episode.title, '新剧集');
+    expect(episode.seasonNumber, 2);
+    expect(episode.episodeNumber, 3);
+    expect(episode.episodeTitle, '重逢');
+    expect(
+      await repo.watchSourceFileMatches(sourceId, ['Pending.mkv']).first,
+      isEmpty,
+    );
+
+    await repo.applyMetadataToFiles({
+      files['Movie.mkv']!: null,
+    }, const TmdbWork(id: 3, type: 'movie', title: '重新匹配的电影'));
+    expect(await matches.moveNext(), isTrue);
+    expect(matches.current['Movie.mkv']!.title, '重新匹配的电影');
+    expect(matches.current.containsKey('Pending.mkv'), isFalse);
+  });
 
   test('只重绑选中的版本，保留未选版本及其观看历史', () async {
     final files = await index(['Old.2024.1080p.mkv', 'Old.2024.2160p.mkv']);

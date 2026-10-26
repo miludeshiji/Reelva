@@ -450,7 +450,7 @@ void main() {
       for (final number in [1, 2])
         TmdbEpisode(seasonNumber: season, episodeNumber: number),
     ];
-    final router = createRouter(initialLocation: '/sources');
+    final router = createRouter(initialLocation: '/library');
     addTearDown(() async {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
@@ -474,6 +474,11 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('本次整理：已匹配 0 个条目 · 1065 个未自动匹配'), findsOneWidget);
+    expect(find.byKey(Key('library_work_card_$matchedId')), findsOneWidget);
+    expect(
+      find.byKey(Key('library_work_card_${pending.first.id}')),
+      findsNothing,
+    );
     await _tapVisible(tester, find.byKey(const Key('metadata_review_button')));
     expect(
       tester.widget<LibraryPage>(find.byType(LibraryPage)).unmatchedOnly,
@@ -486,7 +491,7 @@ void main() {
       isTrue,
     );
     expect(find.byKey(Key('library_work_card_$matchedId')), findsNothing);
-    expect(metadata.refreshCount, 0);
+    expect(metadata.refreshCount, 1);
     await _tapVisible(
       tester,
       find.byKey(Key('library_work_card_${pending.first.id}')),
@@ -540,6 +545,16 @@ void main() {
     );
     expect(
       find.byKey(const Key('library_unmatched_empty_view')),
+      findsOneWidget,
+    );
+    router.go('/library');
+    await tester.pumpAndSettle();
+    expect(find.byKey(Key('library_work_card_$matchedId')), findsOneWidget);
+    final confirmed = (await tester.runAsync(
+      () => repo.watchWorks(matchedOnly: true, type: 'series').first,
+    ))!;
+    expect(
+      find.byKey(Key('library_work_card_${confirmed.single.id}')),
       findsOneWidget,
     );
   });

@@ -88,6 +88,8 @@ void main() {
         String? type = 'movie',
         DateTime? createdAt,
         int? source,
+        String metadataSource = 'local',
+        bool metadataLocked = false,
       }) async {
         final id = await db
             .into(db.works)
@@ -96,6 +98,8 @@ void main() {
                 title: title,
                 originalTitle: Value(originalTitle),
                 type: Value(type),
+                metadataSource: Value(metadataSource),
+                metadataLocked: Value(metadataLocked),
                 createdAt: Value(createdAt ?? DateTime.utc(2026)),
               ),
             );
@@ -152,6 +156,62 @@ void main() {
           await repo.watchWorks(unmatchedOnly: true, search: 'Pending').first,
           hasLength(1),
         );
+      });
+
+      test('已匹配筛选在搜索、分类与分页前排除本地候选，保留 NFO 和人工确认', () async {
+        await db.transaction(() async {
+          for (var i = 0; i < 105; i++) {
+            await addWork('A Pending $i');
+          }
+        });
+        final locked = await addWork('Z Confirmed', metadataLocked: true);
+        final movie = await addWork('Z Movie', metadataSource: 'tmdb');
+        final series = await addWork(
+          'Z Series',
+          type: 'series',
+          metadataSource: 'nfo',
+          createdAt: DateTime.utc(2026, 10),
+        );
+        final disabled = await repo.upsertSource(
+          kind: 'local',
+          rootLocator: 'C:/Disabled',
+          name: 'Disabled',
+        );
+        await addWork(
+          'A Disabled',
+          metadataSource: 'tmdb',
+          source: disabled.id,
+        );
+        await repo.disableSource(disabled.id);
+        await db
+            .update(db.mediaEntries)
+            .write(const MediaEntriesCompanion(available: Value(false)));
+
+        final firstPage = await repo
+            .watchWorks(matchedOnly: true, limit: 1)
+            .first;
+        expect(firstPage.single.id, locked);
+        expect(firstPage.single.available, isFalse);
+        final all = await repo.watchWorks(matchedOnly: true).first;
+        expect(all.map((work) => work.id), [locked, movie, series]);
+        expect(
+          await repo.watchWorks(matchedOnly: true, search: 'Pending').first,
+          isEmpty,
+        );
+        final filtered = await repo
+            .watchWorks(
+              matchedOnly: true,
+              search: 'Z',
+              type: 'series',
+              recentlyAdded: true,
+              limit: 1,
+            )
+            .first;
+        expect(filtered.single.id, series);
+        final recent = await repo
+            .watchWorks(matchedOnly: true, recentlyAdded: true, limit: 1)
+            .first;
+        expect(recent.single.id, series);
       });
 
       test(

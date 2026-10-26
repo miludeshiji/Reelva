@@ -144,22 +144,44 @@ void main() {
       await tester.tap(sourceCard);
       await tester.pumpAndSettle();
       expect(find.byType(SourceFilesPage), findsOneWidget);
-      expect(find.byKey(const Key('source_files_selection_bar')), findsNothing);
+      expect(
+        find.byKey(const Key('source_files_selection_bar')),
+        findsOneWidget,
+      );
+      expect(find.text('已选 0 个视频'), findsOneWidget);
+      expect(
+        tester
+            .widget<GlassButton>(
+              find.byKey(const Key('source_files_manual_match_button')),
+            )
+            .onPressed,
+        isNull,
+      );
       expect(find.byType(GlassCard), findsWidgets);
 
       await tester.tap(find.byKey(const Key('source_file_checkbox_season1')));
       await tester.pumpAndSettle();
       expect(find.text('已选 2 个视频'), findsOneWidget);
-      await tester.ensureVisible(find.text('S01'));
-      await tester.pumpAndSettle();
+      await _revealSourceEntry(tester, find.text('S01'));
       await tester.tap(find.text('S01'));
       await tester.pumpAndSettle();
       final secondFile = find.byKey(const Key('source_file_checkbox_file2'));
-      await tester.ensureVisible(secondFile);
-      await tester.pumpAndSettle();
+      await _revealSourceEntry(tester, secondFile, delta: 100);
       await tester.tap(secondFile);
       await tester.pumpAndSettle();
       expect(find.text('已选 1 个视频'), findsOneWidget);
+      final toggleAll = find.byKey(const Key('source_files_toggle_all_button'));
+      await tester.ensureVisible(toggleAll);
+      await tester.tap(toggleAll);
+      await tester.pumpAndSettle();
+      expect(find.text('已选 2 个视频'), findsOneWidget);
+      await tester.tap(toggleAll);
+      await tester.pumpAndSettle();
+      expect(find.text('已选 0 个视频'), findsOneWidget);
+      final firstFile = find.byKey(const Key('source_file_checkbox_file1'));
+      await _revealSourceEntry(tester, firstFile);
+      await tester.tap(firstFile);
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('source_files_back_button')));
       await tester.pumpAndSettle();
       expect(
@@ -171,14 +193,27 @@ void main() {
         isNull,
       );
       final season2 = find.byKey(const Key('source_file_checkbox_season2'));
-      await tester.ensureVisible(season2);
-      await tester.pumpAndSettle();
+      await _revealSourceEntry(tester, season2, delta: 100);
       await tester.tap(season2);
       await tester.pumpAndSettle();
       expect(find.text('已选 2 个视频'), findsOneWidget);
-      final missingSeason = find.byKey(const Key('source_file_checkbox_file4'));
-      await tester.ensureVisible(missingSeason);
+      await _revealSourceEntry(tester, find.text('S01'));
+      await tester.tap(find.text('S01'));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(toggleAll);
+      await tester.tap(toggleAll);
+      await tester.pumpAndSettle();
+      expect(find.text('已选 3 个视频'), findsOneWidget);
+      await tester.tap(toggleAll);
+      await tester.pumpAndSettle();
+      expect(find.text('已选 1 个视频'), findsOneWidget);
+      await _revealSourceEntry(tester, firstFile);
+      await tester.tap(firstFile);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('source_files_back_button')));
+      await tester.pumpAndSettle();
+      final missingSeason = find.byKey(const Key('source_file_checkbox_file4'));
+      await _revealSourceEntry(tester, missingSeason, delta: 100);
       await tester.tap(missingSeason);
       await tester.pumpAndSettle();
       expect(find.text('已选 3 个视频'), findsOneWidget);
@@ -255,6 +290,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(ManualMatchPage), findsNothing);
       expect(find.text('手动匹配完成，影视库已更新'), findsOneWidget);
+      expect(find.text('已匹配 · Show（2024） · S02E03'), findsOneWidget);
       final works = await tester.runAsync(() => repo.watchWorks().first);
       expect(works!.length, 1);
       final details = await tester.runAsync(
@@ -268,6 +304,22 @@ void main() {
       );
     });
   }
+}
+
+Future<void> _revealSourceEntry(
+  WidgetTester tester,
+  Finder finder, {
+  double delta = -100,
+}) async {
+  await tester.scrollUntilVisible(
+    finder,
+    delta,
+    scrollable: find.descendant(
+      of: find.byKey(const Key('source_files_list')),
+      matching: find.byType(Scrollable),
+    ),
+  );
+  await tester.pumpAndSettle();
 }
 
 Future<void> _capture(WidgetTester tester, GlobalKey key, String name) async {
