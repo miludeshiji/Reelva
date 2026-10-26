@@ -114,7 +114,7 @@ void main() {
     );
   }
 
-  testWidgets('首次扫描未完成时立即返回，可切换页面并查看后续处理结果', (tester) async {
+  testWidgets('首次扫描未完成时立即返回，切换页面后可查看扫描结果且不自动匹配', (tester) async {
     final scan = StreamController<MediaEntry>();
     try {
       await tester.pumpWidget(buildTestApp(scanEntries: scan.stream));
@@ -139,7 +139,7 @@ void main() {
 
       expect(find.byType(SourceSetupPage), findsNothing);
       expect(find.byType(SourcesPage), findsOneWidget);
-      expect(find.text('媒体源已保存，扫描与识别进度可在列表查看'), findsOneWidget);
+      expect(find.text('媒体源已保存，扫描后可在影视库点击刷新进行匹配'), findsOneWidget);
       expect(find.byKey(const Key('source_progress_bar_1')), findsOneWidget);
 
       final router = GoRouter.of(tester.element(find.byType(SourcesPage)));
@@ -156,7 +156,10 @@ void main() {
       await scan.close();
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('source_progress_bar_1')), findsNothing);
-      expect(find.text('已完成本地识别'), findsOneWidget);
+      expect(find.text('已完成扫描'), findsOneWidget);
+      expect(find.byKey(const Key('source_last_scan_text_1')), findsOneWidget);
+      expect(find.byKey(const Key('metadata_running_banner')), findsNothing);
+      expect(find.byKey(const Key('metadata_result_banner')), findsNothing);
       expect(find.byKey(const Key('metadata_error_banner')), findsNothing);
     } finally {
       if (!scan.isClosed) await scan.close();

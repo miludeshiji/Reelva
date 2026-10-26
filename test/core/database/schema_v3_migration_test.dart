@@ -237,7 +237,7 @@ void main() {
             createDeviceId: () => '1234567890abcdef1234567890abcdef',
           );
 
-          // 捕获本地数据变更（包含已匹配 TMDB 的电影进度与锁定元数据）
+          // 仅捕获已匹配 TMDB 的观看进度；锁定元数据保留在本机并通过 NFO 共享。
           await syncRepo.captureLocalChanges();
 
           // 准备发件箱
@@ -245,11 +245,18 @@ void main() {
           expect(batch, isNotNull);
           expect(batch!.deviceId, '1234567890abcdef1234567890abcdef');
           expect(batch.sequence, 1);
-          expect(batch.records, hasLength(2));
-
-          final kinds = batch.records.map((r) => r.kind).toSet();
-          expect(kinds, contains(SyncRecordKind.progress));
-          expect(kinds, contains(SyncRecordKind.metadata));
+          expect(batch.records, hasLength(1));
+          final record = batch.records.single;
+          expect(record.kind, SyncRecordKind.progress);
+          expect(
+            record.target,
+            const SyncTarget(workType: 'movie', tmdbId: 27205),
+          );
+          expect(record.value, {
+            'positionMs': 60000,
+            'durationMs': 120000,
+            'completed': false,
+          });
 
           // 确认上传，持久化本设备游标并清理发件箱
           await syncRepo.acknowledgeUpload(batch);
