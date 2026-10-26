@@ -51,6 +51,67 @@ void main() {
     );
   }
 
+  test('加密配置文件使用独立路径和 ETag 条件写入，不覆盖并发更新', () async {
+    String? stored;
+    var revision = 0;
+    server.listen((request) async {
+      if (request.method == 'MKCOL') {
+        request.response.statusCode = HttpStatus.created;
+      } else {
+        expect(request.uri.path, '/reelva-sync-v1/application-v1.json');
+        if (request.method == 'GET') {
+          if (stored == null) {
+            request.response.statusCode = HttpStatus.notFound;
+          } else {
+            request.response.headers.set(HttpHeaders.etagHeader, '"$revision"');
+            request.response.write(stored);
+          }
+        } else {
+          final creating =
+              request.headers.value(HttpHeaders.ifNoneMatchHeader) == '*';
+          if (creating && stored != null ||
+              !creating &&
+                  request.headers.value(HttpHeaders.ifMatchHeader) !=
+                      '"$revision"') {
+            request.response.statusCode = HttpStatus.preconditionFailed;
+          } else {
+            stored = await utf8.decodeStream(request);
+            revision++;
+            request.response.statusCode = HttpStatus.created;
+          }
+        }
+      }
+      await request.response.close();
+    });
+    final transport = WebDavSyncTransport(
+      http: httpClient,
+      configuration: SyncConfiguration(endpoint: serverUri),
+    );
+    expect(await transport.downloadApplicationData(), isNull);
+    expect(await transport.uploadApplicationData('encrypted-v1'), isTrue);
+    final snapshot = (await transport.downloadApplicationData())!;
+    expect(snapshot.body, 'encrypted-v1');
+    expect(
+      await transport.uploadApplicationData('unconditional-overwrite'),
+      isFalse,
+    );
+    expect(
+      await transport.uploadApplicationData(
+        'encrypted-v2',
+        etag: snapshot.etag,
+      ),
+      isTrue,
+    );
+    expect(
+      await transport.uploadApplicationData(
+        'stale-overwrite',
+        etag: snapshot.etag,
+      ),
+      isFalse,
+    );
+    expect((await transport.downloadApplicationData())!.body, 'encrypted-v2');
+  });
+
   group('WebDavSyncTransport MKCOL & Directory Creation', () {
     test('calls MKCOL to create sync directory before first upload', () async {
       final requests = <String>[];

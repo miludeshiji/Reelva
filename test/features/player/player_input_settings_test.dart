@@ -93,6 +93,24 @@ void main() {
     );
   });
 
+  test('旧配置保留自定义 Tab，新配置默认用 Tab 切换播放信息', () {
+    final defaults = PlayerInputSettings.fromJson(const {});
+    expect(
+      defaults.actionFor(const PlayerKeyBinding(LogicalKeyboardKey.tab)),
+      PlayerShortcutAction.toggleStatistics,
+    );
+    final previous = PlayerInputSettings.fromJson({
+      'bindings': {
+        'togglePause': const PlayerKeyBinding(LogicalKeyboardKey.tab).toJson(),
+      },
+    });
+    expect(
+      previous.actionFor(const PlayerKeyBinding(LogicalKeyboardKey.tab)),
+      PlayerShortcutAction.togglePause,
+    );
+    expect(previous.bindingFor(PlayerShortcutAction.toggleStatistics), isNull);
+  });
+
   test('重复按键、纯修饰键和无效步长不能保存', () {
     expect(
       () => const PlayerInputSettings(

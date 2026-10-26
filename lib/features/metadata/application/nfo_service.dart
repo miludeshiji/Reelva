@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:path/path.dart' as p;
 
 import '../../../core/logging/app_logger.dart';
+import '../../../core/database/app_database.dart';
 import '../../library/infrastructure/media_library_repository.dart';
 import '../../sources/domain/media_sidecar_adapter.dart';
 import '../../sources/domain/media_source_adapter.dart';
@@ -51,6 +52,46 @@ class NfoService {
   final Map<String, MediaSourceAdapter> adapters;
   final RemoteHttpClient http;
   Future<void> _writes = Future.value();
+
+  String _metadataSignature(MetadataFile file) {
+    final metadata = file.metadata;
+    final episode = file.episode;
+    return jsonEncode([
+      metadata.type,
+      metadata.tmdbId,
+      metadata.title,
+      metadata.originalTitle,
+      metadata.overview,
+      metadata.year,
+      metadata.premiered?.toIso8601String(),
+      metadata.posterPath,
+      metadata.backdropPath,
+      episode?.seasonNumber,
+      episode?.episodeNumber,
+      episode?.tmdbId,
+      episode?.title,
+      episode?.overview,
+      episode?.airDate?.toIso8601String(),
+    ]);
+  }
+
+  Future<bool> _metadataWasSaved(MetadataFile file) async {
+    final db = repository.db;
+    final saved =
+        await (db.select(db.syncState)
+              ..where((row) => row.key.equals('nfo_saved:${file.fileId}')))
+            .getSingleOrNull();
+    return saved?.value == _metadataSignature(file);
+  }
+
+  Future<void> _rememberSavedMetadata(MetadataFile file) => repository.db
+      .into(repository.db.syncState)
+      .insertOnConflictUpdate(
+        SyncStateCompanion.insert(
+          key: 'nfo_saved:${file.fileId}',
+          value: _metadataSignature(file),
+        ),
+      );
 
   Future<NfoDocument> _read(
     MediaSourceConfig source,
@@ -104,7 +145,8 @@ class NfoService {
         .toList();
     for (final entry in videos) {
       final file = byId[entry.externalId]!;
-      if (file.locked) continue;
+      // 仅在上次写回后没有新的本机修改时，允许读取其他设备更新的 NFO。
+      if (file.locked && !await _metadataWasSaved(file)) continue;
       try {
         final nfo =
             _entry(entries, '${p.basenameWithoutExtension(entry.name)}.nfo') ??
@@ -148,7 +190,7 @@ class NfoService {
         final workId = await repository.applyMetadataToFiles(
           {file.fileId: episode},
           metadata,
-          manual: false,
+          manual: file.locked,
           metadataSource: 'nfo',
           respectExistingMetadata: false,
           localWorkId: metadata.tmdbId == null
@@ -173,6 +215,8 @@ class NfoService {
           artEntries,
           metadata.type == 'series' ? context?.document : document,
         );
+        final imported = await repository.metadataFiles(fileIds: [file.fileId]);
+        if (imported.isNotEmpty) await _rememberSavedMetadata(imported.single);
       } catch (e, st) {
         AppLogger.instance.error('导入媒体 NFO 失败', error: e, stackTrace: st);
         onError?.call('NFO 导入失败，请检查文件内容或访问权限');
@@ -406,6 +450,7 @@ class NfoService {
             ),
           );
         }
+        await _rememberSavedMetadata(file);
         saved++;
       } catch (e, st) {
         AppLogger.instance.error('保存媒体目录元数据失败', error: e, stackTrace: st);

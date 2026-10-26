@@ -26,4 +26,9 @@ class PlayerSettingsController extends Notifier<PlayerSettings> {
     await ref.read(playerSettingsStoreProvider).save(settings);
     state = settings;
   }
+
+  Future<void> reload() async {
+    final settings = await ref.read(playerSettingsStoreProvider).read();
+    if (ref.mounted) state = settings;
+  }
 }

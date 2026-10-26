@@ -6,11 +6,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:reelva/core/database/app_database.dart';
 import 'package:reelva/features/library/infrastructure/media_library_repository.dart';
+import 'package:reelva/features/metadata/application/metadata_providers.dart';
 import 'package:reelva/features/player/domain/playback_resource.dart';
 import 'package:reelva/features/progress/infrastructure/playback_progress_repository.dart';
 import 'package:reelva/features/sources/application/source_providers.dart';
 import 'package:reelva/features/sources/domain/media_source_adapter.dart';
 import 'package:reelva/features/sources/domain/source_models.dart';
+
+class _CountingMetadataController extends MetadataController {
+  int refreshCount = 0;
+  @override
+  Future<void> refresh() async {
+    refreshCount++;
+  }
+}
 
 class FakeMediaSourceAdapter implements MediaSourceAdapter {
   FakeMediaSourceAdapter({
@@ -90,11 +99,13 @@ void main() {
   late MediaLibraryRepository repo;
   late FakeMediaSourceAdapter fakeAdapter;
   late ProviderContainer container;
+  late _CountingMetadataController metadata;
 
   setUp(() {
     db = AppDatabase(executor: NativeDatabase.memory());
     repo = MediaLibraryRepository(db);
     fakeAdapter = FakeMediaSourceAdapter();
+    metadata = _CountingMetadataController();
 
     container = ProviderContainer(
       overrides: [
@@ -102,6 +113,7 @@ void main() {
         appDatabaseProvider.overrideWithValue(db),
         mediaLibraryRepositoryProvider.overrideWithValue(repo),
         sourceAdaptersProvider.overrideWithValue({'local': fakeAdapter}),
+        metadataControllerProvider.overrideWith(() => metadata),
       ],
     );
   });
@@ -112,6 +124,21 @@ void main() {
   });
 
   group('SourceController', () {
+    test('源扫描完成后不自动触发元数据匹配', () async {
+      final source = await repo.upsertSource(
+        kind: 'local',
+        rootLocator: '/manual-refresh',
+        name: '媒体',
+      );
+      await container
+          .read(sourceControllerProvider.notifier)
+          .refreshSource(source.id);
+      expect(
+        container.read(sourceControllerProvider)[source.id]!.running,
+        isFalse,
+      );
+      expect(metadata.refreshCount, 0);
+    });
     test('initial state is empty', () {
       final state = container.read(sourceControllerProvider);
       expect(state, isEmpty);

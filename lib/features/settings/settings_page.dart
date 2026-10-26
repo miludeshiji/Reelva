@@ -61,7 +61,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         _SettingsTile(
           key: const Key('settings_shortcuts_tile'),
           icon: Icons.keyboard_outlined,
-          title: '快捷键与鼠标',
+          title: '快捷键',
           subtitle: '自定义按键、定位步长与鼠标操作',
           onTap: () => _openPage('/settings/shortcuts'),
         ),

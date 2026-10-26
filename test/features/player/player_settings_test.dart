@@ -28,6 +28,12 @@ class _NativePlayer extends Fake implements NativePlayer {
   final commands = <List<String>>[];
 
   @override
+  Future<String> getProperty(
+    String property, {
+    bool waitForInitialization = true,
+  }) async => properties[property] ?? '';
+
+  @override
   Future<void> command(
     List<String> command, {
     bool waitForInitialization = true,
@@ -231,5 +237,43 @@ void main() {
       ['set', 'saturation', '0'],
       ['set', 'hue', '0'],
     ]);
+  });
+
+  test('播放信息读取原生统计，缺失字段不影响播放状态', () async {
+    final native = _NativePlayer();
+    native.properties.addAll({
+      'video-format': 'hevc',
+      'video-params/w': '3840',
+      'video-params/h': '2160',
+      'container-fps': '23.976',
+      'video-params/pixelformat': 'yuv420p10le',
+      'hwdec-current': 'd3d11va',
+      'video-bitrate': '12500000',
+      'frame-drop-count': '2',
+      'audio-codec-name': 'aac',
+      'audio-params/samplerate': '48000',
+      'demuxer-cache-duration': '12.5',
+      'demuxer-cache-state/fw-bytes': '1048576',
+    });
+    final engine = MediaKitPlayerEngine(player: Player(platformPlayer: native));
+    addTearDown(engine.dispose);
+    final before = engine.snapshot;
+    final stats = await engine.getStatistics();
+    expect(stats.videoCodec, 'hevc');
+    expect(stats.width, 3840);
+    expect(stats.height, 2160);
+    expect(stats.frameRate, 23.976);
+    expect(stats.pixelFormat, 'yuv420p10le');
+    expect(stats.hardwareDecoder, 'd3d11va');
+    expect(stats.videoBitrate, 12500000);
+    expect(stats.droppedFrames, 2);
+    expect(stats.decoderDroppedFrames, isNull);
+    expect(stats.audioCodec, 'aac');
+    expect(stats.audioSampleRate, 48000);
+    expect(stats.audioBitrate, isNull);
+    expect(stats.cacheSeconds, 12.5);
+    expect(stats.cacheBytes, 1048576);
+    expect(engine.snapshot, same(before));
+    expect(native.commands, isEmpty);
   });
 }

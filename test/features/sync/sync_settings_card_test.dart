@@ -96,6 +96,7 @@ void main() {
         syncConfigurationStoreProvider.overrideWithValue(fakeStore),
         syncRepositoryProvider.overrideWithValue(fakeRepo),
         syncServiceProvider.overrideWith((ref, config) => fakeService),
+        pendingSourceBindingsProvider.overrideWith((ref) async => []),
         ...overrides,
       ],
       child: MaterialApp(
@@ -113,6 +114,43 @@ void main() {
   }
 
   group('SyncSettingsCard UI and Behavior Tests', () {
+    testWidgets('加密密码不回显、留空保留，变更端点后不沿用', (tester) async {
+      fakeStore.currentConfig = SyncConfiguration(
+        endpoint: testEndpoint,
+        encryptionPassword: 'test-application-password',
+      );
+      await tester.pumpWidget(buildTestWidget());
+      await tester.pumpAndSettle();
+      final field = find.byKey(const Key('sync_encryption_password'));
+      expect(tester.widget<TextField>(field).controller!.text, isEmpty);
+      expect(tester.widget<TextField>(field).obscureText, isTrue);
+      await tester.ensureVisible(find.byKey(const Key('sync_save')));
+      await tester.tap(find.byKey(const Key('sync_save')));
+      await tester.pumpAndSettle();
+      expect(
+        fakeStore.currentConfig!.encryptionPassword,
+        'test-application-password',
+      );
+      await tester.enterText(field, 'short');
+      await tester.ensureVisible(find.byKey(const Key('sync_save')));
+      await tester.tap(find.byKey(const Key('sync_save')));
+      await tester.pumpAndSettle();
+      expect(find.text('同步加密密码至少需要 12 个字符'), findsOneWidget);
+      expect(
+        fakeStore.currentConfig!.encryptionPassword,
+        'test-application-password',
+      );
+      await tester.enterText(field, '');
+      await tester.enterText(
+        find.byKey(const Key('sync_endpoint')),
+        'https://other.example/sync/',
+      );
+      await tester.ensureVisible(find.byKey(const Key('sync_save')));
+      await tester.tap(find.byKey(const Key('sync_save')));
+      await tester.pumpAndSettle();
+      expect(fakeStore.currentConfig!.encryptionPassword, isEmpty);
+      expect(fakeService.synchronizeCount, 0);
+    });
     testWidgets(
       'unconfigured state displays unconfigured chip, inputs, and only save button',
       (tester) async {

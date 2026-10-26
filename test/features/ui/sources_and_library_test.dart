@@ -283,7 +283,7 @@ void main() {
 
           // 媒体源列表中呈现了新导入的媒体源
           expect(find.text('本地电影'), findsOneWidget);
-          expect(find.text('媒体源已保存，扫描与识别进度可在列表查看'), findsOneWidget);
+          expect(find.text('媒体源已保存，扫描后可在影视库点击刷新进行匹配'), findsOneWidget);
           await tester.tap(
             find.descendant(
               of: find.byType(SnackBar),
@@ -292,11 +292,11 @@ void main() {
           );
           await tester.pumpAndSettle();
 
-          // 确认作品后，两个画质版本在影视库中聚合成一张卡片。
-          await tester.runAsync(() async {
-            final works = await repository.watchWorks().first;
-            await repository.applyMetadata(
-              works.single.id,
+          // 显式确认作品后，两个画质版本在影视库中聚合成一张卡片。
+          final matchedWorkId = await tester.runAsync(() async {
+            final files = await repository.metadataFiles(matchedOnly: false);
+            return repository.applyMetadataToFiles(
+              {for (final file in files) file.fileId: null},
               const TmdbWork(
                 id: 19995,
                 type: 'movie',
@@ -310,7 +310,9 @@ void main() {
           await tester.pumpAndSettle();
 
           expect(find.byType(LibraryPage), findsOneWidget);
-          final workCardFinder = find.byKey(const Key('library_work_card_1'));
+          final workCardFinder = find.byKey(
+            Key('library_work_card_$matchedWorkId'),
+          );
           expect(workCardFinder, findsOneWidget);
 
           // 确认仅聚合成一张作品卡片且包含两个版本
@@ -360,7 +362,7 @@ void main() {
           await tester.pumpAndSettle();
           expect(
             testRouter.routeInformationProvider.value.uri.path,
-            '/library/work/1',
+            '/library/work/$matchedWorkId',
           );
           expect(
             tester.state(find.byType(WorkDetailsPage)),

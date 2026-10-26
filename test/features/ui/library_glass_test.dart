@@ -118,6 +118,47 @@ class _RecordingSourceController extends SourceController {
   }
 }
 
+class _ManualRefreshRepository extends MediaLibraryRepository {
+  _ManualRefreshRepository(super.db);
+
+  @override
+  Stream<List<MediaSourceConfig>> watchSources() => Stream.value(const []);
+}
+
+void manualRefreshTests() {
+  testWidgets('进入影视库不触发匹配，点击刷新后执行', (tester) async {
+    final db = AppDatabase(
+      executor: DatabaseConnection(
+        NativeDatabase.memory(),
+        closeStreamsSynchronously: true,
+      ),
+    );
+    final metadata = _ReviewMetadataController();
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      await db.close();
+    });
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(db),
+          mediaLibraryRepositoryProvider.overrideWithValue(
+            _ManualRefreshRepository(db),
+          ),
+          metadataControllerProvider.overrideWith(() => metadata),
+        ],
+        child: MaterialApp(theme: ReelvaTheme.light, home: const LibraryPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(metadata.refreshCount, 0);
+    await tester.tap(find.byKey(const Key('library_refresh_metadata_button')));
+    await tester.pumpAndSettle();
+    expect(metadata.refreshCount, 1);
+  });
+}
+
 Future<void> _pumpLibrary(
   WidgetTester tester, {
   required List<LibraryWorksFilter> requests,
@@ -185,6 +226,7 @@ Future<void> _pumpDetails(
 }
 
 void main() {
+  manualRefreshTests();
   testWidgets('影视库可导出已有元数据，失败提示支持重试', (tester) async {
     final files = FakeNfoService()..fail = true;
     await tester.pumpWidget(
@@ -491,7 +533,7 @@ void main() {
       isTrue,
     );
     expect(find.byKey(Key('library_work_card_$matchedId')), findsNothing);
-    expect(metadata.refreshCount, 1);
+    expect(metadata.refreshCount, 0);
     await _tapVisible(
       tester,
       find.byKey(Key('library_work_card_${pending.first.id}')),

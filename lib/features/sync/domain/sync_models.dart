@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-/// 同步记录类型：播放进度 或 作品元数据修正
+/// 新记录仅发送观看进度；metadata 用于读取并跳过旧版本的历史批次。
 enum SyncRecordKind { progress, metadata }
 
 /// 同步目标全局标识（仅支持 proven TMDB external_ids）
@@ -425,6 +425,7 @@ class SyncReport {
   final int applied;
   final int pending;
   final int localOnly;
+  final int configurationApplied;
 
   const SyncReport({
     required this.uploaded,
@@ -432,6 +433,7 @@ class SyncReport {
     required this.applied,
     required this.pending,
     required this.localOnly,
+    this.configurationApplied = 0,
   });
 
   @override
@@ -443,11 +445,18 @@ class SyncReport {
           downloaded == other.downloaded &&
           applied == other.applied &&
           pending == other.pending &&
-          localOnly == other.localOnly;
+          localOnly == other.localOnly &&
+          configurationApplied == other.configurationApplied;
 
   @override
-  int get hashCode =>
-      Object.hash(uploaded, downloaded, applied, pending, localOnly);
+  int get hashCode => Object.hash(
+    uploaded,
+    downloaded,
+    applied,
+    pending,
+    localOnly,
+    configurationApplied,
+  );
 
   @override
   String toString() =>

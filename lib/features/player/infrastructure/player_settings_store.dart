@@ -5,7 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../domain/player_settings.dart';
 
-/// 复用现有本机存储，不参与观看进度同步。
+/// 播放器偏好保存在本机安全存储，同步时按平台读取已保存的配置。
 class PlayerSettingsStore {
   const PlayerSettingsStore({FlutterSecureStorage? storage})
     : _storage = storage ?? const FlutterSecureStorage();
@@ -14,9 +14,14 @@ class PlayerSettingsStore {
   static const storageKey = 'reelva_player_settings_v1';
 
   Future<PlayerSettings> read() async {
+    return await readSaved() ??
+        PlayerSettings.defaultsFor(defaultTargetPlatform);
+  }
+
+  Future<PlayerSettings?> readSaved() async {
     final defaults = PlayerSettings.defaultsFor(defaultTargetPlatform);
     final raw = await _storage.read(key: storageKey);
-    if (raw == null) return defaults;
+    if (raw == null) return null;
     final decoded = jsonDecode(raw);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('播放器设置格式损坏');

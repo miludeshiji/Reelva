@@ -68,16 +68,16 @@ void main() {
         createDeviceId: () => '11111111111111111111111111111111',
       );
 
-      // 验证未匹配数量：作品 2 包含 1 个本地进度 + 1 个本地锁定元数据，共 2
+      // 未匹配的观看进度仅保存在本机；影视元数据不再参与同步。
       final localOnly = await repo.localOnlyCount();
-      expect(localOnly, 2);
+      expect(localOnly, 1);
 
       // 捕获本地变更
       await repo.captureLocalChanges();
 
       final batch = await repo.prepareUpload();
       expect(batch, isNotNull);
-      expect(batch!.records, hasLength(2)); // 作品 1 的 progress 与 metadata
+      expect(batch!.records, hasLength(1)); // 仅作品 1 的观看进度
 
       final targetIds = batch.records.map((r) => r.target.id).toSet();
       expect(targetIds, contains('movie:603'));
@@ -575,7 +575,7 @@ void main() {
 
       // 验证写入 pending 状态
       final pendingCount1 = await repo.pendingCount();
-      expect(pendingCount1, 2);
+      expect(pendingCount1, 1);
 
       // 后来，本地扫描匹配成功创建了该作品并绑定 TMDB 999
       await db.customStatement('''
@@ -588,7 +588,7 @@ void main() {
 
       // 执行 applyPending
       final appliedPending = await repo.applyPending();
-      expect(appliedPending, 2);
+      expect(appliedPending, 1);
 
       // 验证 pending 清空
       final pendingCount2 = await repo.pendingCount();
@@ -600,8 +600,8 @@ void main() {
             'SELECT title, metadata_locked FROM works WHERE id = 10',
           )
           .getSingle();
-      expect(work.read<String>('title'), 'Remote Movie Title');
-      expect(work.read<bool>('metadata_locked'), isTrue);
+      expect(work.read<String>('title'), 'Local Placeholder');
+      expect(work.read<bool>('metadata_locked'), isFalse);
 
       final prog = await db
           .customSelect(
@@ -688,6 +688,10 @@ void main() {
         VALUES (1, 1, 'tmdb', 'movie:603');
       ''');
 
+      await db.customStatement(
+        "INSERT INTO playback_progress (target_type, target_id, work_id, position_ms) VALUES ('work', 1, 1, 15000)",
+      );
+
       final repo = SyncRepository(
         db,
         clock: clock,
@@ -765,7 +769,7 @@ void main() {
       },
     );
 
-    test('imported metadata and progress notify active consumers without upload echo', () async {
+    test('legacy metadata is ignored while progress notifies consumers without upload echo', () async {
       await db.customStatement(
         "INSERT INTO works (id, type, title) VALUES (1, 'movie', 'Before')",
       );
@@ -776,14 +780,9 @@ void main() {
           .select(db.playbackProgresses)
           .watch()
           .asBroadcastStream();
-      final worksStream = db.select(db.works).watch().asBroadcastStream();
       await progressStream.first;
-      await worksStream.first;
       final progressChanged = progressStream.firstWhere(
         (rows) => rows.any((p) => p.positionMs == 6000),
-      );
-      final workChanged = worksStream.firstWhere(
-        (rows) => rows.single.title == 'After',
       );
       final repo = SyncRepository(db);
       await repo.acceptBatch(
@@ -822,7 +821,9 @@ void main() {
         ),
       );
       expect((await progressChanged).single.positionMs, 6000);
-      expect((await workChanged).single.metadataLocked, isTrue);
+      final work = await db.select(db.works).getSingle();
+      expect(work.title, 'Before');
+      expect(work.metadataLocked, isFalse);
       await repo.captureLocalChanges();
       expect(await repo.prepareUpload(), isNull);
     });

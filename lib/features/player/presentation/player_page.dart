@@ -21,7 +21,10 @@ import '../domain/player_shortcuts.dart';
 import '../infrastructure/media_file_picker.dart';
 import 'network_address_dialog.dart';
 import 'player_controls.dart';
+import 'player_statistics_overlay.dart';
 import 'source_subtitle_dialog.dart';
+
+enum _SpeedHoldSource { screen, keyboard }
 
 /// Reelva 核心播放页面
 ///
@@ -62,6 +65,50 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   bool _hasProgressError = false;
   Orientation? _videoOrientation;
   Future<void> _orientationUpdate = Future<void>.value();
+  final _speedHolds = <_SpeedHoldSource>{};
+  double? _rateBeforeHold;
+  Timer? _rightHoldTimer;
+  bool _rightKeyPressed = false;
+  bool _statisticsVisible = false;
+  PlayerShortcutAction? _rightTapAction;
+
+  void _setSpeedHold(_SpeedHoldSource source, bool held) {
+    final engine = _session?.engine;
+    if (engine == null) return;
+    final double? rate;
+    if (held) {
+      if (!mounted ||
+          _isExiting ||
+          !_canOperateMedia ||
+          !_speedHolds.add(source)) {
+        return;
+      }
+      if (_speedHolds.length > 1) return;
+      _rateBeforeHold = engine.snapshot.rate;
+      rate = 3;
+      _showControls();
+    } else {
+      if (!_speedHolds.remove(source) || _speedHolds.isNotEmpty) return;
+      rate = _rateBeforeHold;
+      _rateBeforeHold = null;
+    }
+    if (rate == null) return;
+    unawaited(
+      engine.setRate(rate).catchError((Object error, StackTrace stack) {
+        AppLogger.instance.error('切换长按倍速失败', error: error, stackTrace: stack);
+      }),
+    );
+  }
+
+  void _cancelSpeedHold() {
+    _rightHoldTimer?.cancel();
+    _rightHoldTimer = null;
+    _rightKeyPressed = false;
+    _rightTapAction = null;
+    for (final source in _SpeedHoldSource.values) {
+      _setSpeedHold(source, false);
+    }
+  }
 
   Future<void> _setVideoOrientation(Orientation? orientation) {
     if (kIsWeb ||
@@ -191,6 +238,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     _isWindowClosing = true;
     _isExiting = true;
     _actionCounter++;
+    _cancelSpeedHold();
 
     bool isPreventClose = false;
     try {
@@ -216,9 +264,14 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   }
 
   @override
+  void onWindowBlur() => _cancelSpeedHold();
+
+  @override
   void didUpdateWidget(covariant PlayerPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.initialResource != oldWidget.initialResource) {
+      _cancelSpeedHold();
+      _statisticsVisible = false;
       _currentResource = widget.initialResource;
       _isOpeningInitialResource = widget.initialResource != null;
       if (widget.initialResource != null) {
@@ -256,6 +309,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   void dispose() {
     _isExiting = true;
     _actionCounter++;
+    _cancelSpeedHold();
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
       windowManager.removeListener(this);
       windowManager.setPreventClose(false).catchError((
@@ -307,6 +361,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive ||
         state == AppLifecycleState.hidden) {
+      _cancelSpeedHold();
       _session?.engine.pause().catchError((Object e, StackTrace st) {
         AppLogger.instance.error('进入后台自动暂停失败', error: e, stackTrace: st);
       });
@@ -316,6 +371,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   Future<void> _handleExit() async {
     if (_isExiting) return;
     _isExiting = true;
+    _cancelSpeedHold();
 
     await _setVideoOrientation(null);
 
@@ -397,7 +453,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       if (!mounted || _isExiting || actionId != _actionCounter) return;
 
       if (resource != null) {
+        _cancelSpeedHold();
         setState(() {
+          _statisticsVisible = false;
           _currentResource = resource;
         });
         await ref.read(playerSessionProvider).engine.open(resource);
@@ -421,7 +479,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       if (!mounted || _isExiting || actionId != _actionCounter) return;
 
       if (resource != null) {
+        _cancelSpeedHold();
         setState(() {
+          _statisticsVisible = false;
           _currentResource = resource;
         });
         await ref.read(playerSessionProvider).engine.open(resource);
@@ -635,6 +695,20 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   }
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event.logicalKey == LogicalKeyboardKey.arrowRight && _rightKeyPressed) {
+      if (event is KeyUpEvent) {
+        final action = _rightTapAction;
+        _rightHoldTimer?.cancel();
+        _rightHoldTimer = null;
+        _rightKeyPressed = false;
+        _rightTapAction = null;
+        _setSpeedHold(_SpeedHoldSource.keyboard, false);
+        if (action != null && _canHandleShortcuts(context)) {
+          unawaited(_runShortcut(action));
+        }
+      }
+      return KeyEventResult.handled;
+    }
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
     }
@@ -645,6 +719,21 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
 
     final binding = PlayerKeyBinding.fromEvent(event);
     final action = binding == null ? null : _input.actionFor(binding);
+    if (event is KeyDownEvent &&
+        binding == const PlayerKeyBinding(LogicalKeyboardKey.arrowRight) &&
+        _input.keyboardEnabled &&
+        _canOperateMedia) {
+      _rightKeyPressed = true;
+      _rightTapAction = action;
+      _rightHoldTimer = Timer(kLongPressTimeout, () {
+        _rightHoldTimer = null;
+        _rightTapAction = null;
+        if (mounted && _canHandleShortcuts(context)) {
+          _setSpeedHold(_SpeedHoldSource.keyboard, true);
+        }
+      });
+      return KeyEventResult.handled;
+    }
     if (action == null) return KeyEventResult.ignored;
     if (event is KeyRepeatEvent && !action.repeatable) {
       return KeyEventResult.handled;
@@ -686,6 +775,12 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       }
       if (action == PlayerShortcutAction.exitFullscreen) {
         if (_isFullscreen) await _setFullscreen(false);
+        return;
+      }
+      if (action == PlayerShortcutAction.toggleStatistics) {
+        if (_statisticsVisible || _canOperateMedia) {
+          setState(() => _statisticsVisible = !_statisticsVisible);
+        }
         return;
       }
       if (!_canOperateMedia) return;
@@ -1148,8 +1243,16 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                   },
                   behavior: HitTestBehavior.opaque,
                   onTap: _toggleSurfaceControls,
+                  onLongPressStart: (_) {
+                    _focusNode.requestFocus();
+                    _setSpeedHold(_SpeedHoldSource.screen, true);
+                  },
+                  onLongPressEnd: (_) =>
+                      _setSpeedHold(_SpeedHoldSource.screen, false),
                   child: Listener(
                     onPointerSignal: _handleScroll,
+                    onPointerCancel: (_) =>
+                        _setSpeedHold(_SpeedHoldSource.screen, false),
                     child: GestureDetector(
                       supportedDevices: const {PointerDeviceKind.mouse},
                       behavior: HitTestBehavior.opaque,
@@ -1268,6 +1371,23 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       ),
                     ),
                   ),
+                if (_statisticsVisible && !idle)
+                  Positioned.fill(
+                    child: SafeArea(
+                      minimum: const EdgeInsets.fromLTRB(12, 64, 12, 88),
+                      child: Align(
+                        alignment: Alignment.topLeft,
+                        child: PlayerStatisticsOverlay(
+                          key: const Key('player_statistics_overlay'),
+                          engine: session.engine,
+                          onClose: () {
+                            setState(() => _statisticsVisible = false);
+                            _focusNode.requestFocus();
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -1360,6 +1480,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                 focusNode: _focusNode,
                 autofocus: true,
                 onKeyEvent: _handleKeyEvent,
+                onFocusChange: (focused) {
+                  if (!focused) _cancelSpeedHold();
+                },
                 child: Scaffold(
                   backgroundColor: immersive
                       ? ReelvaDesign.playerBackground

@@ -4,6 +4,7 @@ import 'dart:collection';
 import '../../../core/logging/app_logger.dart';
 import '../../player/domain/playback_resource.dart';
 import '../../player/domain/playback_snapshot.dart';
+import '../../player/domain/playback_statistics.dart';
 import '../../player/domain/player_engine.dart';
 import '../../player/domain/player_shortcuts.dart';
 import '../infrastructure/playback_progress_repository.dart';
@@ -47,6 +48,9 @@ class ProgressPlayerEngine implements PlayerEngine {
 
   @override
   PlaybackSnapshot get snapshot => _enrich(_inner.snapshot);
+
+  @override
+  Future<PlaybackStatistics> getStatistics() => _inner.getStatistics();
 
   @override
   Stream<PlaybackSnapshot> get snapshots => _snapshots.stream;

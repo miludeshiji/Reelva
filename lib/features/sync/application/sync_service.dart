@@ -3,23 +3,29 @@ import 'dart:async';
 import '../domain/sync_models.dart';
 import '../domain/sync_transport.dart';
 import '../infrastructure/sync_repository.dart';
+import 'application_sync_service.dart';
 
 /// 跨设备同步应用层服务
 ///
 /// 遵循 M6 契约规范：
 /// - 单飞 (Single-Flight) 机制：同一服务实例在同步进行时，新的调用直接复用当前的 Future；
 /// - 严格的执行顺序：
-///   1. captureLocalChanges（捕获本地播放进度与元数据锁定变更）；
+///   1. captureLocalChanges（捕获本地观看进度变更）；
 ///   2. 准备持久化发件箱批次并上传（upload -> acknowledgeUpload 循环直至无未发送批次）；
 ///   3. 列出远程批次（listBatches），基于本地游标（readCursors）过滤增量批次；
 ///   4. 严格按序列下载（download）并事务合并（acceptBatch），更新游标；
 ///   5. 执行 applyPending，将等待本地匹配的远程记录应用至最新匹配项；
 ///   6. 统计上报 SyncReport（uploaded/downloaded 记录数、applied 来自仓库、pending 与 localOnly 统计）。
 class SyncService {
-  SyncService({required this.repository, required this.transport});
+  SyncService({
+    required this.repository,
+    required this.transport,
+    this.applicationSync,
+  });
 
   final SyncRepository repository;
   final SyncTransport transport;
+  final ApplicationSyncService? applicationSync;
 
   Future<SyncReport>? _activeSync;
 
@@ -37,6 +43,7 @@ class SyncService {
   }
 
   Future<SyncReport> _doSynchronize() async {
+    final configurationApplied = await applicationSync?.synchronize() ?? 0;
     // 1. 捕获本地最新变更至出站待同步记录
     await repository.captureLocalChanges();
 
@@ -94,6 +101,7 @@ class SyncService {
       applied: appliedCount,
       pending: pendingCount,
       localOnly: localOnlyCount,
+      configurationApplied: configurationApplied,
     );
   }
 }

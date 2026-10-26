@@ -10,6 +10,7 @@ import '../../../core/logging/app_logger.dart';
 import '../application/playback_session.dart';
 import '../domain/playback_resource.dart';
 import '../domain/playback_snapshot.dart';
+import '../domain/playback_statistics.dart';
 import '../domain/player_engine.dart';
 import '../domain/player_settings.dart';
 import '../domain/player_shortcuts.dart';
@@ -900,6 +901,70 @@ class MediaKitPlayerEngine implements PlayerEngine {
         AppLogger.instance.error('底层设置字幕轨道异常', error: e, stackTrace: st);
         _setPlaybackError(_safeErrorMessage(e));
       }
+    });
+  }
+
+  @override
+  Future<PlaybackStatistics> getStatistics() {
+    if (_disposed) return Future.value(const PlaybackStatistics());
+    return _enqueue(() async {
+      final native = _player.platform;
+      if (_disposed || native is! NativePlayer) {
+        return const PlaybackStatistics();
+      }
+      final values = <String, String>{};
+      for (final property in const [
+        'video-format',
+        'video-params/w',
+        'video-params/h',
+        'estimated-vf-fps',
+        'container-fps',
+        'video-params/pixelformat',
+        'video-params/colormatrix',
+        'video-params/primaries',
+        'video-params/gamma',
+        'hwdec-current',
+        'video-bitrate',
+        'frame-drop-count',
+        'decoder-frame-drop-count',
+        'audio-codec-name',
+        'audio-params/samplerate',
+        'audio-params/hr-channels',
+        'audio-bitrate',
+        'avsync',
+        'demuxer-cache-duration',
+        'demuxer-cache-state/fw-bytes',
+        'cache-speed',
+      ]) {
+        final value = await native.getProperty(property);
+        if (value.isNotEmpty) values[property] = value;
+      }
+      return PlaybackStatistics(
+        videoCodec: values['video-format'],
+        width: int.tryParse(values['video-params/w'] ?? ''),
+        height: int.tryParse(values['video-params/h'] ?? ''),
+        frameRate: double.tryParse(
+          values['estimated-vf-fps'] ?? values['container-fps'] ?? '',
+        ),
+        pixelFormat: values['video-params/pixelformat'],
+        colorMatrix: values['video-params/colormatrix'],
+        colorPrimaries: values['video-params/primaries'],
+        colorTransfer: values['video-params/gamma'],
+        hardwareDecoder: values['hwdec-current'],
+        videoBitrate: double.tryParse(values['video-bitrate'] ?? ''),
+        droppedFrames: int.tryParse(values['frame-drop-count'] ?? ''),
+        decoderDroppedFrames: int.tryParse(
+          values['decoder-frame-drop-count'] ?? '',
+        ),
+        audioCodec: values['audio-codec-name'],
+        audioSampleRate: int.tryParse(values['audio-params/samplerate'] ?? ''),
+        audioChannels: values['audio-params/hr-channels'],
+        audioBitrate: double.tryParse(values['audio-bitrate'] ?? ''),
+        audioVideoSync: double.tryParse(values['avsync'] ?? ''),
+        cacheSeconds: double.tryParse(values['demuxer-cache-duration'] ?? ''),
+        cacheBytes: int.tryParse(values['demuxer-cache-state/fw-bytes'] ?? ''),
+        cacheSpeed: double.tryParse(values['cache-speed'] ?? ''),
+      );
     });
   }
 

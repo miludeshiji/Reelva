@@ -89,6 +89,17 @@ void main() {
             providerEntityId: 'movie:42',
           ),
         );
+    await db
+        .into(db.playbackProgresses)
+        .insert(
+          PlaybackProgressesCompanion.insert(
+            targetType: 'work',
+            targetId: workId,
+            workId: Value(workId),
+            positionMs: const Value(15000),
+            durationMs: const Value(60000),
+          ),
+        );
     transport.failUpload = true;
     final service = SyncService(repository: repository, transport: transport);
     await expectLater(service.synchronize(), throwsA(isA<SyncException>()));
@@ -104,7 +115,10 @@ void main() {
     final report = await retry.synchronize();
     expect(report.uploaded, 1);
     expect(transport.files.keys, [frozen.fileName]);
-    expect(transport.files.values.single.records.single.value['title'], '本地修正');
+    expect(
+      transport.files.values.single.records.single.value['positionMs'],
+      15000,
+    );
     expect(await reopenedRepository.prepareUpload(), isNull);
     expect(transport.downloads, 0);
 

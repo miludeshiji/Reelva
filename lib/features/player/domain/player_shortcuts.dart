@@ -88,6 +88,11 @@ enum PlayerShortcutAction {
     ShortcutGroup.playback,
     PlayerKeyBinding(LogicalKeyboardKey.f9),
   ),
+  toggleStatistics(
+    '显示 / 隐藏播放信息',
+    ShortcutGroup.playback,
+    PlayerKeyBinding(LogicalKeyboardKey.tab),
+  ),
   showProgress(
     '显示播放进度',
     ShortcutGroup.playback,
@@ -514,16 +519,24 @@ class PlayerInputSettings {
 
   factory PlayerInputSettings.fromJson(Map<String, dynamic> json) {
     final rawBindings = json['bindings'] as Map<String, dynamic>? ?? {};
+    final bindings = {
+      for (final action in PlayerShortcutAction.values)
+        if (rawBindings.containsKey(action.name))
+          action: rawBindings[action.name] == null
+              ? null
+              : PlayerKeyBinding.fromJson(
+                  rawBindings[action.name] as Map<String, dynamic>,
+                ),
+    };
+    // 旧配置已将 Tab 用于其他功能时，保留用户绑定。
+    if (!rawBindings.containsKey(PlayerShortcutAction.toggleStatistics.name) &&
+        bindings.values.contains(
+          PlayerShortcutAction.toggleStatistics.defaultBinding,
+        )) {
+      bindings[PlayerShortcutAction.toggleStatistics] = null;
+    }
     final settings = const PlayerInputSettings().copyWith(
-      bindings: {
-        for (final action in PlayerShortcutAction.values)
-          if (rawBindings.containsKey(action.name))
-            action: rawBindings[action.name] == null
-                ? null
-                : PlayerKeyBinding.fromJson(
-                    rawBindings[action.name] as Map<String, dynamic>,
-                  ),
-      },
+      bindings: bindings,
       keyboardEnabled: json['keyboardEnabled'] as bool?,
       clickToPause: json['clickToPause'] as bool?,
       doubleClickFullscreen: json['doubleClickFullscreen'] as bool?,

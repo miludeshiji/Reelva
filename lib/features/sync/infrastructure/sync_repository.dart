@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:drift/drift.dart';
-import 'package:flutter/foundation.dart';
 
 import '../../../core/database/app_database.dart';
 import '../domain/sync_models.dart';
@@ -16,7 +15,7 @@ class _LocalTargetRef {
 /// 同步数据仓储实现
 ///
 /// 负责本地变更捕获（Local Projection）、确定性版本与冲突合并（Last-Writer-Wins）、
-/// 持久化发件箱（Outbox）与进度/元数据应用，以及游标（Cursors）与挂起未决记录（Pending）。
+/// 持久化发件箱（Outbox）与观看进度应用，以及游标（Cursors）与挂起未决记录（Pending）。
 class SyncRepository {
   SyncRepository(
     this.db, {
@@ -64,6 +63,8 @@ class SyncRepository {
     return newId;
   }
 
+  Future<String> deviceId() => db.transaction(_ensureDeviceId);
+
   Future<int> _getNextOutboxSequence() async {
     final row = await db
         .customSelect(
@@ -91,6 +92,16 @@ class SyncRepository {
   /// 仅匹配有效 TMDB 身份的实体。已导入记录若本地无变更绝不重复标记 dirty。
   Future<void> captureLocalChanges() async {
     await db.transaction(() async {
+      // 旧批次不可改写；含元数据的冻结批次整体废弃，进度会按新序号重发。
+      await db.customStatement(
+        "DELETE FROM sync_outbox WHERE sequence IN (SELECT sequence FROM sync_outbox WHERE kind = 'metadata')",
+      );
+      await db.customStatement(
+        "DELETE FROM sync_local_registers WHERE kind = 'metadata'",
+      );
+      await db.customStatement(
+        "DELETE FROM sync_pending WHERE kind = 'metadata'",
+      );
       final thisDeviceId = await _ensureDeviceId();
       final nowMs = _clock().millisecondsSinceEpoch;
 
@@ -207,108 +218,6 @@ class SyncRepository {
           if (isDifferent) {
             final storedStamp = existingReg.read<int>('version_stamp');
             // 已有记录变更：同寄存器因果单调递增，避免与未同步记录产生跨目标时钟膨胀
-            final stamp = max(rowUpdatedAt, storedStamp + 1);
-
-            await db.customStatement(
-              '''
-              UPDATE sync_local_registers
-              SET version_stamp = ?,
-                  version_device_id = ?,
-                  value_json = ?,
-                  dirty = 1,
-                  updated_at = ?
-              WHERE record_key = ?
-            ''',
-              [stamp, thisDeviceId, jsonEncode(currentVal), nowMs, recordKey],
-            );
-          }
-        }
-      }
-
-      // 2. 扫描手动锁定的元数据修正
-      final metadataRows = await db.customSelect('''
-        SELECT
-          w.id,
-          w.type,
-          w.title,
-          w.year,
-          w.overview,
-          w.poster_path,
-          w.updated_at,
-          ext.provider_entity_id AS tmdb_entity_id
-        FROM works w
-        JOIN external_ids ext ON ext.provider = 'tmdb' AND ext.work_id = w.id
-        WHERE w.metadata_locked = 1
-      ''').get();
-
-      for (final row in metadataRows) {
-        final tmdbEntityId = row.read<String>('tmdb_entity_id');
-        final workType = row.readNullable<String>('type');
-        if (workType == null || (workType != 'movie' && workType != 'series')) {
-          continue;
-        }
-
-        final expectedPrefix = '$workType:';
-        if (!tmdbEntityId.startsWith(expectedPrefix)) continue;
-        final tmdbId = int.tryParse(
-          tmdbEntityId.substring(expectedPrefix.length),
-        );
-        if (tmdbId == null || tmdbId <= 0) continue;
-
-        final target = SyncTarget(workType: workType, tmdbId: tmdbId);
-
-        final title = row.read<String>('title');
-        final year = row.readNullable<int>('year');
-        final overview = row.readNullable<String>('overview');
-        final posterPath = row.readNullable<String>('poster_path');
-
-        // 规范化元数据字典格式（显式 4 键），确保与解析器与远程格式完全对齐
-        final currentVal = <String, dynamic>{
-          'title': title.trim(),
-          'year': year,
-          'overview': overview,
-          'posterPath': posterPath,
-        };
-
-        final recordKey = 'metadata:${target.id}';
-        final existingReg = await db
-            .customSelect(
-              'SELECT version_stamp, version_device_id, value_json, dirty FROM sync_local_registers WHERE record_key = ?',
-              variables: [Variable.withString(recordKey)],
-            )
-            .getSingleOrNull();
-
-        final rowUpdatedAt = row
-            .read<DateTime>('updated_at')
-            .millisecondsSinceEpoch;
-
-        if (existingReg == null) {
-          final stamp = rowUpdatedAt;
-          await db.customStatement(
-            '''
-            INSERT INTO sync_local_registers (
-              record_key, kind, target_id, target_json, version_stamp, version_device_id, value_json, dirty, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
-          ''',
-            [
-              recordKey,
-              SyncRecordKind.metadata.name,
-              target.id,
-              jsonEncode(target.toJson()),
-              stamp,
-              thisDeviceId,
-              jsonEncode(currentVal),
-              nowMs,
-            ],
-          );
-        } else {
-          final storedVal = jsonDecode(
-            existingReg.read<String>('value_json'),
-          ) as Map<String, dynamic>;
-          final isDifferent = !mapEquals(storedVal, currentVal);
-
-          if (isDifferent) {
-            final storedStamp = existingReg.read<int>('version_stamp');
             final stamp = max(rowUpdatedAt, storedStamp + 1);
 
             await db.customStatement(
@@ -619,6 +528,8 @@ class SyncRepository {
       await captureLocalChanges();
       var applied = 0;
       for (final incoming in validated.records) {
+        // 已发布的旧批次仍可读取，影视元数据统一由媒体目录 NFO 提供。
+        if (incoming.kind != SyncRecordKind.progress) continue;
         final pending = await (db.select(
           db.syncPending,
         )..where((r) => r.recordKey.equals(incoming.key))).getSingleOrNull();
@@ -737,20 +648,8 @@ class SyncRepository {
               ],
             ),
           );
-    } else {
-      await (db.update(
-        db.works,
-      )..where((w) => w.id.equals(target.workId!))).write(
-        WorksCompanion(
-          title: Value(record.value['title'] as String),
-          year: Value(record.value['year'] as int?),
-          overview: Value(record.value['overview'] as String?),
-          posterPath: Value(record.value['posterPath'] as String?),
-          metadataLocked: const Value(true),
-          updatedAt: Value(updatedAt),
-        ),
-      );
     }
+
     await db
         .into(db.syncLocalRegisters)
         .insertOnConflictUpdate(
@@ -788,7 +687,7 @@ class SyncRepository {
     return row.read<int>('cnt');
   }
 
-  /// 本地未匹配 TMDB 的进度或锁定元数据数
+  /// 本地未匹配 TMDB 的观看进度数
   Future<int> localOnlyCount() async {
     final progressLocalOnly = await db.customSelect('''
       SELECT COUNT(*) AS cnt FROM playback_progress pp
@@ -807,16 +706,7 @@ class SyncRepository {
       )
     ''').getSingle();
 
-    final metadataLocalOnly = await db.customSelect('''
-      SELECT COUNT(*) AS cnt FROM works w
-      WHERE w.metadata_locked = 1 AND NOT EXISTS (
-        SELECT 1 FROM external_ids ext
-        WHERE ext.provider = 'tmdb' AND ext.work_id = w.id
-      )
-    ''').getSingle();
-
-    return progressLocalOnly.read<int>('cnt') +
-        metadataLocalOnly.read<int>('cnt');
+    return progressLocalOnly.read<int>('cnt');
   }
 
   /// 重置传输状态：清除游标与冻结发件箱，并将所有本地已登记记录置为 dirty，保留本地数据与设备标识，不丢弃挂起同步记录

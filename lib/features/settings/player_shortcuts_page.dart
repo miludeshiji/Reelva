@@ -45,9 +45,8 @@ class _PlayerShortcutsPageState extends ConsumerState<PlayerShortcutsPage> {
       final settings = ref.read(playerSettingsProvider).copyWith(input: _draft);
       await ref.read(playerSettingsProvider.notifier).save(settings);
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('快捷键与鼠标设置已保存，下次进入播放器时生效')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('快捷键设置已保存，下次进入播放器时生效')));
     } catch (error, stack) {
       AppLogger.instance.error('保存快捷键设置失败', error: error, stackTrace: stack);
       if (!mounted) return;
@@ -172,7 +171,7 @@ class _PlayerShortcutsPageState extends ConsumerState<PlayerShortcutsPage> {
 
   @override
   Widget build(BuildContext context) => SettingsSubpage(
-    title: '快捷键与鼠标',
+    title: '快捷键',
     child: AbsorbPointer(
       absorbing: _saving,
       child: Column(

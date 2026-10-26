@@ -8,6 +8,7 @@ import '../../sources/domain/source_models.dart';
 import '../../sources/infrastructure/remote_http_client.dart';
 import '../domain/sync_models.dart';
 import '../domain/sync_transport.dart';
+import '../domain/application_sync.dart';
 import 'sync_configuration_store.dart';
 
 /// WebDAV 同步传输实现
@@ -21,7 +22,7 @@ import 'sync_configuration_store.dart';
 /// - 412 Precondition Failed 时自动拉取远程批次比对语义内容，支持崩溃安全重试；
 /// - 严密校验批次文件名、JSON 格式及设备 ID / 序列号；
 /// - 错误安全脱敏：严禁在异常中暴露未过滤的原始异常、凭据或敏感信息。
-class WebDavSyncTransport implements SyncTransport {
+class WebDavSyncTransport implements SyncTransport, ApplicationSyncTransport {
   WebDavSyncTransport({required this.http, required this.configuration});
 
   final RemoteHttpClient http;
@@ -44,6 +45,66 @@ class WebDavSyncTransport implements SyncTransport {
   Uri get _syncDirUri => configuration.endpoint.resolve('reelva-sync-v1/');
 
   Uri _batchUri(String fileName) => _syncDirUri.resolve(fileName);
+
+  @override
+  Future<ApplicationSyncSnapshot?> downloadApplicationData() async {
+    try {
+      final response = await http.request(
+        _syncDirUri.resolve('application-v1.json'),
+        headers: _buildHeaders(),
+        responseType: ResponseType.plain,
+        allowedStatusCodes: {HttpStatus.notFound},
+      );
+      if (response.statusCode == HttpStatus.notFound) return null;
+      final etag = response.headers.value(HttpHeaders.etagHeader);
+      if (response.statusCode != HttpStatus.ok ||
+          response.data is! String ||
+          etag == null ||
+          etag.startsWith('W/')) {
+        throw const SyncException('无法读取应用配置，WebDAV 需提供有效的 ETag');
+      }
+      return ApplicationSyncSnapshot(response.data as String, etag);
+    } on SyncException {
+      rethrow;
+    } catch (_) {
+      throw const SyncException('读取加密应用配置失败，请检查 WebDAV 连接');
+    }
+  }
+
+  @override
+  Future<bool> uploadApplicationData(String body, {String? etag}) async {
+    await _ensureCollectionExists();
+    final headers = _buildHeaders(
+      contentType: 'application/json; charset=utf-8',
+    );
+    headers[etag == null
+            ? HttpHeaders.ifNoneMatchHeader
+            : HttpHeaders.ifMatchHeader] =
+        etag ?? '*';
+    try {
+      final response = await http.request(
+        _syncDirUri.resolve('application-v1.json'),
+        method: 'PUT',
+        headers: headers,
+        data: body,
+        responseType: ResponseType.plain,
+        allowedStatusCodes: {HttpStatus.preconditionFailed},
+      );
+      if (response.statusCode == HttpStatus.preconditionFailed) return false;
+      if (!const {
+        HttpStatus.ok,
+        HttpStatus.created,
+        HttpStatus.noContent,
+      }.contains(response.statusCode)) {
+        throw const SyncException('写入加密应用配置失败');
+      }
+      return true;
+    } on SyncException {
+      rethrow;
+    } catch (_) {
+      throw const SyncException('写入加密应用配置失败，请检查 WebDAV 连接');
+    }
+  }
 
   Map<String, String> _buildHeaders({
     String? contentType,

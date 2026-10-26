@@ -10,6 +10,7 @@ class SyncConfiguration {
     required Uri endpoint,
     this.username = '',
     this.password = '',
+    this.encryptionPassword = '',
   }) : endpoint = validateEndpoint(endpoint);
 
   /// WebDAV 同步服务根端点 URL（严格以 / 结尾）
@@ -20,6 +21,9 @@ class SyncConfiguration {
 
   /// HTTP Basic 认证密码
   final String password;
+
+  /// 独立于 WebDAV 登录密码；配置后启用应用设置与凭据的加密同步。
+  final String encryptionPassword;
 
   /// 校验并规整同步根端点 URL
   static Uri validateEndpoint(Uri uri) {
@@ -81,10 +85,12 @@ class SyncConfiguration {
           runtimeType == other.runtimeType &&
           endpoint == other.endpoint &&
           username == other.username &&
-          password == other.password;
+          password == other.password &&
+          encryptionPassword == other.encryptionPassword;
 
   @override
-  int get hashCode => Object.hash(endpoint, username, password);
+  int get hashCode =>
+      Object.hash(endpoint, username, password, encryptionPassword);
 }
 
 /// 同步配置安全持久化存储
@@ -118,6 +124,7 @@ class SyncConfigurationStore {
         endpoint: endpoint,
         username: username,
         password: password,
+        encryptionPassword: (decoded['encryptionPassword'] as String?) ?? '',
       );
     } on SyncException {
       rethrow;
@@ -133,6 +140,7 @@ class SyncConfigurationStore {
         'endpoint': config.endpoint.toString(),
         'username': config.username,
         'password': config.password,
+        'encryptionPassword': config.encryptionPassword,
       });
       await _storage.write(key: _storageKey, value: payload);
     } on SyncException {

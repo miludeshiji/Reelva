@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:reelva/features/player/domain/playback_resource.dart';
 import 'package:reelva/features/player/domain/playback_snapshot.dart';
+import 'package:reelva/features/player/domain/playback_statistics.dart';
 import 'package:reelva/features/player/domain/player_engine.dart';
 import 'package:reelva/features/player/domain/player_shortcuts.dart';
 import 'package:reelva/features/progress/application/progress_player_engine.dart';
@@ -105,6 +106,10 @@ class _FakeInnerEngine implements PlayerEngine {
       _snapshot.copyWith(status: PlaybackStatus.idle, position: Duration.zero),
     );
   }
+
+  @override
+  Future<PlaybackStatistics> getStatistics() async =>
+      const PlaybackStatistics();
 
   @override
   Future<void> executeShortcut(PlayerShortcutAction action) async {

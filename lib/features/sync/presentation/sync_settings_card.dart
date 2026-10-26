@@ -5,6 +5,8 @@ import '../../../shared/widgets/glass_widgets.dart';
 import '../application/sync_providers.dart';
 import '../domain/sync_models.dart';
 import '../infrastructure/sync_configuration_store.dart';
+import '../domain/application_sync.dart';
+import '../../sources/application/source_providers.dart';
 
 /// 跨设备同步设置卡片
 ///
@@ -26,9 +28,11 @@ class _SyncSettingsCardState extends ConsumerState<SyncSettingsCard> {
   final TextEditingController _endpointController = TextEditingController();
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _encryptionController = TextEditingController();
 
   bool _obscurePassword = true;
   String? _localValidationError;
+  bool _bindingSource = false;
 
   @override
   void initState() {
@@ -47,6 +51,7 @@ class _SyncSettingsCardState extends ConsumerState<SyncSettingsCard> {
     _endpointController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
+    _encryptionController.dispose();
     super.dispose();
   }
 
@@ -92,11 +97,20 @@ class _SyncSettingsCardState extends ConsumerState<SyncSettingsCard> {
         ? passwordInput
         : (isSameIdentity ? existingConfig.password : '');
 
+    final encryptionInput = _encryptionController.text;
+    if (encryptionInput.isNotEmpty && encryptionInput.length < 12) {
+      setState(() => _localValidationError = '同步加密密码至少需要 12 个字符');
+      return;
+    }
+
     try {
       final newConfig = SyncConfiguration(
         endpoint: endpoint,
         username: username,
         password: finalPassword,
+        encryptionPassword: encryptionInput.isNotEmpty
+            ? encryptionInput
+            : (isSameIdentity ? existingConfig.encryptionPassword : ''),
       );
       await ref
           .read(syncControllerProvider.notifier)
@@ -104,6 +118,7 @@ class _SyncSettingsCardState extends ConsumerState<SyncSettingsCard> {
 
       // 保存成功后清空密码输入框，避免遗留在明文内存中
       _passwordController.clear();
+      _encryptionController.clear();
 
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -136,6 +151,7 @@ class _SyncSettingsCardState extends ConsumerState<SyncSettingsCard> {
       _endpointController.clear();
       _usernameController.clear();
       _passwordController.clear();
+      _encryptionController.clear();
 
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -146,13 +162,47 @@ class _SyncSettingsCardState extends ConsumerState<SyncSettingsCard> {
     }
   }
 
+  Future<void> _bindSource(PendingSourceBinding pending) async {
+    final config = ref.read(syncConfigurationProvider).value;
+    if (config == null) return;
+    setState(() {
+      _bindingSource = true;
+      _localValidationError = null;
+    });
+    try {
+      final source = await ref
+          .read(sourceControllerProvider.notifier)
+          .addDirectory(
+            name: pending.name,
+            extensions: pending.extensions,
+            excludedDirectories: pending.excludedDirectories,
+          );
+      if (!mounted || source == null) return;
+      await ref
+          .read(applicationSyncStoreProvider)
+          .bindSource(config.endpoint.toString(), pending.key, source);
+      ref.invalidate(pendingSourceBindingsProvider);
+    } catch (e) {
+      if (mounted) {
+        setState(
+          () => _localValidationError = e is SyncException
+              ? e.message
+              : '绑定目录失败，请重试',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _bindingSource = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final configAsync = ref.watch(syncConfigurationProvider);
     final syncState = ref.watch(syncControllerProvider);
-    final isBusy = syncState.isBusy;
+    final isBusy = syncState.isBusy || _bindingSource;
+    final pendingBindings = ref.watch(pendingSourceBindingsProvider);
 
     // 仅在 AsyncData 完成更新时填充非机密字段，防止瞬态加载时清空用户正在输入的表单
     ref.listen<AsyncValue<SyncConfiguration?>>(syncConfigurationProvider, (
@@ -167,10 +217,12 @@ class _SyncSettingsCardState extends ConsumerState<SyncSettingsCard> {
           _endpointController.text = nextConfig.endpoint.toString();
           _usernameController.text = nextConfig.username;
           _passwordController.clear();
+          _encryptionController.clear();
         } else {
           _endpointController.clear();
           _usernameController.clear();
           _passwordController.clear();
+          _encryptionController.clear();
         }
       }
     });
@@ -395,6 +447,31 @@ class _SyncSettingsCardState extends ConsumerState<SyncSettingsCard> {
               ),
             ),
 
+            const SizedBox(height: 12),
+            TextField(
+              key: const Key('sync_encryption_password'),
+              controller: _encryptionController,
+              enabled: !isBusy,
+              obscureText: true,
+              decoration: InputDecoration(
+                labelText: '同步加密密码（可选）',
+                hintText:
+                    isSameIdentity &&
+                        currentConfig.encryptionPassword.isNotEmpty
+                    ? '留空保留现有加密密码'
+                    : '至少 12 个字符，各设备填写相同密码',
+                prefixIcon: const Icon(Icons.enhanced_encryption_outlined),
+                border: const OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '设置加密密码后，同步媒体源、账号凭据、TMDB 密钥、播放器设置与快捷键。'
+              '未设置时仅同步观看进度。影视资料从媒体目录的 NFO 读取。',
+              style: theme.textTheme.bodySmall,
+            ),
+
             // 错误信息展示
             if (displayedError != null) ...[
               const SizedBox(height: 12),
@@ -451,6 +528,7 @@ class _SyncSettingsCardState extends ConsumerState<SyncSettingsCard> {
                         '同步完成：上传 ${syncState.report!.uploaded} 条，'
                         '下载 ${syncState.report!.downloaded} 条，'
                         '应用 ${syncState.report!.applied} 条'
+                        '${syncState.report!.configurationApplied > 0 ? "，更新 ${syncState.report!.configurationApplied} 项配置" : ""}'
                         '${syncState.report!.pending > 0 ? "，待匹配 ${syncState.report!.pending} 条" : ""}'
                         '${syncState.report!.localOnly > 0 ? "，仅本地 ${syncState.report!.localOnly} 条" : ""}',
                         key: const Key('sync_report_text'),
@@ -465,6 +543,24 @@ class _SyncSettingsCardState extends ConsumerState<SyncSettingsCard> {
               ),
             ],
             const SizedBox(height: 16),
+
+            for (final pending
+                in pendingBindings.value ?? <PendingSourceBinding>[]) ...[
+              Text(
+                '待绑定本地媒体源：${pending.name}',
+                style: theme.textTheme.titleSmall,
+              ),
+              const SizedBox(height: 4),
+              Text(pending.rootLocator, style: theme.textTheme.bodySmall),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                key: ValueKey('sync_bind_${pending.key}'),
+                onPressed: isBusy ? null : () => _bindSource(pending),
+                icon: const Icon(Icons.folder_open_outlined),
+                label: const Text('绑定本机目录'),
+              ),
+              const SizedBox(height: 16),
+            ],
 
             // 底部操作按钮区（Wrap 确保在 320px/390px 移动屏上不溢出）
             Wrap(

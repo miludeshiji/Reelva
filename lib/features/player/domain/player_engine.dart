@@ -1,5 +1,6 @@
 import 'playback_resource.dart';
 import 'playback_snapshot.dart';
+import 'playback_statistics.dart';
 import 'player_shortcuts.dart';
 
 /// 播放器引擎领域抽象接口
@@ -43,6 +44,9 @@ abstract interface class PlayerEngine {
 
   /// 执行逐帧、章节、字幕同步及画面调整等原生播放操作。
   Future<void> executeShortcut(PlayerShortcutAction action);
+
+  /// 按需读取播放统计，不改变播放或进度状态。
+  Future<PlaybackStatistics> getStatistics();
 
   /// 停止播放并将状态重置为空闲
   Future<void> stop();

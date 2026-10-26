@@ -168,7 +168,7 @@ void main() {
       await tester.tap(save);
       await tester.pumpAndSettle();
       expect(tokenStore.token, '0123456789abcdef0123456789abcdef');
-      expect(metadataController.refreshCount, 1);
+      expect(metadataController.refreshCount, 0);
       expect(tester.widget<TextField>(input).controller!.text, isEmpty);
       await tester.tap(find.byKey(const Key('settings_subpage_back_button')));
       await tester.pumpAndSettle();

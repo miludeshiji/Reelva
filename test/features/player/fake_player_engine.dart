@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:reelva/features/player/application/playback_session.dart';
 import 'package:reelva/features/player/domain/playback_resource.dart';
 import 'package:reelva/features/player/domain/playback_snapshot.dart';
+import 'package:reelva/features/player/domain/playback_statistics.dart';
 import 'package:reelva/features/player/domain/player_engine.dart';
 import 'package:reelva/features/player/domain/player_shortcuts.dart';
 
@@ -36,6 +37,8 @@ class FakePlayerEngine implements PlayerEngine {
   Duration? lastResumeAt;
   Duration? lastSeekPosition;
   double? lastRate;
+  PlaybackStatistics statistics = const PlaybackStatistics();
+  int statisticsReadCount = 0;
   double? lastVolume;
   String? lastAudioTrackId;
   String? lastSubtitleTrackId;
@@ -129,6 +132,12 @@ class FakePlayerEngine implements PlayerEngine {
     emit(
       _snapshot.copyWith(status: PlaybackStatus.idle, position: Duration.zero),
     );
+  }
+
+  @override
+  Future<PlaybackStatistics> getStatistics() async {
+    statisticsReadCount++;
+    return statistics;
   }
 
   @override

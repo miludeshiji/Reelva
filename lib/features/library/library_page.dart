@@ -32,7 +32,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
   String _search = '';
   String? _type;
   bool _recentlyAdded = false;
-  bool _hasInitialRefreshed = false;
+  bool _refreshing = false;
 
   Future<void> _exportMetadata() async {
     final result = await ref.read(nfoControllerProvider.notifier).export();
@@ -49,29 +49,32 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
   bool get _hasFilters => _search.isNotEmpty || _type != null;
 
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _hasInitialRefreshed || widget.unmatchedOnly) return;
-      final router = GoRouter.maybeOf(context);
-      if (router != null &&
-          router.routeInformationProvider.value.uri.path != '/library') {
-        return;
-      }
-      _hasInitialRefreshed = true;
-      ref.read(metadataControllerProvider.notifier).refresh();
-    });
-  }
-
-  @override
   void dispose() {
     _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  void _triggerRefresh() {
-    ref.read(metadataControllerProvider.notifier).refresh();
+  Future<void> _triggerRefresh() async {
+    if (_refreshing) return;
+    setState(() => _refreshing = true);
+    try {
+      final sources = await ref
+          .read(mediaLibraryRepositoryProvider)
+          .watchSources()
+          .first;
+      for (final source in sources) {
+        if (!mounted) return;
+        await ref
+            .read(sourceControllerProvider.notifier)
+            .refreshSource(source.id);
+      }
+      if (mounted) {
+        await ref.read(metadataControllerProvider.notifier).refresh();
+      }
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
   }
 
   Future<void> _reviewWork(LibraryWork work) async {
@@ -168,7 +171,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
         (progress) => progress.values.any((scan) => scan.running),
       ),
     );
-    final isBuildingLibrary = isScanning || metaTaskState.running;
+    final isBuildingLibrary =
+        _refreshing || isScanning || metaTaskState.running;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -558,7 +562,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                               size: ReelvaDesign.pageHeaderButtonSize,
                               tooltip: '导出已有影视库的 NFO 与图片',
                               onPressed:
-                                  nfoTask.running ||
+                                  _refreshing ||
+                                      nfoTask.running ||
                                       metaTaskState.running ||
                                       isScanning
                                   ? null
@@ -570,7 +575,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                               top: ReelvaDesign.space12,
                               right: ReelvaDesign.space24,
                             ),
-                            child: metaTaskState.running
+                            child: _refreshing || metaTaskState.running
                                 ? const SizedBox(
                                     width: 48,
                                     height: 48,
@@ -591,7 +596,9 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                                     icon: Icons.refresh_rounded,
                                     size: ReelvaDesign.pageHeaderButtonSize,
                                     tooltip: '刷新并识别影视元数据',
-                                    onPressed: _triggerRefresh,
+                                    onPressed: _refreshing
+                                        ? null
+                                        : _triggerRefresh,
                                   ),
                           ),
                         ],
@@ -609,14 +616,22 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
   }
 }
 
-class _WorkPosterCard extends StatelessWidget {
+class _WorkPosterCard extends StatefulWidget {
   const _WorkPosterCard({super.key, required this.work, required this.onTap});
 
   final LibraryWork work;
   final VoidCallback onTap;
 
   @override
+  State<_WorkPosterCard> createState() => _WorkPosterCardState();
+}
+
+class _WorkPosterCardState extends State<_WorkPosterCard> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
+    final work = widget.work;
     final theme = Theme.of(context);
     final displayTitle = work.title.trim().isNotEmpty ? work.title : '未识别作品';
     final metadata = [
@@ -627,64 +642,77 @@ class _WorkPosterCard extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: onTap,
+        onTap: widget.onTap,
+        onHover: (hovered) => setState(() => _hovered = hovered),
+        hoverColor: Colors.transparent,
         borderRadius: BorderRadius.circular(ReelvaDesign.radius),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             AspectRatio(
               aspectRatio: 5 / 6,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Hero(
-                    tag: 'work_poster_${work.id}',
-                    child: PosterImage(
-                      posterPath: work.posterPath,
-                      title: displayTitle,
-                      borderRadius: BorderRadius.circular(ReelvaDesign.radius),
-                    ),
-                  ),
-                  if (work.metadataLocked ||
-                      work.metadataSource == 'local' ||
-                      work.versionCount > 1)
-                    Positioned(
-                      top: ReelvaDesign.space8,
-                      left: ReelvaDesign.space8,
-                      right: ReelvaDesign.space8,
-                      child: Wrap(
-                        spacing: ReelvaDesign.space4,
-                        runSpacing: ReelvaDesign.space4,
-                        children: [
-                          if (work.metadataLocked)
-                            const _PosterBadge(
-                              text: '已锁定',
-                              icon: Icons.lock_outline,
-                            )
-                          else if (work.metadataSource == 'local')
-                            const _PosterBadge(text: '待匹配'),
-                          if (work.versionCount > 1)
-                            _PosterBadge(text: '${work.versionCount} 版本'),
-                        ],
+              child: AnimatedScale(
+                scale: _hovered ? 1.03 : 1,
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : const Duration(milliseconds: 200),
+                curve: _hovered ? Curves.easeOutBack : Curves.easeOutCubic,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Hero(
+                      tag: 'work_poster_${work.id}',
+                      child: PosterImage(
+                        posterPath: work.posterPath,
+                        title: displayTitle,
+                        borderRadius: BorderRadius.circular(
+                          ReelvaDesign.radius,
+                        ),
                       ),
                     ),
-                  if (!work.available)
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(ReelvaDesign.radius),
-                      child: ColoredBox(
-                        color: Colors.black.withValues(alpha: 0.35),
-                        child: const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(ReelvaDesign.space8),
-                            child: _PosterBadge(
-                              text: '文件离线',
-                              icon: Icons.cloud_off_outlined,
+                    if (work.metadataLocked ||
+                        work.metadataSource == 'local' ||
+                        work.versionCount > 1)
+                      Positioned(
+                        top: ReelvaDesign.space8,
+                        left: ReelvaDesign.space8,
+                        right: ReelvaDesign.space8,
+                        child: Wrap(
+                          spacing: ReelvaDesign.space4,
+                          runSpacing: ReelvaDesign.space4,
+                          children: [
+                            if (work.metadataLocked)
+                              const _PosterBadge(
+                                text: '已锁定',
+                                icon: Icons.lock_outline,
+                              )
+                            else if (work.metadataSource == 'local')
+                              const _PosterBadge(text: '待匹配'),
+                            if (work.versionCount > 1)
+                              _PosterBadge(text: '${work.versionCount} 版本'),
+                          ],
+                        ),
+                      ),
+                    if (!work.available)
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(
+                          ReelvaDesign.radius,
+                        ),
+                        child: ColoredBox(
+                          color: Colors.black.withValues(alpha: 0.35),
+                          child: const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(ReelvaDesign.space8),
+                              child: _PosterBadge(
+                                text: '文件离线',
+                                icon: Icons.cloud_off_outlined,
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: ReelvaDesign.space8),

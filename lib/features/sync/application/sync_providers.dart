@@ -3,12 +3,17 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../sources/application/source_providers.dart';
+import '../../player/application/player_settings_provider.dart';
+import '../../metadata/application/metadata_providers.dart';
+import '../domain/application_sync.dart';
+import '../infrastructure/application_sync_store.dart';
 import '../domain/sync_models.dart';
 import '../domain/sync_transport.dart';
 import '../infrastructure/sync_configuration_store.dart';
 import '../infrastructure/sync_repository.dart';
 import '../infrastructure/webdav_sync_transport.dart';
 import 'sync_service.dart';
+import 'application_sync_service.dart';
 
 /// 同步仓库 Provider
 final syncRepositoryProvider = Provider<SyncRepository>((ref) {
@@ -29,6 +34,25 @@ final syncConfigurationProvider = FutureProvider<SyncConfiguration?>((
   return store.read();
 });
 
+final applicationSyncStoreProvider = Provider<ApplicationSyncStore>((ref) {
+  return ApplicationSyncStore(
+    repository: ref.watch(mediaLibraryRepositoryProvider),
+    credentials: ref.watch(remoteCredentialsStoreProvider),
+    tmdb: ref.watch(tmdbTokenStoreProvider),
+    player: ref.watch(playerSettingsStoreProvider),
+    deviceId: ref.watch(syncRepositoryProvider).deviceId,
+  );
+});
+
+final pendingSourceBindingsProvider =
+    FutureProvider<List<PendingSourceBinding>>((ref) async {
+      final config = await ref.watch(syncConfigurationProvider.future);
+      if (config == null || config.encryptionPassword.isEmpty) return [];
+      return ref
+          .watch(applicationSyncStoreProvider)
+          .pendingSources(config.endpoint.toString());
+    });
+
 /// 基于配置构建的 WebDAV 同步传输层 Provider
 final syncTransportProvider = Provider.family<SyncTransport, SyncConfiguration>(
   (ref, config) {
@@ -44,7 +68,26 @@ final syncServiceProvider = Provider.family<SyncService, SyncConfiguration>((
 ) {
   final repository = ref.watch(syncRepositoryProvider);
   final transport = ref.watch(syncTransportProvider(config));
-  return SyncService(repository: repository, transport: transport);
+  return SyncService(
+    repository: repository,
+    transport: transport,
+    applicationSync: config.encryptionPassword.isEmpty
+        ? null
+        : ApplicationSyncService(
+            store: ref.watch(applicationSyncStoreProvider),
+            transport: WebDavSyncTransport(
+              http: ref.watch(remoteHttpClientProvider),
+              configuration: config,
+            ),
+            scope: config.endpoint.toString(),
+            password: config.encryptionPassword,
+            onApplied: () async {
+              await ref.read(playerSettingsProvider.notifier).reload();
+              ref.invalidate(tmdbCredentialConfiguredProvider);
+              ref.invalidate(pendingSourceBindingsProvider);
+            },
+          ),
+  );
 });
 
 /// 同步状态实体

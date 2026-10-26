@@ -61,12 +61,9 @@ class _TmdbSettingsPageState extends ConsumerState<TmdbSettingsPage> {
       _tokenController.clear();
       ref.invalidate(tmdbCredentialConfiguredProvider);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('TMDB 凭据保存成功，正在触发元数据自动刷新...')),
-      );
-
-      // 保存成功后触发一次元数据刷新
-      ref.read(metadataControllerProvider.notifier).refresh();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('TMDB 凭据已保存，可在影视库点击刷新进行匹配')));
     } catch (e, st) {
       AppLogger.instance.error('保存 TMDB 凭据失败', error: e, stackTrace: st);
       if (!mounted) return;

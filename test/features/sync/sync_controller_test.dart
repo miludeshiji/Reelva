@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:reelva/features/sync/application/sync_providers.dart';
 import 'package:reelva/features/sync/application/sync_service.dart';
+import 'package:reelva/features/sync/application/application_sync_service.dart';
 import 'package:reelva/features/sync/domain/sync_models.dart';
 import 'package:reelva/features/sync/domain/sync_transport.dart';
 import 'package:reelva/features/sync/infrastructure/sync_configuration_store.dart';
@@ -64,6 +65,9 @@ class _FakeSyncService implements SyncService {
 
   @override
   final SyncTransport transport;
+
+  @override
+  ApplicationSyncService? get applicationSync => null;
 
   int syncCallCount = 0;
   Future<SyncReport> Function()? customSyncHandler;

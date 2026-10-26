@@ -281,6 +281,33 @@ void main() {
     );
   });
 
+  test('已写回的人工元数据可读取其他设备的 NFO 更新，未写回修改继续受保护', () async {
+    final indexed = await index('movie.mkv');
+    await repository.applyMetadataToFiles({
+      indexed.values.single: null,
+    }, const TmdbWork(id: 10, type: 'movie', title: '最初标题'));
+    expect((await service.export()).errors, isEmpty);
+    await File(p.join(directory.path, 'movie.nfo')).writeAsString(
+      '<movie><title>其他设备修正</title><uniqueid type="tmdb">10</uniqueid></movie>',
+    );
+    Future<void> readNfo() async {
+      await service.importDirectory(
+        source,
+        directory.path,
+        await adapter.listEntries(source, directory.path).toList(),
+      );
+    }
+
+    await readNfo();
+    var file = (await repository.metadataFiles()).single;
+    expect(file.metadata.title, '其他设备修正');
+    expect(file.locked, isTrue);
+    await repository.editMetadata(file.workId, title: '尚未写回的本机修改');
+    await readNfo();
+    file = (await repository.metadataFiles()).single;
+    expect(file.metadata.title, '尚未写回的本机修改');
+  });
+
   test('图片失败仍保存文字 NFO，不回滚匹配', () async {
     final indexed = await index('movie.mkv');
     await repository.applyMetadataToFiles(

@@ -113,7 +113,7 @@ class _SourceSetupPageState extends ConsumerState<SourceSetupPage> {
         context.go('/sources');
         messenger.showSnackBar(
           const SnackBar(
-            content: Text('媒体源已保存，扫描与识别进度可在列表查看'),
+            content: Text('媒体源已保存，扫描后可在影视库点击刷新进行匹配'),
             duration: Duration(seconds: 2),
             showCloseIcon: true,
           ),
