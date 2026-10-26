@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -14,6 +15,8 @@ import 'package:reelva/core/database/app_database.dart';
 import 'package:reelva/features/library/infrastructure/media_library_repository.dart';
 import 'package:reelva/features/library/presentation/manual_match_page.dart';
 import 'package:reelva/features/metadata/application/metadata_providers.dart';
+import 'package:reelva/features/metadata/application/nfo_providers.dart';
+import 'package:reelva/features/metadata/application/nfo_service.dart';
 import 'package:reelva/features/metadata/domain/tmdb_models.dart';
 import 'package:reelva/features/metadata/infrastructure/tmdb_token_store.dart';
 import 'package:reelva/features/sources/application/source_providers.dart';
@@ -22,6 +25,7 @@ import 'package:reelva/shared/widgets/glass_widgets.dart';
 
 import '../metadata/metadata_service_test.dart'
     show FakeFlutterSecureStorage, FakeTmdbClient;
+import '../metadata/nfo_test_helpers.dart';
 import '../sources/source_browser_test.dart';
 
 const _captureDir = String.fromEnvironment('REELVA_UI_CAPTURE_DIR');
@@ -29,6 +33,25 @@ const _captureDir = String.fromEnvironment('REELVA_UI_CAPTURE_DIR');
 class _IdleMetadataController extends MetadataController {
   @override
   Future<void> refresh() async {}
+}
+
+class _DelayedNfoService extends FakeNfoService {
+  final started = Completer<void>();
+  final response = Completer<NfoResult>();
+
+  @override
+  Future<NfoResult> export({
+    int? workId,
+    List<int>? fileIds,
+    bool replaceIdentity = false,
+  }) {
+    exports++;
+    if (exports == 1) {
+      started.complete();
+      return response.future;
+    }
+    return Future.value(NfoResult(saved: fileIds?.length ?? 1));
+  }
 }
 
 void main() {
@@ -96,8 +119,10 @@ void main() {
       final tokens = TmdbTokenStore(storage: FakeFlutterSecureStorage());
       await tokens.save('1234567890abcdef1234567890abcdef');
       final router = createRouter(initialLocation: '/sources');
+      final nfo = _DelayedNfoService();
       final boundary = GlobalKey();
       addTearDown(() async {
+        if (!nfo.response.isCompleted) nfo.response.complete(const NfoResult());
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump();
         router.dispose();
@@ -112,6 +137,7 @@ void main() {
             sourceAdaptersProvider.overrideWithValue({'local': adapter}),
             tmdbClientProvider.overrideWithValue(client),
             tmdbTokenStoreProvider.overrideWithValue(tokens),
+            nfoServiceProvider.overrideWithValue(nfo),
             metadataControllerProvider.overrideWith(
               _IdleMetadataController.new,
             ),
@@ -287,10 +313,37 @@ void main() {
       await _capture(tester, boundary, 'manual-match-${viewport.name}.png');
       expect(tester.takeException(), isNull);
       await tester.tap(find.byKey(const Key('manual_match_apply_button')));
-      await tester.pumpAndSettle();
+      await tester.runAsync(() => nfo.started.future);
+      for (
+        var frame = 0;
+        frame < 10 && find.byType(ManualMatchPage).evaluate().isNotEmpty;
+        frame++
+      ) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
       expect(find.byType(ManualMatchPage), findsNothing);
       expect(find.text('手动匹配完成，影视库已更新'), findsOneWidget);
+      await _revealSourceEntry(
+        tester,
+        find.byKey(const Key('source_file_checkbox_file4')),
+        delta: 100,
+        settle: false,
+      );
       expect(find.text('已匹配 · Show（2024） · S02E03'), findsOneWidget);
+      expect(find.text('正在后台保存 NFO 与图片'), findsOneWidget);
+      expect(nfo.response.isCompleted, isFalse);
+      nfo.response.complete(const NfoResult(errors: ['目录不可写']));
+      await tester.pumpAndSettle();
+      expect(find.text('部分目录元数据未完成保存'), findsOneWidget);
+      expect(find.text('目录不可写'), findsOneWidget);
+      final retry = find.text('重试导出 NFO 与图片');
+      await tester.ensureVisible(retry);
+      await tester.pumpAndSettle();
+      await tester.tap(retry);
+      await tester.pumpAndSettle();
+      expect(nfo.exports, 2);
+      expect(find.byKey(const Key('nfo_status_card')), findsNothing);
+      expect(tester.takeException(), isNull);
       final works = await tester.runAsync(() => repo.watchWorks().first);
       expect(works!.length, 1);
       final details = await tester.runAsync(
@@ -310,6 +363,7 @@ Future<void> _revealSourceEntry(
   WidgetTester tester,
   Finder finder, {
   double delta = -100,
+  bool settle = true,
 }) async {
   await tester.scrollUntilVisible(
     finder,
@@ -319,7 +373,11 @@ Future<void> _revealSourceEntry(
       matching: find.byType(Scrollable),
     ),
   );
-  await tester.pumpAndSettle();
+  if (settle) {
+    await tester.pumpAndSettle();
+  } else {
+    await tester.pump();
+  }
 }
 
 Future<void> _capture(WidgetTester tester, GlobalKey key, String name) async {

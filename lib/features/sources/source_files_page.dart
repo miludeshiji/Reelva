@@ -8,8 +8,10 @@ import '../../shared/widgets/glass_widgets.dart';
 import '../library/domain/library_work.dart';
 import '../library/presentation/manual_match_page.dart';
 import '../metadata/application/metadata_providers.dart';
+import '../metadata/application/nfo_providers.dart';
 import '../metadata/domain/matching_file.dart';
 import '../metadata/domain/tmdb_models.dart';
+import '../metadata/presentation/nfo_status_card.dart';
 import 'application/source_browser.dart';
 import 'application/source_providers.dart';
 import 'domain/source_models.dart';
@@ -289,6 +291,9 @@ class _SourceFilesPageState extends ConsumerState<SourceFilesPage> {
   @override
   Widget build(BuildContext context) {
     final busy = _selecting || _matching;
+    final nfoTask = ref.watch(nfoControllerProvider);
+    final hasNfoStatus =
+        nfoTask.running || (nfoTask.result?.errors.isNotEmpty ?? false);
     final actionStyle = OutlinedButton.styleFrom(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       minimumSize: const Size(0, 44),
@@ -366,41 +371,63 @@ class _SourceFilesPageState extends ConsumerState<SourceFilesPage> {
                           ],
                         ),
                       ),
-                    if (_error != null || _result != null || _matching)
+                    if (_error != null ||
+                        _result != null ||
+                        _matching ||
+                        hasNfoStatus)
                       ConstrainedBox(
                         constraints: BoxConstraints(
                           maxHeight: MediaQuery.sizeOf(context).height * 0.25,
                         ),
                         child: SingleChildScrollView(
-                          child: GlassCard(
-                            margin: const EdgeInsets.fromLTRB(24, 8, 24, 12),
-                            padding: const EdgeInsets.all(12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                if (_matching) ...[
-                                  LinearProgressIndicator(
-                                    value: _total > 0
-                                        ? _processed / _total
-                                        : null,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (_error != null ||
+                                  _result != null ||
+                                  _matching)
+                                GlassCard(
+                                  margin: const EdgeInsets.fromLTRB(
+                                    24,
+                                    8,
+                                    24,
+                                    12,
                                   ),
-                                  const SizedBox(height: 8),
-                                  Text('正在匹配：已处理 $_processed / $_total 个视频'),
-                                  if (_activeCount > 0)
-                                    Text('正在同时处理 $_activeCount 项'),
-                                ],
-                                if (_result != null) Text(_result!),
-                                if (_error != null)
-                                  Text(
-                                    _error!,
-                                    style: TextStyle(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .error,
-                                    ),
+                                  padding: const EdgeInsets.all(12),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      if (_matching) ...[
+                                        LinearProgressIndicator(
+                                          value: _total > 0
+                                              ? _processed / _total
+                                              : null,
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          '正在匹配：已处理 $_processed / $_total 个视频',
+                                        ),
+                                        if (_activeCount > 0)
+                                          Text('正在同时处理 $_activeCount 项'),
+                                      ],
+                                      if (_result != null) Text(_result!),
+                                      if (_error != null)
+                                        Text(
+                                          _error!,
+                                          style: TextStyle(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .error,
+                                          ),
+                                        ),
+                                    ],
                                   ),
-                              ],
-                            ),
+                                ),
+                              const NfoStatusCard(
+                                margin: EdgeInsets.fromLTRB(24, 8, 24, 12),
+                              ),
+                            ],
                           ),
                         ),
                       ),

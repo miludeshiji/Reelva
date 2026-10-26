@@ -198,6 +198,59 @@ void main() {
     );
   });
 
+  test('手动匹配在目录写回未完成时返回，后台写回失败不影响已确认结果', () async {
+    final source = await repo.upsertSource(
+      kind: 'local',
+      rootLocator: 'C:/background',
+      name: '媒体',
+    );
+    final ids = await repo.indexSourceFiles(source.id, const [
+      MediaEntry(
+        externalId: 'movie',
+        locator: 'movie',
+        name: 'Movie.2024.mkv',
+        isDirectory: false,
+      ),
+    ]);
+    const movie = TmdbWork(id: 8, type: 'movie', title: 'Movie', year: 2024);
+    client.getMovieDetailsHandler = (id) => movie;
+    final started = Completer<void>();
+    final write = Completer<void>();
+    addTearDown(() {
+      if (!write.isCompleted) write.complete();
+    });
+    List<int>? exportedIds;
+    bool? replacesIdentity;
+    service = MetadataService(
+      tmdbClient: client,
+      mediaLibraryRepository: repo,
+      tokenStore: service.tokenStore,
+      saveMetadataFiles:
+          ({int? workId, List<int>? fileIds, bool replaceIdentity = false}) {
+            exportedIds = fileIds;
+            replacesIdentity = replaceIdentity;
+            started.complete();
+            return write.future;
+          },
+    );
+    final result = service.matchFilesManually([
+      PreparedFileMatch(
+        file: MatchingFile(fileId: ids.values.single, name: 'Movie.2024.mkv'),
+      ),
+    ], movie);
+    await started.future;
+    final workId = await result.timeout(const Duration(seconds: 1));
+    expect(write.isCompleted, isFalse);
+    expect(exportedIds, [ids.values.single]);
+    expect(replacesIdentity, isTrue);
+    write.completeError(const MetadataException('模拟目录写回失败'));
+    await Future<void>.delayed(Duration.zero);
+    final details = (await repo.getWorkDetails(workId))!;
+    expect(details.work.title, 'Movie');
+    expect(details.work.metadataLocked, isTrue);
+    expect(details.versions.single.fileId, ids.values.single);
+  });
+
   test('手动匹配先完成后，迟到的全库自动识别跳过旧作品而不误报失败', () async {
     final source = await repo.upsertSource(
       kind: 'local',

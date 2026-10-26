@@ -8,6 +8,7 @@ import '../../../shared/widgets/empty_state_view.dart';
 import '../../../shared/widgets/glass_widgets.dart';
 import '../../../shared/widgets/poster_image.dart';
 import '../../metadata/application/metadata_providers.dart';
+import '../../metadata/presentation/nfo_status_card.dart';
 import '../../sources/application/source_providers.dart';
 import '../../sources/domain/source_models.dart';
 import '../domain/library_work.dart';
@@ -190,6 +191,11 @@ class _WorkDetailsPageState extends ConsumerState<WorkDetailsPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
+                              const NfoStatusCard(
+                                margin: EdgeInsets.only(
+                                  bottom: ReelvaDesign.space24,
+                                ),
+                              ),
                               _buildHeader(context, details),
                               if (details.work.overview?.trim().isNotEmpty ??
                                   false) ...[

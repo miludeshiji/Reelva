@@ -173,9 +173,19 @@ class MetadataService {
       for (final file in files) file.file.fileId: file.episode,
     }, metadata);
     if (workId == null) throw const MetadataException('没有可匹配的文件');
-    await saveMetadataFiles?.call(
-      fileIds: files.map((file) => file.file.fileId).toList(),
-      replaceIdentity: true,
+    unawaited(
+      Future<void>.sync(
+        () => saveMetadataFiles?.call(
+          fileIds: files.map((file) => file.file.fileId).toList(),
+          replaceIdentity: true,
+        ),
+      ).catchError((Object error, StackTrace stackTrace) {
+        AppLogger.instance.error(
+          '手动匹配后后台保存目录元数据失败',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }),
     );
     return workId;
   }
