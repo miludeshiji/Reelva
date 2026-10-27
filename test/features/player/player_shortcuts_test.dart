@@ -28,6 +28,7 @@ void main() {
     );
     for (final channel in [
       const MethodChannel('window_manager'),
+      const MethodChannel('reelva/player_input'),
       SystemChannels.platform,
     ]) {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -38,6 +39,7 @@ void main() {
     await engine.dispose();
     for (final channel in [
       const MethodChannel('window_manager'),
+      const MethodChannel('reelva/player_input'),
       SystemChannels.platform,
     ]) {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -247,7 +249,9 @@ void main() {
   });
 
   testWidgets('右方向键短按定位，长按临时三倍速且松开恢复原倍速', (tester) async {
-    engine.emit(engine.snapshot.copyWith(rate: 1.5));
+    engine.emit(
+      engine.snapshot.copyWith(status: PlaybackStatus.playing, rate: 1.5),
+    );
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
 
@@ -260,6 +264,11 @@ void main() {
     expect(engine.setRateCount, 0);
     expect(find.byKey(const Key('player_speed_hold_indicator')), findsNothing);
 
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump(const Duration(milliseconds: 250));
+    final seek = find.byKey(const Key('player_seek_slider'));
+    expect(seek.hitTestable(), findsNothing);
+
     await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
     await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump(kLongPressTimeout);
@@ -267,6 +276,14 @@ void main() {
     await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump(const Duration(seconds: 1));
     expect(find.text('3倍速中'), findsOneWidget);
+    expect(seek.hitTestable(), findsNothing);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: const Offset(10, 100));
+    await mouse.moveTo(
+      tester.getCenter(find.byKey(const Key('player_video_region'))),
+    );
+    await tester.pump();
+    expect(seek.hitTestable(), findsNothing);
     final speedHint = tester.getCenter(
       find.byKey(const Key('player_speed_hold_indicator')),
     );
@@ -280,8 +297,10 @@ void main() {
     expect(engine.lastRate, 1.5);
     expect(engine.setRateCount, 2);
     expect(find.byKey(const Key('player_speed_hold_indicator')), findsNothing);
+    expect(seek.hitTestable(), findsNothing);
+    await mouse.removePointer();
     await tester.pumpWidget(const SizedBox.shrink());
-  });
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   for (final cancel in [false, true]) {
     testWidgets('触屏长按临时三倍速，${cancel ? '取消' : '松开'}恢复原倍速', (tester) async {
@@ -290,13 +309,19 @@ void main() {
       );
       await tester.pumpWidget(app());
       await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pump(const Duration(milliseconds: 250));
+      final seek = find.byKey(const Key('player_seek_slider'));
+      expect(seek.hitTestable(), findsNothing);
       final gesture = await tester.startGesture(
         tester.getCenter(find.byKey(const Key('player_video_region'))),
       );
+      await gesture.moveBy(const Offset(2, 1));
       await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
       expect(engine.lastRate, 3);
       await tester.pump();
       expect(find.text('3倍速中'), findsOneWidget);
+      expect(seek.hitTestable(), findsNothing);
       if (cancel) {
         await gesture.cancel();
       } else {
@@ -304,6 +329,7 @@ void main() {
       }
       await tester.pump();
       expect(engine.lastRate, 1.25);
+      expect(seek.hitTestable(), findsNothing);
       expect(
         find.byKey(const Key('player_speed_hold_indicator')),
         findsNothing,

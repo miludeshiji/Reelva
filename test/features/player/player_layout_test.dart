@@ -85,6 +85,10 @@ void main() {
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     messenger.setMockMethodCallHandler(
+      const MethodChannel('reelva/player_input'),
+      (_) async => null,
+    );
+    messenger.setMockMethodCallHandler(
       const MethodChannel('window_manager'),
       (_) async => true,
     );
@@ -97,6 +101,10 @@ void main() {
   tearDown(() {
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(
+      const MethodChannel('reelva/player_input'),
+      null,
+    );
     messenger.setMockMethodCallHandler(
       const MethodChannel('window_manager'),
       null,
@@ -406,6 +414,32 @@ void main() {
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
 
+  testWidgets('Windows 鼠标离开播放窗口立即隐藏控件，重新移入可显示', (tester) async {
+    final engine = FakePlayerEngine(
+      initialSnapshot: const PlaybackSnapshot(status: PlaybackStatus.playing),
+    );
+    await _mountPlayer(tester, engine, size: const Size(1440, 1000));
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: const Offset(100, 100));
+    addTearDown(mouse.removePointer);
+    await mouse.moveTo(tester.getCenter(find.byKey(_videoKey)));
+    await tester.pump();
+    expect(_panelOpacity(tester), 1);
+    await mouse.moveTo(const Offset(-10, 500));
+    await tester.pump();
+    expect(_panelOpacity(tester), 0);
+    expect(find.byKey(_panelKey).hitTestable(), findsNothing);
+    await mouse.moveTo(const Offset(200, 200));
+    await tester.pump();
+    expect(_panelOpacity(tester), 1);
+    engine.emit(engine.snapshot.copyWith(status: PlaybackStatus.paused));
+    await tester.pump();
+    await mouse.moveTo(const Offset(1445, 500));
+    await tester.pump();
+    expect(_panelOpacity(tester), 0);
+    expect(engine.pauseCount, 0);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
   testWidgets(
     'Mobile controls toggle on tap and settings stay usable while open',
     (tester) async {
@@ -427,6 +461,28 @@ void main() {
       await tester.pump(kDoubleTapTimeout);
       await tester.pumpAndSettle();
       expect(_panelOpacity(tester), 1);
+      engine.emit(engine.snapshot.copyWith(status: PlaybackStatus.paused));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<PlayerControls>(find.byType(PlayerControls))
+            .snapshot
+            .status,
+        PlaybackStatus.paused,
+      );
+      await tester.tapAt(center);
+      await tester.pump(kDoubleTapTimeout);
+      await tester.pumpAndSettle();
+      expect(engine.playCount, 0);
+      expect(_panelOpacity(tester), 0);
+      await tester.tapAt(center);
+      await tester.pump(kDoubleTapTimeout);
+      await tester.pumpAndSettle();
+      expect(_panelOpacity(tester), 1);
+      expect(engine.playCount, 0);
+      expect(engine.pauseCount, 0);
+      engine.emit(engine.snapshot.copyWith(status: PlaybackStatus.playing));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('player_more_button')));
       await tester.pumpAndSettle();
       await tester.pump(const Duration(seconds: 4));

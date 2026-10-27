@@ -138,6 +138,30 @@ void main() {
 
     await tester.tap(playlist);
     await tester.pumpAndSettle();
+    final panel = find.byKey(const Key('player_playlist_panel'));
+    var anchorRect = tester.getRect(playlist);
+    var panelRect = tester.getRect(panel);
+    expect(panelRect.width, 280);
+    expect(panelRect.right, closeTo(anchorRect.right, 0.01));
+    expect(panelRect.bottom, closeTo(anchorRect.top - 8, 0.01));
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpAndSettle();
+    anchorRect = tester.getRect(playlist);
+    panelRect = tester.getRect(panel);
+    expect(panelRect.width, 280);
+    expect(panelRect.right, closeTo(anchorRect.right, 0.01));
+    expect(panelRect.bottom, closeTo(anchorRect.top - 8, 0.01));
+    expect(
+      tester
+          .widget<ListTile>(
+            find.byKey(const ValueKey('player_playlist_entry_12')),
+          )
+          .trailing,
+      isNull,
+    );
     expect(
       tester
           .widget<ListTile>(

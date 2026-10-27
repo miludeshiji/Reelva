@@ -14,6 +14,7 @@ import 'package:reelva/features/player/application/playback_session.dart';
 import 'package:reelva/features/player/domain/playback_resource.dart';
 import 'package:reelva/features/player/domain/playback_snapshot.dart';
 import 'package:reelva/features/player/infrastructure/media_file_picker.dart';
+import 'package:reelva/features/player/infrastructure/windows_player_input.dart';
 import 'package:reelva/features/player/presentation/player_page.dart';
 import 'package:reelva/features/progress/application/progress_providers.dart';
 
@@ -47,10 +48,39 @@ class ControlledMediaFilePicker extends MediaFilePicker {
   }
 }
 
+class _PendingDisposeEngine extends FakePlayerEngine {
+  _PendingDisposeEngine()
+    : super(
+        initialSnapshot: const PlaybackSnapshot(
+          status: PlaybackStatus.playing,
+          videoWidth: 1920,
+          videoHeight: 1080,
+        ),
+      );
+
+  final release = Completer<void>();
+  Future<void>? _disposal;
+  bool disposeStarted = false;
+
+  @override
+  Future<void> dispose() => _disposal ??= _disposeLater();
+
+  Future<void> _disposeLater() async {
+    disposeStarted = true;
+    await release.future;
+    await super.dispose();
+  }
+}
+
 void main() {
   const windowManagerChannel = MethodChannel('window_manager');
 
   setUp(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          WindowsPlayerInput.channel,
+          (_) async => null,
+        );
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(windowManagerChannel, (
           MethodCall methodCall,
@@ -67,12 +97,160 @@ void main() {
 
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(WindowsPlayerInput.channel, null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(windowManagerChannel, null);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, null);
   });
 
   group('PlayerPage Integration & Lifecycle Tests', () {
+    testWidgets('Windows 播放器快捷键焦点关闭 IME，文本输入和离开播放器时恢复', (tester) async {
+      final imeCalls = <bool>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(WindowsPlayerInput.channel, (call) async {
+            expect(call.method, 'setImeEnabled');
+            imeCalls.add(call.arguments as bool);
+            return null;
+          });
+      final engine = FakePlayerEngine();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            playerSessionProvider.overrideWithValue(
+              createFakeSession(engine: engine),
+            ),
+          ],
+          child: const MaterialApp(home: PlayerPage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(imeCalls.last, isFalse);
+      await tester.tap(find.byKey(const Key('idle_open_url_button')));
+      await tester.pumpAndSettle();
+      expect(imeCalls.last, isTrue);
+      await tester.enterText(
+        find.byKey(const Key('network_url_text_field')),
+        '中文视频地址',
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+      await tester.pump();
+      expect(engine.setRateCount, 0);
+      expect(find.text('中文视频地址'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('network_dialog_cancel_button')));
+      await tester.pumpAndSettle();
+      expect(imeCalls.last, isFalse);
+      engine.emit(
+        const PlaybackSnapshot(status: PlaybackStatus.paused, rate: 1),
+      );
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+      await tester.pump();
+      expect(engine.lastRate, 1.1);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      expect(imeCalls.last, isTrue);
+      await engine.dispose();
+    }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
+    testWidgets('Android 系统返回不等待原生资源释放，离开后继续完成释放', (tester) async {
+      final engine = _PendingDisposeEngine();
+      final router = createRouter(initialLocation: '/');
+      final orientationCalls = <List<dynamic>>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+            if (call.method == 'SystemChrome.setPreferredOrientations') {
+              orientationCalls.add(call.arguments as List<dynamic>);
+            }
+            return null;
+          });
+      try {
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              continueWatchingProvider.overrideWith(
+                (ref) => Stream.value(const []),
+              ),
+              recentWorksProvider.overrideWith((ref) => Stream.value(const [])),
+              playerSessionProvider.overrideWithValue(
+                createFakeSession(engine: engine),
+              ),
+            ],
+            child: MaterialApp.router(routerConfig: router),
+          ),
+        );
+        await tester.pumpAndSettle();
+        unawaited(router.push<void>('/player'));
+        await tester.pumpAndSettle();
+        expect(
+          orientationCalls.last,
+          contains('DeviceOrientation.landscapeLeft'),
+        );
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(engine.disposeStarted, isTrue);
+        expect(engine.isDisposed, isFalse);
+        expect(find.byType(PlayerPage), findsNothing);
+        expect(find.byType(HomePage), findsOneWidget);
+        expect(orientationCalls.last, isEmpty);
+        engine.release.complete();
+        await tester.pumpAndSettle();
+        expect(engine.isDisposed, isTrue);
+        expect(engine.disposeCount, 1);
+        expect(tester.takeException(), isNull);
+      } finally {
+        if (!engine.release.isCompleted) engine.release.complete();
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+        await engine.dispose();
+        router.dispose();
+      }
+    }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+    for (final pushed in [false, true]) {
+      testWidgets('Android 系统返回退出横屏播放器并回到首页，${pushed ? '压栈进入' : '直接进入'}', (
+        tester,
+      ) async {
+        final engine = FakePlayerEngine(
+          initialSnapshot: const PlaybackSnapshot(
+            status: PlaybackStatus.playing,
+            videoWidth: 1920,
+            videoHeight: 1080,
+          ),
+        );
+        final router = createRouter(initialLocation: pushed ? '/' : '/player');
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              continueWatchingProvider.overrideWith(
+                (ref) => Stream.value(const []),
+              ),
+              recentWorksProvider.overrideWith((ref) => Stream.value(const [])),
+              playerSessionProvider.overrideWithValue(
+                createFakeSession(engine: engine),
+              ),
+            ],
+            child: MaterialApp.router(routerConfig: router),
+          ),
+        );
+        await tester.pumpAndSettle();
+        if (pushed) {
+          unawaited(router.push<void>('/player'));
+          await tester.pumpAndSettle();
+        }
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(engine.isDisposed, isTrue);
+        expect(find.byType(PlayerPage), findsNothing);
+        expect(find.byType(HomePage), findsOneWidget);
+        expect(router.routeInformationProvider.value.uri.path, '/');
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+        router.dispose();
+      }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+    }
+
     testWidgets(
       'Rapid repeated open on Home maintains single player session and returns cleanly',
       (tester) async {

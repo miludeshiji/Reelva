@@ -32,6 +32,7 @@ class PlayerControls extends StatefulWidget {
     this.onPreviousEpisode,
     this.onNextEpisode,
     this.onShowPlaylist,
+    this.playlistAnchorKey,
   });
 
   final PlaybackSnapshot snapshot;
@@ -46,6 +47,7 @@ class PlayerControls extends StatefulWidget {
   final VoidCallback? onPreviousEpisode;
   final VoidCallback? onNextEpisode;
   final VoidCallback? onShowPlaylist;
+  final Key? playlistAnchorKey;
 
   static const List<double> supportedRates = [0.5, 1.0, 1.25, 1.5, 2.0, 3.0];
 
@@ -311,11 +313,14 @@ class _PlayerControlsState extends State<PlayerControls> {
       tooltip: widget.isFullscreen ? '退出全屏' : '全屏',
       onPressed: widget.onToggleFullscreen,
     );
-    final playlist = IconButton(
-      key: const Key('player_playlist_button'),
-      onPressed: widget.onShowPlaylist,
-      icon: const Icon(Icons.playlist_play_rounded),
-      tooltip: '播放列表',
+    final playlist = KeyedSubtree(
+      key: widget.playlistAnchorKey,
+      child: IconButton(
+        key: const Key('player_playlist_button'),
+        onPressed: widget.onShowPlaylist,
+        icon: const Icon(Icons.playlist_play_rounded),
+        tooltip: '播放列表',
+      ),
     );
     final more = IconButton(
       key: const Key('player_more_button'),

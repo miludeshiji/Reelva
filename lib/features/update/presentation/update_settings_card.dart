@@ -9,8 +9,15 @@ class UpdateSettingsCard extends ConsumerWidget {
   const UpdateSettingsCard({super.key});
 
   void _message(BuildContext context, String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        width: (MediaQuery.sizeOf(context).width - 48).clamp(0.0, 360.0),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        elevation: 8,
+        content: Text(message, textAlign: TextAlign.center),
+      ),
+    );
   }
 
   Future<void> _check(BuildContext context, WidgetRef ref) async {
@@ -35,17 +42,6 @@ class UpdateSettingsCard extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            OutlinedButton.icon(
-              key: const Key('check_update_button'),
-              onPressed: checking ? null : () => _check(context, ref),
-              icon: checking
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.system_update_alt_rounded),
-              label: Text(checking ? '正在检查更新…' : '检查更新'),
-            ),
             SwitchListTile.adaptive(
               key: const Key('automatic_update_switch'),
               contentPadding: const EdgeInsets.symmetric(horizontal: 4),
@@ -68,19 +64,42 @@ class UpdateSettingsCard extends ConsumerWidget {
                     }
                   : null,
             ),
-            OutlinedButton.icon(
-              key: const Key('github_repository_button'),
-              onPressed: () async {
-                try {
-                  await ref.read(openUpdateUrlProvider)(
-                    GithubReleaseClient.repositoryUrl,
-                  );
-                } catch (_) {
-                  if (context.mounted) _message(context, '无法打开 GitHub，请稍后重试');
-                }
-              },
-              icon: const Icon(Icons.open_in_new_rounded),
-              label: const Text('GitHub'),
+            const SizedBox(height: ReelvaDesign.space8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    key: const Key('github_repository_button'),
+                    onPressed: () async {
+                      try {
+                        await ref.read(openUpdateUrlProvider)(
+                          GithubReleaseClient.repositoryUrl,
+                        );
+                      } catch (_) {
+                        if (context.mounted) {
+                          _message(context, '无法打开 GitHub，请稍后重试');
+                        }
+                      }
+                    },
+                    icon: const Icon(Icons.open_in_new_rounded),
+                    label: const Text('GitHub'),
+                  ),
+                ),
+                const SizedBox(width: ReelvaDesign.space12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    key: const Key('check_update_button'),
+                    onPressed: checking ? null : () => _check(context, ref),
+                    icon: checking
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.system_update_alt_rounded),
+                    label: Text(checking ? '正在检查更新…' : '检查更新'),
+                  ),
+                ),
+              ],
             ),
           ],
         ),

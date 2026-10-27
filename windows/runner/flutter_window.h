@@ -1,8 +1,12 @@
 #ifndef RUNNER_FLUTTER_WINDOW_H_
 #define RUNNER_FLUTTER_WINDOW_H_
 
+#include <windows.h>
+#include <imm.h>
+
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
+#include <flutter/method_channel.h>
 
 #include <memory>
 
@@ -23,6 +27,12 @@ class FlutterWindow : public Win32Window {
                          LPARAM const lparam) noexcept override;
 
  private:
+  void SetImeEnabled(bool enabled);
+
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> input_channel_;
+  HIMC saved_ime_context_ = nullptr;
+  bool ime_disabled_ = false;
+
   // The project to run.
   flutter::DartProject project_;
 

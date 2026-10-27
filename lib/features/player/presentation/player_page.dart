@@ -22,6 +22,7 @@ import '../domain/player_engine.dart';
 import '../domain/player_shortcuts.dart';
 import '../infrastructure/media_file_picker.dart';
 import '../infrastructure/android_screen_brightness.dart';
+import '../infrastructure/windows_player_input.dart';
 import 'network_address_dialog.dart';
 import 'player_controls.dart';
 import 'player_statistics_overlay.dart';
@@ -34,7 +35,7 @@ enum _ScreenAdjustment { brightness, volume }
 /// Reelva 核心播放页面
 ///
 /// 独立于主导航索引外壳，拥有受控的独立播放生命周期。
-/// 退出页面时先 await engine.dispose() 彻底释放底层播放器；进入后台时自动暂停；
+/// 退出时立即捕获进度并启动引擎释放，路由返回不等待原生资源释放；进入后台时自动暂停；
 /// 全屏时复用同一直属视频渲染曲面；原生全屏操作成功后才更新 UI 状态，失败弹窗安全提示且不锁死；
 /// 返回操作受 PopScope 严格接管，全屏时优先退出全屏，非全屏退出路由（支持返回首页回退）。
 class PlayerPage extends ConsumerStatefulWidget {
@@ -52,6 +53,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   bool _isFullscreen = false;
   bool _isTogglingFullscreen = false;
   bool _isExiting = false;
+  bool _canPopAfterExit = false;
   PlaybackResource? _currentResource;
   bool _isOpeningInitialResource = false;
   int _actionCounter = 0;
@@ -60,6 +62,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   double _lastNonZeroVolume = 100;
   bool _isWindowClosing = false;
   final GlobalKey _controlsKey = GlobalKey();
+  final GlobalKey _playlistAnchorKey = GlobalKey();
   Timer? _controlsHideTimer;
   PlaybackStatus? _controlsStatus;
   bool _usesOverlayControls = false;
@@ -87,6 +90,34 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   int _gestureId = 0;
   ({_ScreenAdjustment type, double value})? _gestureFeedback;
   Timer? _gestureFeedbackTimer;
+  final _windowsInput = const WindowsPlayerInput();
+  bool? _imeEnabled;
+
+  bool get _editingText {
+    final focusContext = FocusManager.instance.primaryFocus?.context;
+    return focusContext != null &&
+        (focusContext.widget is EditableText ||
+            focusContext.findAncestorWidgetOfExactType<EditableText>() != null);
+  }
+
+  void _syncWindowsIme() {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.windows) return;
+    final enabled = _isExiting || !_focusNode.hasFocus || _editingText;
+    if (_imeEnabled == enabled) return;
+    _imeEnabled = enabled;
+    unawaited(
+      _windowsInput.setImeEnabled(enabled).catchError((
+        Object error,
+        StackTrace stack,
+      ) {
+        AppLogger.instance.error(
+          '切换播放器输入法状态失败',
+          error: error,
+          stackTrace: stack,
+        );
+      }),
+    );
+  }
 
   bool get _isMobile =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
@@ -338,85 +369,108 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     try {
       final selected = await showDialog<int>(
         context: context,
-        builder: (context) => Dialog(
-          child: SizedBox(
-            width: 440,
-            height: MediaQuery.sizeOf(context).height * 0.7,
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 8, 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          '播放列表',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
+        useSafeArea: false,
+        builder: (context) => LayoutBuilder(
+          builder: (context, constraints) {
+            final button =
+                _playlistAnchorKey.currentContext!.findRenderObject()!
+                    as RenderBox;
+            final anchor = button.localToGlobal(Offset.zero) & button.size;
+            final safePadding = MediaQuery.paddingOf(context);
+            final availableHeight = (anchor.top - safePadding.top - 16).clamp(
+              0.0,
+              constraints.maxHeight * 0.7,
+            );
+            return Dialog(
+              alignment: Alignment.bottomRight,
+              insetPadding: EdgeInsets.only(
+                left: safePadding.left + 8,
+                top: safePadding.top + 8,
+                right: constraints.maxWidth - anchor.right,
+                bottom: constraints.maxHeight - anchor.top + 8,
+              ),
+              constraints: const BoxConstraints(minWidth: 0, maxWidth: 280),
+              child: SizedBox(
+                key: const Key('player_playlist_panel'),
+                width: 280,
+                height: availableHeight,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 8, 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '播放列表',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: '关闭播放列表',
+                            onPressed: () => Navigator.pop(context),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
                       ),
-                      IconButton(
-                        tooltip: '关闭播放列表',
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close_rounded),
-                      ),
-                    ],
-                  ),
+                    ),
+                    Expanded(
+                      child: entries.isEmpty
+                          ? ListTile(
+                              leading: const Icon(Icons.graphic_eq_rounded),
+                              title: Text(resource.displayName),
+                              subtitle: const Text('正在播放'),
+                              selected: true,
+                            )
+                          : ListView.builder(
+                              key: const Key('player_playlist'),
+                              controller: scroll,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              itemExtent: rowHeight,
+                              itemCount: entries.length,
+                              itemBuilder: (context, index) {
+                                final entry = entries[index];
+                                return ListTile(
+                                  key: ValueKey(
+                                    'player_playlist_entry_${entry.fileId}',
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(
+                                      ReelvaDesign.radiusSmall,
+                                    ),
+                                  ),
+                                  selected: index == current,
+                                  enabled:
+                                      entry.available && !_switchingEpisode,
+                                  leading: Icon(
+                                    index == current
+                                        ? Icons.graphic_eq_rounded
+                                        : Icons.play_arrow_rounded,
+                                  ),
+                                  title: Text(
+                                    entry.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  subtitle: Text(
+                                    entry.available
+                                        ? entry.episodeLabel ?? '当前视频'
+                                        : '${entry.episodeLabel ?? ''} · 暂不可播放',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  onTap: () => Navigator.pop(context, index),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
                 ),
-                Expanded(
-                  child: entries.isEmpty
-                      ? ListTile(
-                          leading: const Icon(Icons.graphic_eq_rounded),
-                          title: Text(resource.displayName),
-                          subtitle: const Text('正在播放'),
-                          selected: true,
-                        )
-                      : ListView.builder(
-                          key: const Key('player_playlist'),
-                          controller: scroll,
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          itemExtent: rowHeight,
-                          itemCount: entries.length,
-                          itemBuilder: (context, index) {
-                            final entry = entries[index];
-                            return ListTile(
-                              key: ValueKey(
-                                'player_playlist_entry_${entry.fileId}',
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(
-                                  ReelvaDesign.radiusSmall,
-                                ),
-                              ),
-                              selected: index == current,
-                              enabled: entry.available && !_switchingEpisode,
-                              leading: Icon(
-                                index == current
-                                    ? Icons.graphic_eq_rounded
-                                    : Icons.play_arrow_rounded,
-                              ),
-                              title: Text(
-                                entry.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              subtitle: Text(
-                                entry.available
-                                    ? entry.episodeLabel ?? '当前视频'
-                                    : '${entry.episodeLabel ?? ''} · 暂不可播放',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              trailing: index == current
-                                  ? const Icon(Icons.check_rounded)
-                                  : null,
-                              onTap: () => Navigator.pop(context, index),
-                            );
-                          },
-                        ),
-                ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         ),
       );
       if (mounted &&
@@ -449,7 +503,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       if (_speedHolds.length > 1) return;
       _rateBeforeHold = engine.snapshot.rate;
       rate = 3;
-      _showControls();
     } else {
       if (!_speedHolds.remove(source) || _speedHolds.isNotEmpty) return;
       rate = _rateBeforeHold;
@@ -508,6 +561,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   }
 
   void _syncVideoOrientation(PlaybackSnapshot snapshot) {
+    if (_isExiting) return;
     if (snapshot.status == PlaybackStatus.idle) {
       unawaited(_setVideoOrientation(null));
     } else if (snapshot.videoWidth > 0 && snapshot.videoHeight > 0) {
@@ -540,6 +594,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   void _showControls() {
     if (!_controlsVisible) setState(() => _controlsVisible = true);
     _scheduleControlsHide();
+  }
+
+  void _hideControls() {
+    _controlsHideTimer?.cancel();
+    if (_controlsVisible) setState(() => _controlsVisible = false);
   }
 
   void _updateControlsVisibility(PlaybackSnapshot snapshot, bool overlay) {
@@ -579,6 +638,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     _input = ref.read(playerSettingsProvider).input;
     WidgetsBinding.instance.addObserver(this);
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+      FocusManager.instance.addListener(_syncWindowsIme);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _syncWindowsIme();
+      });
       windowManager.addListener(this);
       windowManager.setPreventClose(true).catchError((Object e, StackTrace st) {
         AppLogger.instance.error(
@@ -679,6 +742,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     _endScreenAdjustment(cancel: true);
     unawaited(_restoreScreenBrightness());
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+      FocusManager.instance.removeListener(_syncWindowsIme);
+      _syncWindowsIme();
       windowManager.removeListener(this);
       windowManager.setPreventClose(false).catchError((
         Object e,
@@ -741,25 +806,24 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     if (_isExiting) return;
     _isExiting = true;
     _cancelSpeedHold();
-
     _endScreenAdjustment(cancel: true);
-    await _restoreScreenBrightness();
+    _syncWindowsIme();
 
-    await _setVideoOrientation(null);
+    // 先捕获进度并启动释放；路由退出不等待原生播放器和远程租约释放。
+    final disposal = _session?.engine.dispose().catchError((
+      Object error,
+      StackTrace stack,
+    ) {
+      AppLogger.instance.error('退出页面释放播放引擎异常', error: error, stackTrace: stack);
+    });
 
     if (_isFullscreen) {
       await _setFullscreen(false);
     }
 
-    final engine = _session?.engine;
-    if (engine != null) {
-      try {
-        await engine.dispose();
-      } catch (e, st) {
-        AppLogger.instance.error('退出页面释放播放引擎异常', error: e, stackTrace: st);
-      }
-    }
-
+    if (!mounted) return;
+    setState(() => _canPopAfterExit = true);
+    await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
 
     if (context.canPop()) {
@@ -767,6 +831,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     } else {
       context.go('/');
     }
+    await _restoreScreenBrightness();
+    await _setVideoOrientation(null);
+    await disposal;
   }
 
   Future<void> _setFullscreen(bool targetFullscreen) async {
@@ -1054,17 +1121,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     if (route != null && !route.isCurrent) {
       return false;
     }
-    final focus = FocusManager.instance.primaryFocus;
-    if (focus != null) {
-      final ctx = focus.context;
-      if (ctx != null) {
-        if (ctx.widget is EditableText ||
-            ctx.findAncestorWidgetOfExactType<EditableText>() != null) {
-          return false;
-        }
-      }
-    }
-    return true;
+    return !_editingText;
   }
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
@@ -1288,10 +1345,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
 
   void _toggleSurfaceControls() {
     _focusNode.requestFocus();
-    if (_controlsVisible &&
-        _session?.engine.snapshot.status == PlaybackStatus.playing) {
-      _controlsHideTimer?.cancel();
-      setState(() => _controlsVisible = false);
+    if (_controlsVisible) {
+      _hideControls();
     } else {
       _showControls();
     }
@@ -1567,6 +1622,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               ? () => _playEpisode(index + 1)
               : null,
           onShowPlaylist: _currentResource == null ? null : _showPlaylist,
+          playlistAnchorKey: _playlistAnchorKey,
           onInteractionChanged: (interacting) {
             if (!mounted) return;
             if (interacting) {
@@ -1599,9 +1655,23 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           idle ? ReelvaDesign.radiusLarge : 0,
         ),
         child: Listener(
-          onPointerMove: (_) => _showControls(),
+          onPointerMove: (event) {
+            if (event.kind == PointerDeviceKind.mouse && _speedHolds.isEmpty) {
+              _showControls();
+            }
+          },
           child: MouseRegion(
-            onHover: (_) => _showControls(),
+            onExit: (_) {
+              if (!kIsWeb &&
+                  defaultTargetPlatform == TargetPlatform.windows &&
+                  !idle &&
+                  _controlsInteractions == 0) {
+                _hideControls();
+              }
+            },
+            onHover: (_) {
+              if (_speedHolds.isEmpty) _showControls();
+            },
             cursor: !idle && !_controlsVisible
                 ? SystemMouseCursors.none
                 : MouseCursor.defer,
@@ -1910,7 +1980,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     final displayName = resource?.displayName ?? '播放器';
 
     return PopScope(
-      canPop: false,
+      canPop: _canPopAfterExit,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         if (_isFullscreen) {

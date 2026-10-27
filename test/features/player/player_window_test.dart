@@ -17,6 +17,16 @@ void main() {
     final resized = <Map<dynamic, dynamic>>[];
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(
+      const MethodChannel('reelva/player_input'),
+      (_) async => null,
+    );
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(
+        const MethodChannel('reelva/player_input'),
+        null,
+      ),
+    );
     messenger.setMockMethodCallHandler(const MethodChannel('window_manager'), (
       call,
     ) async {

@@ -1,6 +1,7 @@
 #include "flutter_window.h"
 
 #include <optional>
+#include <flutter/standard_method_codec.h>
 
 #include "flutter/generated_plugin_registrant.h"
 
@@ -26,6 +27,25 @@ bool FlutterWindow::OnCreate() {
   }
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+  input_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(), "reelva/player_input",
+          &flutter::StandardMethodCodec::GetInstance());
+  input_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+        if (call.method_name() != "setImeEnabled") {
+          result->NotImplemented();
+          return;
+        }
+        const auto* enabled = std::get_if<bool>(call.arguments());
+        if (!enabled) {
+          result->Error("INVALID_ARGUMENT", "Expected an IME enabled flag");
+          return;
+        }
+        SetImeEnabled(*enabled);
+        result->Success();
+      });
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
@@ -40,11 +60,29 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  if (input_channel_) {
+    input_channel_->SetMethodCallHandler(nullptr);
+    input_channel_ = nullptr;
+  }
+  SetImeEnabled(true);
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
 
   Win32Window::OnDestroy();
+}
+
+void FlutterWindow::SetImeEnabled(bool enabled) {
+  if (!flutter_controller_ || !flutter_controller_->view()) return;
+  HWND view = flutter_controller_->view()->GetNativeWindow();
+  if (!enabled && !ime_disabled_) {
+    saved_ime_context_ = ImmAssociateContext(view, nullptr);
+    ime_disabled_ = true;
+  } else if (enabled && ime_disabled_) {
+    ImmAssociateContext(view, saved_ime_context_);
+    saved_ime_context_ = nullptr;
+    ime_disabled_ = false;
+  }
 }
 
 LRESULT

@@ -118,11 +118,18 @@ void main() {
     await tester.tap(find.byKey(const Key('check_update_button')));
     await tester.pumpAndSettle();
     expect(find.text('检查更新失败，请稍后重试'), findsOneWidget);
+    final errorNotice = tester.widget<SnackBar>(find.byType(SnackBar));
+    expect(errorNotice.behavior, SnackBarBehavior.floating);
+    expect(errorNotice.width, lessThan(tester.view.physicalSize.width));
     await tester.pump(const Duration(seconds: 5));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('check_update_button')));
     await tester.pumpAndSettle();
     expect(find.text('暂无新版本'), findsOneWidget);
+    expect(
+      tester.widget<SnackBar>(find.byType(SnackBar)).behavior,
+      SnackBarBehavior.floating,
+    );
     expect(attempt, 2);
   });
 
@@ -189,6 +196,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('版本 1.2.3-beta10 (Build 42)'), findsOneWidget);
     final toggle = find.byKey(const Key('automatic_update_switch'));
+    final github = tester.getRect(
+      find.byKey(const Key('github_repository_button')),
+    );
+    final check = tester.getRect(find.byKey(const Key('check_update_button')));
+    expect(tester.getRect(toggle).bottom, lessThan(github.top));
+    expect(github.center.dy, check.center.dy);
+    expect(check.left - github.right, ReelvaDesign.space12);
     await tester.ensureVisible(toggle);
     await tester.tap(toggle);
     await tester.pumpAndSettle();
