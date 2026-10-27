@@ -126,13 +126,10 @@ class _AppUpdateDialogState extends ConsumerState<AppUpdateDialog> {
     final downloading = _busy && _cancelToken != null;
 
     return Dialog(
-      backgroundColor: Colors.white,
-      insetPadding: const EdgeInsets.all(20),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 560),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,

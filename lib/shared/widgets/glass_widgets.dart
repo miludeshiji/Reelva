@@ -258,6 +258,37 @@ class GlassIconButton extends StatelessWidget {
   }
 }
 
+/// 仅右侧开关接收操作，说明区域不产生整行悬停或按下反馈。
+class GlassSwitchTile extends StatelessWidget {
+  const GlassSwitchTile({
+    super.key,
+    required this.title,
+    required this.value,
+    required this.onChanged,
+    this.subtitle,
+    this.contentPadding = EdgeInsets.zero,
+  });
+
+  final Widget title;
+  final Widget? subtitle;
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+  final EdgeInsetsGeometry contentPadding;
+
+  @override
+  Widget build(BuildContext context) => MergeSemantics(
+    child: ListTile(
+      contentPadding: contentPadding,
+      title: title,
+      subtitle: subtitle,
+      enableFeedback: false,
+      hoverColor: Colors.transparent,
+      focusColor: Colors.transparent,
+      trailing: Switch.adaptive(value: value, onChanged: onChanged),
+    ),
+  );
+}
+
 class GlassSearchField extends StatefulWidget {
   const GlassSearchField({
     super.key,
@@ -365,12 +396,14 @@ class GlassPageHeader extends StatelessWidget {
     this.subtitle,
     this.actions = const [],
     this.leading,
+    this.trailing,
   });
 
   final String title;
   final String? subtitle;
   final List<Widget> actions;
   final Widget? leading;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -413,6 +446,7 @@ class GlassPageHeader extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (trailing != null) ...[const SizedBox(width: 12), trailing!],
               ],
             ),
           );

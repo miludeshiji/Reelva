@@ -204,7 +204,9 @@ void main() {
     expect(github.center.dy, check.center.dy);
     expect(check.left - github.right, ReelvaDesign.space12);
     await tester.ensureVisible(toggle);
-    await tester.tap(toggle);
+    await tester.tap(
+      find.descendant(of: toggle, matching: find.byType(Switch)),
+    );
     await tester.pumpAndSettle();
     expect((await const UpdatePreferencesStore().read()).automatic, isTrue);
   });

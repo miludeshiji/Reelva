@@ -324,10 +324,30 @@ abstract final class ReelvaTheme {
       dialogTheme: DialogThemeData(
         backgroundColor: surface,
         surfaceTintColor: Colors.transparent,
-        shape: shape,
+        elevation: 8,
+        shadowColor: Colors.black.withValues(alpha: isDark ? 0.3 : 0.12),
+        shape: shape.copyWith(
+          side: BorderSide(
+            color: isDark ? scheme.outlineVariant : ReelvaDesign.glassBorder,
+          ),
+        ),
         insetPadding: const EdgeInsets.all(24),
+        constraints: const BoxConstraints(minWidth: 280, maxWidth: 560),
+        actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+        barrierColor: Colors.black.withValues(alpha: 0.4),
         titleTextStyle: text.titleLarge,
         contentTextStyle: text.bodyLarge,
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: surface,
+        contentTextStyle: text.bodyMedium?.copyWith(color: scheme.onSurface),
+        actionTextColor: scheme.primary,
+        closeIconColor: scheme.onSurfaceVariant,
+        showCloseIcon: true,
+        elevation: 8,
+        insetPadding: const EdgeInsets.all(16),
+        shape: shape.copyWith(side: BorderSide(color: scheme.outlineVariant)),
       ),
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: scheme.surface,

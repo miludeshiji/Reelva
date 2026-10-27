@@ -17,43 +17,36 @@ class PlayerShortcutsPage extends ConsumerStatefulWidget {
 }
 
 class _PlayerShortcutsPageState extends ConsumerState<PlayerShortcutsPage> {
-  late PlayerInputSettings _draft;
-  bool _saving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _draft = ref.read(playerSettingsProvider).input;
-  }
+  PlayerInputSettings get _settings => ref.read(playerSettingsProvider).input;
 
   Future<void> _editBinding(PlayerShortcutAction action) async {
     final binding = await showDialog<PlayerKeyBinding>(
       context: context,
-      builder: (_) => _BindingDialog(action: action, settings: _draft),
+      builder: (_) => _BindingDialog(action: action, settings: _settings),
     );
     if (!mounted || binding == null) return;
-    setState(
-      () => _draft = _draft.copyWith(
-        bindings: {..._draft.bindings, action: binding},
-      ),
+    await _save(
+      (settings) =>
+          settings.copyWith(bindings: {...settings.bindings, action: binding}),
     );
   }
 
-  Future<void> _save() async {
-    setState(() => _saving = true);
+  Future<void> _save(
+    PlayerInputSettings Function(PlayerInputSettings) update,
+  ) async {
     try {
-      final settings = ref.read(playerSettingsProvider).copyWith(input: _draft);
+      final input = update(_settings);
+      final settings = ref.read(playerSettingsProvider).copyWith(input: input);
       await ref.read(playerSettingsProvider.notifier).save(settings);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('快捷键设置已保存，下次进入播放器时生效')));
     } catch (error, stack) {
       AppLogger.instance.error('保存快捷键设置失败', error: error, stackTrace: stack);
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('保存快捷键设置失败，请重试')));
-    } finally {
-      if (mounted) setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('保存快捷键设置失败，请重试'),
+          action: SnackBarAction(label: '重试', onPressed: () => _save(update)),
+        ),
+      );
     }
   }
 
@@ -72,13 +65,13 @@ class _PlayerShortcutsPageState extends ConsumerState<PlayerShortcutsPage> {
     bool value,
     ValueChanged<bool> change, {
     String? subtitle,
-  }) => SwitchListTile.adaptive(
+  }) => GlassSwitchTile(
     key: Key(key),
     contentPadding: EdgeInsets.zero,
     title: Text(label),
     subtitle: subtitle == null ? null : Text(subtitle),
     value: value,
-    onChanged: (value) => setState(() => change(value)),
+    onChanged: change,
   );
 
   Widget _step(
@@ -101,13 +94,13 @@ class _PlayerShortcutsPageState extends ConsumerState<PlayerShortcutsPage> {
           DropdownMenuItem(value: option, child: Text('$option$unit')),
       ],
       onChanged: (value) {
-        if (value != null) setState(() => change(value));
+        if (value != null) change(value);
       },
     ),
   );
 
   Widget _bindingRow(PlayerShortcutAction action) {
-    final binding = _draft.bindingFor(action);
+    final binding = _settings.bindingFor(action);
     return Padding(
       key: Key('shortcut_row_${action.name}'),
       padding: const EdgeInsets.symmetric(vertical: 2),
@@ -152,9 +145,9 @@ class _PlayerShortcutsPageState extends ConsumerState<PlayerShortcutsPage> {
                     IconButton(
                       key: Key('shortcut_clear_${action.name}'),
                       tooltip: '清除按键',
-                      onPressed: () => setState(
-                        () => _draft = _draft.copyWith(
-                          bindings: {..._draft.bindings, action: null},
+                      onPressed: () => _save(
+                        (settings) => settings.copyWith(
+                          bindings: {...settings.bindings, action: null},
                         ),
                       ),
                       icon: const Icon(Icons.close_rounded),
@@ -170,14 +163,21 @@ class _PlayerShortcutsPageState extends ConsumerState<PlayerShortcutsPage> {
   }
 
   @override
-  Widget build(BuildContext context) => SettingsSubpage(
-    title: '快捷键',
-    child: AbsorbPointer(
-      absorbing: _saving,
+  Widget build(BuildContext context) {
+    ref.watch(playerSettingsProvider);
+    return SettingsSubpage(
+      title: '快捷键',
+      trailing: GlassIconButton(
+        key: const Key('shortcuts_reset'),
+        icon: Icons.restart_alt_rounded,
+        size: ReelvaDesign.pageHeaderButtonSize,
+        tooltip: '恢复默认值',
+        onPressed: () => _save((_) => const PlayerInputSettings()),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('保存后下次进入播放器生效，仅保存在本机。点击右侧按键或＋可设置，×可清除绑定。'),
+          const Text('修改后自动保存。点击右侧按键或＋可设置，×可清除绑定。'),
           const SizedBox(height: 16),
           _card(
             Column(
@@ -185,8 +185,10 @@ class _PlayerShortcutsPageState extends ConsumerState<PlayerShortcutsPage> {
                 _toggle(
                   'shortcuts_keyboard',
                   '启用键盘快捷键',
-                  _draft.keyboardEnabled,
-                  (value) => _draft = _draft.copyWith(keyboardEnabled: value),
+                  _settings.keyboardEnabled,
+                  (value) => _save(
+                    (settings) => settings.copyWith(keyboardEnabled: value),
+                  ),
                   subtitle: '仅在播放页生效，输入框和弹窗保留原有按键操作；Android 可使用外接键盘。',
                 ),
               ],
@@ -214,34 +216,41 @@ class _PlayerShortcutsPageState extends ConsumerState<PlayerShortcutsPage> {
                 _step(
                   'shortcut_seek_step',
                   '普通定位',
-                  _draft.seekSeconds,
+                  _settings.seekSeconds,
                   PlayerInputSettings.seekSteps,
                   ' 秒',
-                  (value) => _draft = _draft.copyWith(seekSeconds: value),
+                  (value) => _save(
+                    (settings) => settings.copyWith(seekSeconds: value),
+                  ),
                 ),
                 _step(
                   'shortcut_large_seek_step',
                   '大幅定位',
-                  _draft.largeSeekSeconds,
+                  _settings.largeSeekSeconds,
                   PlayerInputSettings.largeSeekSteps,
                   ' 秒',
-                  (value) => _draft = _draft.copyWith(largeSeekSeconds: value),
+                  (value) => _save(
+                    (settings) => settings.copyWith(largeSeekSeconds: value),
+                  ),
                 ),
                 _step(
                   'shortcut_volume_step',
                   '普通音量调节',
-                  _draft.volumeStep,
+                  _settings.volumeStep,
                   PlayerInputSettings.volumeSteps,
                   '%',
-                  (value) => _draft = _draft.copyWith(volumeStep: value),
+                  (value) =>
+                      _save((settings) => settings.copyWith(volumeStep: value)),
                 ),
                 _step(
                   'shortcut_large_volume_step',
                   '大幅音量调节',
-                  _draft.largeVolumeStep,
+                  _settings.largeVolumeStep,
                   PlayerInputSettings.volumeSteps,
                   '%',
-                  (value) => _draft = _draft.copyWith(largeVolumeStep: value),
+                  (value) => _save(
+                    (settings) => settings.copyWith(largeVolumeStep: value),
+                  ),
                 ),
               ],
             ),
@@ -254,79 +263,73 @@ class _PlayerShortcutsPageState extends ConsumerState<PlayerShortcutsPage> {
                 _toggle(
                   'shortcut_mouse_click',
                   '左键单击播放 / 暂停',
-                  _draft.clickToPause,
-                  (value) => _draft = _draft.copyWith(clickToPause: value),
+                  _settings.clickToPause,
+                  (value) => _save(
+                    (settings) => settings.copyWith(clickToPause: value),
+                  ),
                   subtitle: '关闭后单击显示或隐藏控件，触屏点按始终保留此行为。',
                 ),
                 _toggle(
                   'shortcut_mouse_double_click',
                   '左键双击切换全屏',
-                  _draft.doubleClickFullscreen,
-                  (value) =>
-                      _draft = _draft.copyWith(doubleClickFullscreen: value),
+                  _settings.doubleClickFullscreen,
+                  (value) => _save(
+                    (settings) =>
+                        settings.copyWith(doubleClickFullscreen: value),
+                  ),
                 ),
                 _toggle(
                   'shortcut_mouse_context_menu',
                   '右键打开播放菜单',
-                  _draft.rightClickMenu,
-                  (value) => _draft = _draft.copyWith(rightClickMenu: value),
+                  _settings.rightClickMenu,
+                  (value) => _save(
+                    (settings) => settings.copyWith(rightClickMenu: value),
+                  ),
                 ),
                 _toggle(
                   'shortcut_mouse_wheel_volume',
                   '纵向滚轮调节音量',
-                  _draft.wheelVolume,
-                  (value) => _draft = _draft.copyWith(wheelVolume: value),
+                  _settings.wheelVolume,
+                  (value) => _save(
+                    (settings) => settings.copyWith(wheelVolume: value),
+                  ),
                 ),
                 _step(
                   'shortcut_wheel_volume_step',
                   '滚轮音量步长',
-                  _draft.wheelVolumeStep,
+                  _settings.wheelVolumeStep,
                   PlayerInputSettings.volumeSteps,
                   '%',
-                  (value) => _draft = _draft.copyWith(wheelVolumeStep: value),
+                  (value) => _save(
+                    (settings) => settings.copyWith(wheelVolumeStep: value),
+                  ),
                 ),
                 _toggle(
                   'shortcut_mouse_wheel_seek',
                   '横向滚轮调节进度',
-                  _draft.horizontalWheelSeek,
-                  (value) =>
-                      _draft = _draft.copyWith(horizontalWheelSeek: value),
+                  _settings.horizontalWheelSeek,
+                  (value) => _save(
+                    (settings) => settings.copyWith(horizontalWheelSeek: value),
+                  ),
                   subtitle: '向左前进，向右后退。',
                 ),
                 _step(
                   'shortcut_wheel_seek_step',
                   '横向定位步长',
-                  _draft.wheelSeekSeconds,
+                  _settings.wheelSeekSeconds,
                   PlayerInputSettings.seekSteps,
                   ' 秒',
-                  (value) => _draft = _draft.copyWith(wheelSeekSeconds: value),
+                  (value) => _save(
+                    (settings) => settings.copyWith(wheelSeekSeconds: value),
+                  ),
                 ),
               ],
             ),
           ),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              FilledButton(
-                key: const Key('shortcuts_save'),
-                onPressed: _saving ? null : _save,
-                child: Text(_saving ? '正在保存' : '保存设置'),
-              ),
-              OutlinedButton(
-                key: const Key('shortcuts_reset'),
-                onPressed: _saving
-                    ? null
-                    : () =>
-                          setState(() => _draft = const PlayerInputSettings()),
-                child: const Text('恢复默认值'),
-              ),
-            ],
-          ),
         ],
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _BindingDialog extends StatefulWidget {

@@ -52,7 +52,7 @@ void main() {
     ),
   );
 
-  testWidgets('捕获按键、提示冲突、清除、保存与恢复默认值，保留其他播放器偏好', (tester) async {
+  testWidgets('捕获按键、提示冲突、清除与恢复默认值后自动保存，保留其他播放器偏好', (tester) async {
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
     final edit = find.byKey(const Key('shortcut_bind_togglePause'));
@@ -93,11 +93,6 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('5 秒').last);
     await tester.pumpAndSettle();
-    final save = find.byKey(const Key('shortcuts_save'));
-    await tester.ensureVisible(save);
-    expect(store.saved, isNull);
-    await tester.tap(save);
-    await tester.pumpAndSettle();
     expect(
       store.saved!.input.bindingFor(PlayerShortcutAction.togglePause)!.key,
       LogicalKeyboardKey.f2,
@@ -117,10 +112,6 @@ void main() {
     await tester.ensureVisible(reset);
     await tester.tap(reset);
     await tester.pumpAndSettle();
-    expect(store.saved!.input.seekSeconds, 5);
-    await tester.ensureVisible(save);
-    await tester.tap(save);
-    await tester.pumpAndSettle();
     expect(store.saved!.input.toJson(), const PlayerInputSettings().toJson());
     expect(store.saved!.maxVolume, 150);
     expect(tester.takeException(), isNull);
@@ -135,10 +126,12 @@ void main() {
     final original = container.read(playerSettingsProvider);
     await tester.pumpWidget(app(textScale: 1.5));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('shortcuts_keyboard')));
-    final save = find.byKey(const Key('shortcuts_save'));
-    await tester.ensureVisible(save);
-    await tester.tap(save);
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const Key('shortcuts_keyboard')),
+        matching: find.byType(Switch),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('保存快捷键设置失败，请重试'), findsOneWidget);
     expect(container.read(playerSettingsProvider), same(original));

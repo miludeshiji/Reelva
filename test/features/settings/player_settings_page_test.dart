@@ -54,11 +54,17 @@ void main() {
     ),
   );
 
-  testWidgets('编辑后保存，重新打开回显，恢复默认值也需保存', (tester) async {
+  testWidgets('编辑后自动保存，重新打开回显，恢复默认值立即保存', (tester) async {
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('player_setting_hwdec')));
-    expect(store.saved, isNull);
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const Key('player_setting_hwdec')),
+        matching: find.byType(Switch),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(store.saved!.hardwareDecoding, isFalse);
 
     final languages = find.byKey(const Key('player_setting_sub_languages'));
     await tester.ensureVisible(languages);
@@ -66,9 +72,6 @@ void main() {
     final font = find.byKey(const Key('player_setting_sub_font'));
     await tester.ensureVisible(font);
     await tester.enterText(font, 'My Subtitle Font');
-    final save = find.byKey(const Key('player_settings_save'));
-    await tester.ensureVisible(save);
-    await tester.tap(save);
     await tester.pumpAndSettle();
     expect(store.saved!.hardwareDecoding, isFalse);
     expect(store.saved!.subtitleLanguages, 'zh,en');
@@ -86,7 +89,7 @@ void main() {
     await tester.ensureVisible(reset);
     await tester.tap(reset);
     await tester.pumpAndSettle();
-    expect(store.saved!.subtitleLanguages, 'zh,en');
+    expect(store.saved!.subtitleLanguages, contains('zh,chi'));
     expect(
       tester.widget<TextFormField>(languages).controller!.text,
       contains('zh,chi'),
@@ -95,9 +98,6 @@ void main() {
       tester.widget<TextFormField>(font).controller!.text,
       isNot('My Subtitle Font'),
     );
-    await tester.ensureVisible(save);
-    await tester.tap(save);
-    await tester.pumpAndSettle();
     expect(store.saved!.hardwareDecoding, isTrue);
     expect(store.saved!.subtitleLanguages, contains('zh,chi'));
     expect(tester.takeException(), isNull);
@@ -108,17 +108,19 @@ void main() {
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
     final original = container.read(playerSettingsProvider);
-    await tester.tap(find.byKey(const Key('player_setting_hwdec')));
-    final save = find.byKey(const Key('player_settings_save'));
-    await tester.ensureVisible(save);
-    await tester.tap(save);
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const Key('player_setting_hwdec')),
+        matching: find.byType(Switch),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('保存播放器设置失败，请重试'), findsOneWidget);
     expect(container.read(playerSettingsProvider), same(original));
     expect(store.saved, isNull);
   });
 
-  testWidgets('窄屏放大字体仍可滚动并保存，非法语言格式不会写入', (tester) async {
+  testWidgets('窄屏放大字体仍可滚动，非法语言格式不会自动保存', (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(320, 568);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -128,9 +130,6 @@ void main() {
     final languages = find.byKey(const Key('player_setting_sub_languages'));
     await tester.ensureVisible(languages);
     await tester.enterText(languages, '中文，英文');
-    final save = find.byKey(const Key('player_settings_save'));
-    await tester.ensureVisible(save);
-    await tester.tap(save);
     await tester.pumpAndSettle();
     expect(store.saved, isNull);
     expect(find.text('请使用英文逗号分隔语言代码，例如 zh,en'), findsOneWidget);

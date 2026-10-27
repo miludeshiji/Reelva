@@ -17,17 +17,16 @@ class PlayerSettingsPage extends ConsumerStatefulWidget {
 
 class _PlayerSettingsPageState extends ConsumerState<PlayerSettingsPage> {
   final _formKey = GlobalKey<FormState>();
-  late PlayerSettings _draft;
   late final TextEditingController _languages;
   late final TextEditingController _font;
-  bool _saving = false;
+
+  PlayerSettings get _settings => ref.read(playerSettingsProvider);
 
   @override
   void initState() {
     super.initState();
-    _draft = ref.read(playerSettingsProvider);
-    _languages = TextEditingController(text: _draft.subtitleLanguages);
-    _font = TextEditingController(text: _draft.subtitleFont);
+    _languages = TextEditingController(text: _settings.subtitleLanguages);
+    _font = TextEditingController(text: _settings.subtitleFont);
   }
 
   @override
@@ -42,37 +41,28 @@ class _PlayerSettingsPageState extends ConsumerState<PlayerSettingsPage> {
       .map((value) => value.trim().toLowerCase())
       .join(',');
 
-  Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
-    final settings = _draft.copyWith(
-      subtitleLanguages: _normalizedLanguages,
-      subtitleFont: _font.text.trim(),
-    );
-    setState(() => _saving = true);
+  Future<void> _save(PlayerSettings Function(PlayerSettings) update) async {
     try {
+      final settings = update(_settings);
       await ref.read(playerSettingsProvider.notifier).save(settings);
-      if (!mounted) return;
-      _draft = settings;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('播放器设置已保存，下次进入播放器时生效')));
     } catch (e, st) {
       AppLogger.instance.error('保存播放器设置失败', error: e, stackTrace: st);
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('保存播放器设置失败，请重试')));
-    } finally {
-      if (mounted) setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('保存播放器设置失败，请重试'),
+          action: SnackBarAction(label: '重试', onPressed: () => _save(update)),
+        ),
+      );
     }
   }
 
   void _restoreDefaults() {
     _formKey.currentState!.reset();
-    setState(() {
-      _draft = PlayerSettings.defaultsFor(defaultTargetPlatform)
-          .copyWith(input: _draft.input);
-      _languages.text = _draft.subtitleLanguages;
-      _font.text = _draft.subtitleFont;
-    });
+    final settings = PlayerSettings.defaultsFor(defaultTargetPlatform);
+    _languages.text = settings.subtitleLanguages;
+    _font.text = settings.subtitleFont;
+    _save((current) => settings.copyWith(input: current.input));
   }
 
   Widget _section(String title, List<Widget> children) => Padding(
@@ -100,12 +90,12 @@ class _PlayerSettingsPageState extends ConsumerState<PlayerSettingsPage> {
     required String title,
     required bool value,
     required ValueChanged<bool> onChanged,
-  }) => SwitchListTile.adaptive(
+  }) => GlassSwitchTile(
     key: Key(key),
     contentPadding: EdgeInsets.zero,
     title: Text(title),
     value: value,
-    onChanged: (next) => setState(() => onChanged(next)),
+    onChanged: onChanged,
   );
 
   Widget _choice<T>({
@@ -130,7 +120,7 @@ class _PlayerSettingsPageState extends ConsumerState<PlayerSettingsPage> {
       onChanged: !enabled
           ? null
           : (next) {
-              if (next != null) setState(() => onChanged(next));
+              if (next != null) onChanged(next);
             },
     ),
   );
@@ -154,7 +144,7 @@ class _PlayerSettingsPageState extends ConsumerState<PlayerSettingsPage> {
         max: max.toDouble(),
         divisions: max - min,
         label: '$value',
-        onChanged: (next) => setState(() => onChanged(next.round())),
+        onChanged: (next) => onChanged(next.round()),
       ),
     ],
   );
@@ -166,42 +156,52 @@ class _PlayerSettingsPageState extends ConsumerState<PlayerSettingsPage> {
   };
 
   @override
-  Widget build(BuildContext context) => SettingsSubpage(
-    title: '播放器',
-    child: Form(
-      key: _formKey,
-      child: AbsorbPointer(
-        absorbing: _saving,
+  Widget build(BuildContext context) {
+    ref.watch(playerSettingsProvider);
+    return SettingsSubpage(
+      title: '播放器',
+      trailing: GlassIconButton(
+        key: const Key('player_settings_reset'),
+        icon: Icons.restart_alt_rounded,
+        size: ReelvaDesign.pageHeaderButtonSize,
+        tooltip: '恢复默认值',
+        onPressed: _restoreDefaults,
+      ),
+      child: Form(
+        key: _formKey,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('设置仅保存在本机，保存后下次进入播放器时生效。'),
+            const Text('修改后自动保存。'),
             const SizedBox(height: 16),
             _section('视频', [
               _toggle(
                 key: 'player_setting_hwdec',
                 title: '硬件解码',
-                value: _draft.hardwareDecoding,
-                onChanged: (value) =>
-                    _draft = _draft.copyWith(hardwareDecoding: value),
+                value: _settings.hardwareDecoding,
+                onChanged: (value) => _save(
+                  (settings) => settings.copyWith(hardwareDecoding: value),
+                ),
               ),
               _toggle(
                 key: 'player_setting_high_quality',
                 title: '高质量缩放',
-                value: _draft.highQualityRendering,
-                onChanged: (value) =>
-                    _draft = _draft.copyWith(highQualityRendering: value),
+                value: _settings.highQualityRendering,
+                onChanged: (value) => _save(
+                  (settings) => settings.copyWith(highQualityRendering: value),
+                ),
               ),
               _toggle(
                 key: 'player_setting_deband',
                 title: '去色带',
-                value: _draft.deband,
-                onChanged: (value) => _draft = _draft.copyWith(deband: value),
+                value: _settings.deband,
+                onChanged: (value) =>
+                    _save((settings) => settings.copyWith(deband: value)),
               ),
               _choice(
                 key: 'player_setting_dither',
                 label: '抖动目标色深',
-                value: _draft.ditherDepth,
+                value: _settings.ditherDepth,
                 options: const {
                   DitherDepth.auto: '自动',
                   DitherDepth.eight: '8 位',
@@ -209,62 +209,65 @@ class _PlayerSettingsPageState extends ConsumerState<PlayerSettingsPage> {
                   DitherDepth.disabled: '关闭抖动',
                 },
                 onChanged: (value) =>
-                    _draft = _draft.copyWith(ditherDepth: value),
+                    _save((settings) => settings.copyWith(ditherDepth: value)),
               ),
             ]),
             _section('缓存', [
               _toggle(
                 key: 'player_setting_cache',
                 title: '预读缓存',
-                value: _draft.cacheEnabled,
+                value: _settings.cacheEnabled,
                 onChanged: (value) =>
-                    _draft = _draft.copyWith(cacheEnabled: value),
+                    _save((settings) => settings.copyWith(cacheEnabled: value)),
               ),
               _choice(
                 key: 'player_setting_cache_size',
                 label: '前向缓存上限',
-                value: _draft.cacheSizeMb,
-                enabled: _draft.cacheEnabled,
+                value: _settings.cacheSizeMb,
+                enabled: _settings.cacheEnabled,
                 options: {
                   for (final size in PlayerSettings.cacheSizesMb)
                     size: '$size MiB',
                 },
                 onChanged: (value) =>
-                    _draft = _draft.copyWith(cacheSizeMb: value),
+                    _save((settings) => settings.copyWith(cacheSizeMb: value)),
               ),
             ]),
             _section('音频', [
               _toggle(
                 key: 'player_setting_pitch',
                 title: '倍速音调修正',
-                value: _draft.pitchCorrection,
-                onChanged: (value) =>
-                    _draft = _draft.copyWith(pitchCorrection: value),
+                value: _settings.pitchCorrection,
+                onChanged: (value) => _save(
+                  (settings) => settings.copyWith(pitchCorrection: value),
+                ),
               ),
               _choice(
                 key: 'player_setting_max_volume',
                 label: '最大音量',
-                value: _draft.maxVolume,
+                value: _settings.maxVolume,
                 options: {
                   for (final volume in PlayerSettings.volumeLimits)
                     volume: '$volume%',
                 },
                 onChanged: (value) =>
-                    _draft = _draft.copyWith(maxVolume: value),
+                    _save((settings) => settings.copyWith(maxVolume: value)),
               ),
               _choice(
                 key: 'player_setting_auto_audio',
                 label: '自动加载同目录音频',
-                value: _draft.audioAutoLoad,
+                value: _settings.audioAutoLoad,
                 options: _autoLoadOptions,
-                onChanged: (value) =>
-                    _draft = _draft.copyWith(audioAutoLoad: value),
+                onChanged: (value) => _save(
+                  (settings) => settings.copyWith(audioAutoLoad: value),
+                ),
               ),
             ]),
             _section('字幕', [
               TextFormField(
                 key: const Key('player_setting_sub_languages'),
                 controller: _languages,
+                autovalidateMode: AutovalidateMode.onUserInteraction,
                 decoration: const InputDecoration(
                   labelText: '优先字幕语言',
                   errorMaxLines: 3,
@@ -273,106 +276,105 @@ class _PlayerSettingsPageState extends ConsumerState<PlayerSettingsPage> {
                     PlayerSettings.validSubtitleLanguages(_normalizedLanguages)
                     ? null
                     : '请使用英文逗号分隔语言代码，例如 zh,en',
+                onChanged: (_) {
+                  final languages = _normalizedLanguages;
+                  if (PlayerSettings.validSubtitleLanguages(languages)) {
+                    _save(
+                      (settings) =>
+                          settings.copyWith(subtitleLanguages: languages),
+                    );
+                  }
+                },
               ),
               _choice(
                 key: 'player_setting_auto_subtitles',
                 label: '自动加载同目录字幕',
-                value: _draft.subtitleAutoLoad,
+                value: _settings.subtitleAutoLoad,
                 options: _autoLoadOptions,
-                onChanged: (value) =>
-                    _draft = _draft.copyWith(subtitleAutoLoad: value),
+                onChanged: (value) => _save(
+                  (settings) => settings.copyWith(subtitleAutoLoad: value),
+                ),
               ),
               const SizedBox(height: 16),
               TextFormField(
                 key: const Key('player_setting_sub_font'),
                 controller: _font,
+                autovalidateMode: AutovalidateMode.onUserInteraction,
                 maxLength: 128,
                 decoration: const InputDecoration(labelText: '字幕字体'),
                 validator: (value) =>
                     value == null || value.trim().isEmpty ? '请输入字幕字体名称' : null,
+                onChanged: (value) {
+                  final font = value.trim();
+                  if (font.isNotEmpty) {
+                    _save((settings) => settings.copyWith(subtitleFont: font));
+                  }
+                },
               ),
               _slider(
                 key: 'player_setting_sub_size',
                 title: '字幕字号',
-                value: _draft.subtitleFontSize,
+                value: _settings.subtitleFontSize,
                 min: 16,
                 max: 80,
-                onChanged: (value) =>
-                    _draft = _draft.copyWith(subtitleFontSize: value),
+                onChanged: (value) => _save(
+                  (settings) => settings.copyWith(subtitleFontSize: value),
+                ),
               ),
               _slider(
                 key: 'player_setting_sub_border',
                 title: '黑色描边粗细',
-                value: _draft.subtitleBorderSize,
+                value: _settings.subtitleBorderSize,
                 min: 0,
                 max: 10,
-                onChanged: (value) =>
-                    _draft = _draft.copyWith(subtitleBorderSize: value),
+                onChanged: (value) => _save(
+                  (settings) => settings.copyWith(subtitleBorderSize: value),
+                ),
               ),
               _slider(
                 key: 'player_setting_sub_blur',
                 title: '描边柔化',
-                value: _draft.subtitleBlur,
+                value: _settings.subtitleBlur,
                 min: 0,
                 max: 3,
                 onChanged: (value) =>
-                    _draft = _draft.copyWith(subtitleBlur: value),
+                    _save((settings) => settings.copyWith(subtitleBlur: value)),
               ),
               _slider(
                 key: 'player_setting_sub_margin',
                 title: '字幕垂直边距',
-                value: _draft.subtitleMarginY,
+                value: _settings.subtitleMarginY,
                 min: 0,
                 max: 100,
-                onChanged: (value) =>
-                    _draft = _draft.copyWith(subtitleMarginY: value),
+                onChanged: (value) => _save(
+                  (settings) => settings.copyWith(subtitleMarginY: value),
+                ),
               ),
               _choice(
                 key: 'player_setting_ass_override',
                 label: 'ASS 字幕样式',
-                value: _draft.assStyleOverride,
+                value: _settings.assStyleOverride,
                 options: const {
                   AssStyleOverride.preserve: '遵循字幕原始样式',
                   AssStyleOverride.compatible: '兼容原始样式与边距调整',
                   AssStyleOverride.force: '使用自定义字幕样式',
                 },
-                onChanged: (value) =>
-                    _draft = _draft.copyWith(assStyleOverride: value),
+                onChanged: (value) => _save(
+                  (settings) => settings.copyWith(assStyleOverride: value),
+                ),
               ),
               _toggle(
                 key: 'player_setting_blend_subtitles',
                 title: '字幕随视频处理',
-                value: _draft.blendSubtitles,
-                onChanged: (value) =>
-                    _draft = _draft.copyWith(blendSubtitles: value),
+                value: _settings.blendSubtitles,
+                onChanged: (value) => _save(
+                  (settings) => settings.copyWith(blendSubtitles: value),
+                ),
               ),
             ]),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                FilledButton.icon(
-                  key: const Key('player_settings_save'),
-                  onPressed: _saving ? null : _save,
-                  icon: _saving
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.save_outlined),
-                  label: const Text('保存设置'),
-                ),
-                OutlinedButton(
-                  key: const Key('player_settings_reset'),
-                  onPressed: _saving ? null : _restoreDefaults,
-                  child: const Text('恢复默认值'),
-                ),
-              ],
-            ),
           ],
         ),
       ),
-    ),
-  );
+    );
+  }
 }

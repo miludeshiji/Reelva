@@ -401,10 +401,16 @@ class _PosterCacheSettingsPageState extends State<PosterCacheSettingsPage> {
 }
 
 class SettingsSubpage extends StatelessWidget {
-  const SettingsSubpage({super.key, required this.title, required this.child});
+  const SettingsSubpage({
+    super.key,
+    required this.title,
+    required this.child,
+    this.trailing,
+  });
 
   final String title;
   final Widget child;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -424,6 +430,7 @@ class SettingsSubpage extends StatelessWidget {
                 children: [
                   GlassPageHeader(
                     title: title,
+                    trailing: trailing,
                     leading: GlassIconButton(
                       key: const Key('settings_subpage_back_button'),
                       icon: Icons.arrow_back,

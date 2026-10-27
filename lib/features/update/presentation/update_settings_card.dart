@@ -9,15 +9,8 @@ class UpdateSettingsCard extends ConsumerWidget {
   const UpdateSettingsCard({super.key});
 
   void _message(BuildContext context, String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        behavior: SnackBarBehavior.floating,
-        width: (MediaQuery.sizeOf(context).width - 48).clamp(0.0, 360.0),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        elevation: 8,
-        content: Text(message, textAlign: TextAlign.center),
-      ),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _check(BuildContext context, WidgetRef ref) async {
@@ -42,12 +35,12 @@ class UpdateSettingsCard extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SwitchListTile.adaptive(
+            GlassSwitchTile(
               key: const Key('automatic_update_switch'),
               contentPadding: const EdgeInsets.symmetric(horizontal: 4),
               title: const Text('自动检查更新'),
               subtitle: Text(
-                preferences.hasError ? '读取设置失败，点击重试' : '启动时检查，每天最多一次',
+                preferences.hasError ? '读取设置失败，点击右侧开关重试' : '启动时检查，每天最多一次',
               ),
               value: preferences.asData?.value.automatic ?? false,
               onChanged: preferences.hasError
