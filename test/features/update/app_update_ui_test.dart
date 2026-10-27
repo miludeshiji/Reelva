@@ -111,7 +111,10 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [githubReleaseClientProvider.overrideWithValue(client)],
-        child: const MaterialApp(home: Scaffold(body: UpdateSettingsCard())),
+        child: MaterialApp(
+          theme: ReelvaTheme.light,
+          home: const Scaffold(body: UpdateSettingsCard()),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -119,15 +122,27 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('检查更新失败，请稍后重试'), findsOneWidget);
     final errorNotice = tester.widget<SnackBar>(find.byType(SnackBar));
-    expect(errorNotice.behavior, SnackBarBehavior.floating);
-    expect(errorNotice.width, lessThan(tester.view.physicalSize.width));
+    final noticeTheme = Theme.of(tester.element(find.byType(SnackBar)))
+        .snackBarTheme;
+    expect(
+      errorNotice.behavior ?? noticeTheme.behavior,
+      SnackBarBehavior.floating,
+    );
+    final noticeSurface = find
+        .descendant(of: find.byType(SnackBar), matching: find.byType(Material))
+        .first;
+    final noticeBounds = tester.getRect(noticeSurface);
+    final scaffoldBounds = tester.getRect(find.byType(Scaffold));
+    expect(noticeBounds.left, greaterThan(scaffoldBounds.left));
+    expect(noticeBounds.right, lessThan(scaffoldBounds.right));
     await tester.pump(const Duration(seconds: 5));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('check_update_button')));
     await tester.pumpAndSettle();
     expect(find.text('暂无新版本'), findsOneWidget);
     expect(
-      tester.widget<SnackBar>(find.byType(SnackBar)).behavior,
+      tester.widget<SnackBar>(find.byType(SnackBar)).behavior ??
+          noticeTheme.behavior,
       SnackBarBehavior.floating,
     );
     expect(attempt, 2);
