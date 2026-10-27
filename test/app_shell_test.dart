@@ -15,6 +15,7 @@ import 'package:reelva/features/player/presentation/player_page.dart';
 import 'package:reelva/features/settings/settings_page.dart';
 import 'package:reelva/features/sources/application/source_providers.dart';
 import 'package:reelva/features/sources/sources_page.dart';
+import 'package:reelva/features/update/infrastructure/update_preferences_store.dart';
 import 'package:reelva/shared/widgets/glass_navigation.dart';
 
 import 'features/player/fake_player_engine.dart';
@@ -33,7 +34,9 @@ Widget createTestApp({required AppDatabase db, GoRouter? router}) {
 void main() {
   group('Reelva Shell Navigation Tests', () {
     setUp(() {
-      FlutterSecureStorage.setMockInitialValues({});
+      FlutterSecureStorage.setMockInitialValues({
+        UpdatePreferencesStore.automaticKey: 'false',
+      });
     });
 
     testWidgets(

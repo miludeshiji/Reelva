@@ -21,12 +21,15 @@ import '../domain/playback_snapshot.dart';
 import '../domain/player_engine.dart';
 import '../domain/player_shortcuts.dart';
 import '../infrastructure/media_file_picker.dart';
+import '../infrastructure/android_screen_brightness.dart';
 import 'network_address_dialog.dart';
 import 'player_controls.dart';
 import 'player_statistics_overlay.dart';
 import 'source_subtitle_dialog.dart';
 
 enum _SpeedHoldSource { screen, keyboard }
+
+enum _ScreenAdjustment { brightness, volume }
 
 /// Reelva 核心播放页面
 ///
@@ -76,6 +79,127 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   bool _switchingEpisode = false;
   Size? _windowVideoSize;
   Future<void> _windowSizeUpdate = Future<void>.value();
+  final _screenBrightness = const AndroidScreenBrightness();
+  bool _brightnessAdjusted = false;
+  _ScreenAdjustment? _verticalGesture;
+  double? _gestureInitialValue;
+  double _gestureDelta = 0;
+  int _gestureId = 0;
+  ({_ScreenAdjustment type, double value})? _gestureFeedback;
+  Timer? _gestureFeedbackTimer;
+
+  bool get _isMobile =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+  Future<void> _startScreenAdjustment(
+    DragStartDetails details,
+    double width,
+  ) async {
+    if (!_canOperateMedia || _speedHolds.isNotEmpty) return;
+    final type = details.localPosition.dx < width / 2
+        ? _ScreenAdjustment.brightness
+        : _ScreenAdjustment.volume;
+    final id = ++_gestureId;
+    _gestureFeedbackTimer?.cancel();
+    _verticalGesture = type;
+    _gestureDelta = 0;
+    _gestureInitialValue = null;
+    _controlsInteractions++;
+    _showControls();
+    try {
+      final value = type == _ScreenAdjustment.brightness
+          ? await _screenBrightness.read()
+          : _session!.engine.snapshot.volume;
+      if (!mounted ||
+          _isExiting ||
+          _gestureId != id ||
+          _verticalGesture != type) {
+        return;
+      }
+      _gestureInitialValue = value;
+      _applyScreenAdjustment();
+    } catch (error, stack) {
+      _screenAdjustmentFailed(id, type, error, stack);
+    }
+  }
+
+  void _updateScreenAdjustment(DragUpdateDetails details, double height) {
+    if (_verticalGesture == null) return;
+    _gestureDelta -= details.delta.dy / (height * 0.65);
+    _applyScreenAdjustment();
+  }
+
+  void _applyScreenAdjustment() {
+    final type = _verticalGesture;
+    final initial = _gestureInitialValue;
+    if (type == null || initial == null) return;
+    final max = type == _ScreenAdjustment.brightness
+        ? 1.0
+        : _session!.maxVolume;
+    final value = (initial + _gestureDelta * max).clamp(0.0, max);
+    final id = _gestureId;
+    setState(() => _gestureFeedback = (type: type, value: value));
+    final Future<void> operation;
+    if (type == _ScreenAdjustment.brightness) {
+      _brightnessAdjusted = true;
+      operation = _screenBrightness.set(value);
+    } else {
+      operation = _session!.engine.setVolume(value);
+    }
+    unawaited(
+      operation.catchError((Object error, StackTrace stack) {
+        _screenAdjustmentFailed(id, type, error, stack);
+      }),
+    );
+  }
+
+  void _endScreenAdjustment({bool cancel = false}) {
+    if (_verticalGesture != null) {
+      _verticalGesture = null;
+      _controlsInteractions--;
+    }
+    _gestureInitialValue = null;
+    _gestureFeedbackTimer?.cancel();
+    if (cancel) {
+      if (mounted && !_isExiting) {
+        setState(() => _gestureFeedback = null);
+      } else {
+        _gestureFeedback = null;
+      }
+    } else if (_gestureFeedback != null) {
+      _gestureFeedbackTimer = Timer(const Duration(milliseconds: 800), () {
+        if (mounted) setState(() => _gestureFeedback = null);
+      });
+    }
+    _scheduleControlsHide();
+  }
+
+  void _screenAdjustmentFailed(
+    int id,
+    _ScreenAdjustment type,
+    Object error,
+    StackTrace stack,
+  ) {
+    if (_gestureId != id) return;
+    _gestureId++;
+    final label = type == _ScreenAdjustment.brightness ? '亮度' : '音量';
+    AppLogger.instance.error('滑动调节$label失败', error: error, stackTrace: stack);
+    _endScreenAdjustment(cancel: true);
+    if (mounted && !_isExiting) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('无法调节$label，请重试')));
+    }
+  }
+
+  Future<void> _restoreScreenBrightness() async {
+    if (!_brightnessAdjusted) return;
+    _brightnessAdjusted = false;
+    try {
+      await _screenBrightness.reset();
+    } catch (error, stack) {
+      AppLogger.instance.error('还原播放器屏幕亮度失败', error: error, stackTrace: stack);
+    }
+  }
 
   void _syncWindowVideoSize(PlaybackSnapshot snapshot) {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.windows) return;
@@ -332,6 +456,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       _rateBeforeHold = null;
     }
     if (rate == null) return;
+    if (mounted && !_isExiting) setState(() {});
     unawaited(
       engine.setRate(rate).catchError((Object error, StackTrace stack) {
         AppLogger.instance.error('切换长按倍速失败', error: error, stackTrace: stack);
@@ -398,7 +523,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
 
   void _scheduleControlsHide() {
     _controlsHideTimer?.cancel();
-    if (!_usesOverlayControls ||
+    if (_isExiting ||
+        !_usesOverlayControls ||
         _controlsStatus != PlaybackStatus.playing ||
         _pointerOverControls ||
         _controlsHaveFocus ||
@@ -510,6 +636,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     super.didUpdateWidget(oldWidget);
     if (widget.initialResource != oldWidget.initialResource) {
       _cancelSpeedHold();
+      _endScreenAdjustment(cancel: true);
       _statisticsVisible = false;
       _currentResource = widget.initialResource;
       _isOpeningInitialResource = widget.initialResource != null;
@@ -549,6 +676,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     _isExiting = true;
     _actionCounter++;
     _cancelSpeedHold();
+    _endScreenAdjustment(cancel: true);
+    unawaited(_restoreScreenBrightness());
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
       windowManager.removeListener(this);
       windowManager.setPreventClose(false).catchError((
@@ -601,6 +730,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
         state == AppLifecycleState.inactive ||
         state == AppLifecycleState.hidden) {
       _cancelSpeedHold();
+      _endScreenAdjustment(cancel: true);
       _session?.engine.pause().catchError((Object e, StackTrace st) {
         AppLogger.instance.error('进入后台自动暂停失败', error: e, stackTrace: st);
       });
@@ -611,6 +741,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     if (_isExiting) return;
     _isExiting = true;
     _cancelSpeedHold();
+
+    _endScreenAdjustment(cancel: true);
+    await _restoreScreenBrightness();
 
     await _setVideoOrientation(null);
 
@@ -1434,7 +1567,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               ? () => _playEpisode(index + 1)
               : null,
           onShowPlaylist: _currentResource == null ? null : _showPlaylist,
-          episodeLabel: index < 0 ? null : entries[index].episodeLabel,
           onInteractionChanged: (interacting) {
             if (!mounted) return;
             if (interacting) {
@@ -1486,6 +1618,28 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                   },
                   behavior: HitTestBehavior.opaque,
                   onTap: _toggleSurfaceControls,
+                  onDoubleTap: _isMobile
+                      ? () => unawaited(
+                          _runShortcut(PlayerShortcutAction.togglePause),
+                        )
+                      : null,
+                  onVerticalDragStart: _isMobile
+                      ? (details) => unawaited(
+                          _startScreenAdjustment(
+                            details,
+                            MediaQuery.sizeOf(context).width,
+                          ),
+                        )
+                      : null,
+                  onVerticalDragUpdate: _isMobile
+                      ? (details) => _updateScreenAdjustment(details, height)
+                      : null,
+                  onVerticalDragEnd: _isMobile
+                      ? (_) => _endScreenAdjustment()
+                      : null,
+                  onVerticalDragCancel: _isMobile
+                      ? () => _endScreenAdjustment(cancel: true)
+                      : null,
                   onLongPressStart: (_) {
                     _focusNode.requestFocus();
                     _setSpeedHold(_SpeedHoldSource.screen, true);
@@ -1608,6 +1762,80 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                             child: KeyedSubtree(
                               key: const Key('player_controls_panel'),
                               child: controls,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                if (!idle && _speedHolds.isNotEmpty && snapshot.rate == 3)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    top:
+                        MediaQuery.paddingOf(context).top +
+                        (height * 0.12).clamp(24.0, 64.0),
+                    child: IgnorePointer(
+                      child: Center(
+                        child: Material(
+                          key: const Key('player_speed_hold_indicator'),
+                          color: Colors.black.withValues(alpha: 0.65),
+                          borderRadius: BorderRadius.circular(28),
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 18,
+                              vertical: 10,
+                            ),
+                            child: Text(
+                              '3倍速中',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                if (!idle && _gestureFeedback != null)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Center(
+                        child: Material(
+                          key: const Key('player_gesture_indicator'),
+                          color: Colors.black.withValues(alpha: 0.7),
+                          borderRadius: BorderRadius.circular(16),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 16,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  _gestureFeedback!.type ==
+                                          _ScreenAdjustment.brightness
+                                      ? Icons.brightness_6_rounded
+                                      : _gestureFeedback!.value == 0
+                                      ? Icons.volume_off_rounded
+                                      : Icons.volume_up_rounded,
+                                  color: Colors.white,
+                                  size: 28,
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  _gestureFeedback!.type ==
+                                          _ScreenAdjustment.brightness
+                                      ? '亮度 ${(_gestureFeedback!.value * 100).round()}%'
+                                      : '音量 ${_gestureFeedback!.value.round()}%',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 18,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),

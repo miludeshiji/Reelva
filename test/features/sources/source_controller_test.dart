@@ -616,6 +616,7 @@ void main() {
       }, const WorkMetadata(type: 'series', title: '旅途', tmdbId: 100));
       final resource = await controller.resolvePlayback(files['first-b.mkv']!);
       expect(resource.displayName, '第 1 季 · 第 1 集 · 初次相遇');
+      expect(resource.fileName, 'first-b.mkv');
       expect(resource.playlist.map((entry) => entry.title), [
         '初次相遇',
         '雨后的约定',
@@ -657,6 +658,7 @@ void main() {
 
         final resource = await controller.resolvePlayback(video.fileId);
         expect(resource.displayName, 'play_me.mp4');
+        expect(resource.fileName, 'play_me.mp4');
         expect(resource.uri.toString(), 'file:///videos/play_me.mp4');
         expect(resource.libraryFileId, video.fileId);
         expect(resource.sourceId, source.id);

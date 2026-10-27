@@ -7,7 +7,7 @@ import 'package:reelva/features/player/presentation/player_controls.dart';
 import 'fake_player_engine.dart';
 
 void main() {
-  for (final width in [320.0, 800.0, 1440.0]) {
+  for (final width in [320.0, 700.0, 800.0, 1440.0]) {
     testWidgets(
       '平台播放按钮居中且顺序正确，宽度 $width',
       (tester) async {
@@ -31,7 +31,6 @@ void main() {
                 onPreviousEpisode: () {},
                 onNextEpisode: () {},
                 onShowPlaylist: () {},
-                episodeLabel: '第 1 季 · 第 12 集',
               ),
             ),
           ),
@@ -61,6 +60,30 @@ void main() {
           find.byKey(const Key('player_fullscreen_button')),
           windows ? findsOneWidget : findsNothing,
         );
+        final playlist = find.byKey(const Key('player_playlist_button'));
+        expect(
+          find.descendant(of: playlist, matching: find.byType(Text)),
+          findsNothing,
+        );
+        final playlistRight = tester.getRect(playlist).right;
+        final controlsRight = tester.getRect(find.byType(PlayerControls)).right;
+        expect(playlistRight, closeTo(controlsRight - 8, 0.01));
+        final playlistIcon = find.descendant(
+          of: playlist,
+          matching: find.byType(Icon),
+        );
+        expect(IconTheme.of(tester.element(playlistIcon)).size, 24);
+        expect(
+          find.byKey(const Key('player_volume_button')),
+          windows ? findsOneWidget : findsNothing,
+        );
+        if (width >= 700) {
+          final subtitleIcon = find.descendant(
+            of: find.byKey(const Key('player_subtitle_track_button')),
+            matching: find.byType(Icon),
+          );
+          expect(IconTheme.of(tester.element(subtitleIcon)).size, 24);
+        }
         if (windows) {
           expect(
             find.byKey(const Key('player_seek_back_button')),
@@ -157,7 +180,7 @@ void main() {
       expect(engine.lastVolume, greaterThan(150));
       expect(engine.lastVolume, lessThanOrEqualTo(200));
       await tester.pumpWidget(const SizedBox.shrink());
-    });
+    }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
     testWidgets(
       'Controls state transitions: paused, playing, completed, buffering, and error',
@@ -523,6 +546,7 @@ void main() {
         expect(interactions, [true, false, true, false, true, false]);
         expect(engine.stopCount, 0);
       },
+      variant: TargetPlatformVariant.only(TargetPlatform.windows),
     );
 
     testWidgets(

@@ -179,6 +179,32 @@ void main() {
     );
   });
 
+  for (final mode in [TrackAutoLoad.exact, TrackAutoLoad.fuzzy]) {
+    for (final episode in ['01', 'OAD(00)']) {
+      test('刮削集名不影响同名字幕自动加载 ($mode, $episode)', () async {
+        final native = _NativeSubtitles();
+        final engine = MediaKitPlayerEngine(
+          player: Player(platformPlayer: native),
+          settings: PlayerSettings(subtitleAutoLoad: mode),
+        );
+        addTearDown(engine.dispose);
+        final stem = '[VCB-Studio] Another [$episode][Ma10p_1080p][x265_flac]';
+        final video = _sourceVideo().copyWith(
+          fileName: '$stem.mkv',
+          displayName: '第 ${episode == '01' ? 1 : 0} 季 · 第 1 集 · 集名',
+          discoverSubtitles: () async => [
+            _file('$stem.ass'),
+            _file('[VCB-Studio] Another [02][Ma10p_1080p][x265_flac].ass'),
+          ],
+        );
+        await engine.open(video.copyWith(libraryFileId: () => 1));
+        await pumpEventQueue();
+        expect(native.commands.map((command) => command[3]), ['$stem.ass']);
+        expect(native.commands.single[2], 'select');
+      });
+    }
+  }
+
   test('本地目录保留 libmpv 原有自动字幕发现，避免重复加载', () async {
     final native = _NativeSubtitles();
     final engine = MediaKitPlayerEngine(player: Player(platformPlayer: native));

@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:reelva/app/router.dart';
 import 'package:reelva/app/shell_page.dart';
 import 'package:reelva/app/theme/reelva_theme.dart';
@@ -204,6 +205,13 @@ void main() {
 
   setUp(() {
     FlutterSecureStorage.setMockInitialValues({});
+    PackageInfo.setMockInitialValues(
+      appName: 'Reelva',
+      packageName: 'com.github.miludeshiji.reelva',
+      version: '0.1.0',
+      buildNumber: '1',
+      buildSignature: '',
+    );
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     messenger.setMockMethodCallHandler(

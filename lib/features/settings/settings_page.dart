@@ -117,7 +117,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           key: const Key('settings_about_tile'),
           icon: Icons.language_rounded,
           title: '关于 Reelva',
-          subtitle: '版本、开源许可与致谢',
+          subtitle: '版本、检查更新、GitHub 与开源许可',
           onTap: () => _openPage('/settings/about'),
         ),
       ],

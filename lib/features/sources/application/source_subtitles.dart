@@ -30,7 +30,11 @@ Future<List<PlaybackResource>> discoverSourceSubtitles({
     try {
       final resource = await adapter.resolvePlayback(source, entry.externalId);
       subtitles.add(
-        resource.copyWith(displayName: entry.name, sourceId: source.id),
+        resource.copyWith(
+          displayName: entry.name,
+          fileName: entry.name,
+          sourceId: source.id,
+        ),
       );
     } catch (error, stackTrace) {
       AppLogger.instance.error('解析源字幕失败', error: error, stackTrace: stackTrace);

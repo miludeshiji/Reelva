@@ -20,6 +20,8 @@ import 'package:reelva/features/settings/about_page.dart';
 import 'package:reelva/features/settings/settings_page.dart';
 import 'package:reelva/features/sources/application/source_providers.dart';
 import 'package:reelva/features/sources/sources_page.dart';
+import 'package:reelva/features/update/infrastructure/update_preferences_store.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import 'features/player/fake_player_engine.dart';
 
@@ -55,7 +57,16 @@ Widget _testApp(GoRouter router) {
 
 void main() {
   setUp(() {
-    FlutterSecureStorage.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({
+      UpdatePreferencesStore.automaticKey: 'false',
+    });
+    PackageInfo.setMockInitialValues(
+      appName: 'Reelva',
+      packageName: 'com.github.miludeshiji.reelva',
+      version: '0.1.0',
+      buildNumber: '1',
+      buildSignature: '',
+    );
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
           const MethodChannel('window_manager'),

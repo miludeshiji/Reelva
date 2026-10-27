@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import android.provider.Settings
 import android.util.Log
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -28,6 +29,9 @@ class MainActivity : FlutterActivity() {
     }
 
     private var channel: MethodChannel? = null
+    private var appUpdateBridge: AppUpdateBridge? = null
+    private var brightnessChannel: MethodChannel? = null
+    private var brightnessBeforePlayback: Float? = null
     private var pendingPickerResult: MethodChannel.Result? = null
     private var pendingDirectoryPickerResult: MethodChannel.Result? = null
     private val openDescriptors = HashMap<Int, ParcelFileDescriptor>()
@@ -37,27 +41,77 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        appUpdateBridge = AppUpdateBridge(this, flutterEngine.dartExecutor.binaryMessenger)
         lifecycleGeneration++
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).apply {
             setMethodCallHandler { call, result ->
                 handleMethodCall(call, result)
             }
         }
+        brightnessChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger, "reelva/screen_brightness"
+        ).apply {
+            setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "get" -> {
+                        val brightness = window.attributes.screenBrightness
+                        val current = if (brightness >= 0) brightness.toDouble() else
+                            Settings.System.getInt(
+                                contentResolver, Settings.System.SCREEN_BRIGHTNESS, 127
+                            ) / 255.0
+                        result.success(current.coerceIn(0.0, 1.0))
+                    }
+                    "set" -> {
+                        val value = call.argument<Number>("brightness")?.toDouble()
+                        if (value == null || !value.isFinite() || value !in 0.0..1.0) {
+                            result.error("INVALID_ARGUMENT", "Invalid screen brightness", null)
+                        } else {
+                            val attributes = window.attributes
+                            if (brightnessBeforePlayback == null) {
+                                brightnessBeforePlayback = attributes.screenBrightness
+                            }
+                            attributes.screenBrightness = value.toFloat()
+                            window.attributes = attributes
+                            result.success(null)
+                        }
+                    }
+                    "reset" -> {
+                        resetScreenBrightness()
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        }
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        appUpdateBridge?.close()
+        appUpdateBridge = null
         lifecycleGeneration++
         cleanupResources()
         channel?.setMethodCallHandler(null)
         channel = null
+        resetScreenBrightness()
+        brightnessChannel?.setMethodCallHandler(null)
+        brightnessChannel = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 
     override fun onDestroy() {
         lifecycleGeneration++
         cleanupResources()
+        resetScreenBrightness()
         ioExecutor.shutdown()
         super.onDestroy()
+    }
+
+    private fun resetScreenBrightness() {
+        val previous = brightnessBeforePlayback ?: return
+        val attributes = window.attributes
+        attributes.screenBrightness = previous
+        window.attributes = attributes
+        brightnessBeforePlayback = null
     }
 
     private fun handleMethodCall(call: MethodCall, result: MethodChannel.Result) {
@@ -143,6 +197,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (appUpdateBridge?.onActivityResult(requestCode) == true) return
         if (requestCode == REQUEST_CODE_PICK_DIRECTORY) {
             handleDirectoryPickerResult(resultCode, data)
             return

@@ -361,9 +361,10 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
 
     try {
       final resource = await adapter.resolvePlayback(source, video.externalId);
-      var displayName = video.fileName.isNotEmpty
+      final fileName = video.fileName.isNotEmpty
           ? video.fileName
-          : resource.displayName;
+          : resource.fileName;
+      var displayName = fileName;
       final details = await repo.getWorkDetailsForFile(fileId);
       final playlist = <PlaybackPlaylistEntry>[];
       if (details != null) {
@@ -415,6 +416,7 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
       }
       return resource.copyWith(
         displayName: displayName,
+        fileName: fileName,
         playlist: List.unmodifiable(playlist),
         libraryFileId: () => fileId,
         sourceId: source.id,

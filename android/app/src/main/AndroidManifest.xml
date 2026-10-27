@@ -1,5 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:label="Reelva"
@@ -7,6 +8,15 @@
         android:icon="@mipmap/ic_launcher"
         android:fullBackupContent="@xml/backup_rules_legacy"
         android:dataExtractionRules="@xml/backup_rules">
+        <provider
+            android:name=".AppUpdateFileProvider"
+            android:authorities="${applicationId}.app_update"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/app_update_paths" />
+        </provider>
         <activity
             android:name=".MainActivity"
             android:exported="true"

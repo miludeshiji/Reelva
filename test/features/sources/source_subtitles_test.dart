@@ -98,6 +98,10 @@ void main() {
         'movie.zh.ASS',
         'movie.en.srt',
       ]);
+      expect(subtitles.map((resource) => resource.fileName), [
+        'movie.zh.ASS',
+        'movie.en.srt',
+      ]);
       expect(subtitles.every((resource) => resource.sourceId == 7), isTrue);
       await subtitles.first.prepare!();
       expect(adapter.prepareCount, 1);

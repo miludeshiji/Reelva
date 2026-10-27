@@ -349,13 +349,21 @@ void main() {
           await tester.tap(play2160pFinder);
           await tester.pumpAndSettle();
 
-          // 7. 验证导航已无缝跳转至 PlayerPage，且底层引擎与适配器真实收到 2160p 版本
+          // 7. 验证播放器使用 2160p 文件，并显示刮削后的作品标题。
           expect(find.byType(PlayerPage), findsOneWidget);
           expect(fakePlayerEngine.openCount, 1);
           expect(fakeAdapter.resolveCount, 1);
           expect(fakeAdapter.lastResolvedEntryId, file2160p);
-          expect(fakePlayerEngine.lastOpenedResource?.displayName, file2160p);
-          expect(find.text(file2160p), findsOneWidget);
+          final playedResource = fakePlayerEngine.lastOpenedResource!;
+          expect(playedResource.libraryFileId, 2);
+          expect(playedResource.uri, Uri.file('C:/videos/$file2160p'));
+          expect(playedResource.displayName, 'Avatar');
+          expect(
+            tester
+                .widget<Text>(find.byKey(const Key('player_title_text')))
+                .data,
+            'Avatar',
+          );
 
           // 8. 播放器返回时保留作品详情及滚动位置
           await tester.tap(find.byKey(const Key('player_back_button')));

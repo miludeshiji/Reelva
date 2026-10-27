@@ -32,6 +32,8 @@ Debug 构建（`release: false`，含 PR 与手动调试）只生成 3 个 `-deb
 
 ## Android 签名
 
+应用内更新使用 Release 中匹配设备架构的 APK。后续发布需保持应用 ID 与正式签名一致，每次发布递增 `pubspec.yaml` 的 `+build` 构建号，确保系统可覆盖更新；更新弹窗与关于页读取实际安装包的版本。
+
 ### 本地签名
 
 正式构建使用本地密钥签名，密钥库文件位于 `android/reelva-release.jks`，别名为 `reelva`。构建配置通过 `android/key.properties` 读取，`storeFile` 相对于 `android` 目录解析：

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../shared/widgets/glass_widgets.dart';
 import '../../shared/widgets/reelva_logo.dart';
+import '../update/application/app_update_providers.dart';
+import '../update/presentation/update_settings_card.dart';
 import 'reelva_license_page.dart';
 import 'settings_subpages.dart';
 
@@ -11,7 +14,7 @@ import 'settings_subpages.dart';
 /// 展示 Reelva 应用版本、官方 TMDB 归属声明（包含官方 unmodified 矢量 Logo 与强制条款）、
 /// 播放器底层 FFmpeg / libmpv 原生组件许可与合规说明，以及完整的第三方开源软件许可入口。
 /// 布局与文本换行适配桌面窗口与 320px 窄屏高文字缩放环境。
-class AboutPage extends StatelessWidget {
+class AboutPage extends ConsumerWidget {
   const AboutPage({super.key});
 
   /// TMDB 官方强制要求声明文案（严格保持原英文）
@@ -19,9 +22,10 @@ class AboutPage extends StatelessWidget {
       'This product uses the TMDB API but is not endorsed or certified by TMDB.';
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final packageInfo = ref.watch(packageInfoProvider);
 
     return SettingsSubpage(
       title: '关于 Reelva',
@@ -41,7 +45,12 @@ class AboutPage extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                '版本 0.1.0 (Build 1)',
+                packageInfo.when(
+                  data: (info) =>
+                      '版本 ${info.version} (Build ${info.buildNumber})',
+                  loading: () => '正在读取版本…',
+                  error: (_, _) => '版本信息读取失败',
+                ),
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                 ),
@@ -57,6 +66,9 @@ class AboutPage extends StatelessWidget {
             ],
           ),
           const SizedBox(height: ReelvaDesign.space24),
+
+          const UpdateSettingsCard(),
+          const SizedBox(height: ReelvaDesign.space16),
 
           // 2. TMDB 官方元数据归属说明卡片
           GlassCard(
@@ -171,10 +183,12 @@ class AboutPage extends StatelessWidget {
               onPressed: () {
                 Navigator.of(context).push<void>(
                   MaterialPageRoute<void>(
-                    builder: (context) => const ReelvaLicensePage(
+                    builder: (context) => ReelvaLicensePage(
                       applicationName: 'Reelva',
-                      applicationVersion: '0.1.0+1',
-                      applicationIcon: Padding(
+                      applicationVersion: packageInfo.asData == null
+                          ? '未知版本'
+                          : '${packageInfo.asData!.value.version}+${packageInfo.asData!.value.buildNumber}',
+                      applicationIcon: const Padding(
                         padding: EdgeInsets.all(8),
                         child: ReelvaLogo(size: 48),
                       ),

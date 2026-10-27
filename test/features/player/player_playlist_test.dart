@@ -98,7 +98,7 @@ void main() {
     final playlist = find.byKey(const Key('player_playlist_button'));
     expect(tester.widget<IconButton>(previous).onPressed, isNull);
     expect(find.text(_entries.first.displayTitle), findsOneWidget);
-    expect(find.text(_entries.first.episodeLabel!), findsOneWidget);
+    expect(find.byKey(const Key('player_episode_label')), findsNothing);
     final options = find.byKey(const Key('player_options_menu_button'));
     await tester.tap(options);
     await tester.pumpAndSettle();
@@ -158,7 +158,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(engine.lastOpenedResource!.libraryFileId, 13);
     expect(tester.widget<IconButton>(next).onPressed, isNull);
-    expect(find.text(_entries[2].episodeLabel!), findsOneWidget);
+    expect(find.text(_entries[2].displayTitle), findsOneWidget);
     await tester.tap(previous);
     await tester.pumpAndSettle();
     expect(engine.lastOpenedResource!.libraryFileId, 12);

@@ -4,13 +4,14 @@ import 'playback_playlist_entry.dart';
 
 /// 表示一个可供播放的媒体资源
 ///
-/// 包含资源统一标识符（URI）、展示名称以及请求 HTTP 头。
+/// 包含资源统一标识符（URI）、原始文件名、展示名称以及请求 HTTP 头。
 /// [toString] 绝不输出 URI 及 headers，以防凭据或签名敏感信息泄漏。
 @immutable
 class PlaybackResource {
   const PlaybackResource({
     required this.uri,
     required this.displayName,
+    String? fileName,
     this.httpHeaders = const {},
     this.libraryFileId,
     this.prepare,
@@ -19,10 +20,13 @@ class PlaybackResource {
     this.sourceId,
     this.discoverSubtitles,
     this.playlist = const [],
-  });
+  }) : fileName = fileName ?? displayName;
 
   final Uri uri;
   final String displayName;
+
+  /// 字幕匹配使用的原始文件名，不随界面标题变化。
+  final String fileName;
   final Map<String, String> httpHeaders;
   final int? libraryFileId;
   final int? sourceId;
@@ -45,6 +49,7 @@ class PlaybackResource {
   PlaybackResource copyWith({
     Uri? uri,
     String? displayName,
+    String? fileName,
     Map<String, String>? httpHeaders,
     int? Function()? libraryFileId,
     Future<PlaybackResource> Function()? prepare,
@@ -57,6 +62,7 @@ class PlaybackResource {
     return PlaybackResource(
       uri: uri ?? this.uri,
       displayName: displayName ?? this.displayName,
+      fileName: fileName ?? this.fileName,
       httpHeaders: httpHeaders ?? this.httpHeaders,
       libraryFileId: libraryFileId != null
           ? libraryFileId()
@@ -82,6 +88,7 @@ class PlaybackResource {
           runtimeType == other.runtimeType &&
           uri == other.uri &&
           displayName == other.displayName &&
+          fileName == other.fileName &&
           libraryFileId == other.libraryFileId &&
           sourceId == other.sourceId &&
           listEquals(playlist, other.playlist) &&
@@ -95,6 +102,7 @@ class PlaybackResource {
   int get hashCode => Object.hash(
     uri,
     displayName,
+    fileName,
     libraryFileId,
     sourceId,
     Object.hashAll(playlist),

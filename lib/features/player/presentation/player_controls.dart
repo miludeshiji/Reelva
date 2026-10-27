@@ -32,7 +32,6 @@ class PlayerControls extends StatefulWidget {
     this.onPreviousEpisode,
     this.onNextEpisode,
     this.onShowPlaylist,
-    this.episodeLabel,
   });
 
   final PlaybackSnapshot snapshot;
@@ -47,7 +46,6 @@ class PlayerControls extends StatefulWidget {
   final VoidCallback? onPreviousEpisode;
   final VoidCallback? onNextEpisode;
   final VoidCallback? onShowPlaylist;
-  final String? episodeLabel;
 
   static const List<double> supportedRates = [0.5, 1.0, 1.25, 1.5, 2.0, 3.0];
 
@@ -313,23 +311,11 @@ class _PlayerControlsState extends State<PlayerControls> {
       tooltip: widget.isFullscreen ? '退出全屏' : '全屏',
       onPressed: widget.onToggleFullscreen,
     );
-    final playlist = Flexible(
-      child: TextButton.icon(
-        key: const Key('player_playlist_button'),
-        onPressed: widget.onShowPlaylist,
-        icon: const Icon(Icons.playlist_play_rounded),
-        label: Text(
-          widget.episodeLabel ?? '播放列表',
-          key: const Key('player_episode_label'),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        style: TextButton.styleFrom(
-          foregroundColor: theme.colorScheme.onSurface,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          minimumSize: const Size(40, 40),
-        ),
-      ),
+    final playlist = IconButton(
+      key: const Key('player_playlist_button'),
+      onPressed: widget.onShowPlaylist,
+      icon: const Icon(Icons.playlist_play_rounded),
+      tooltip: '播放列表',
     );
     final more = IconButton(
       key: const Key('player_more_button'),
@@ -372,7 +358,7 @@ class _PlayerControlsState extends State<PlayerControls> {
           minimumSize: const Size(40, 40),
           padding: const EdgeInsets.all(8),
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          iconSize: 22,
+          iconSize: 24,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(ReelvaDesign.radiusSmall),
           ),
@@ -425,12 +411,12 @@ class _PlayerControlsState extends State<PlayerControls> {
               if (compact) ...[
                 Center(child: transport),
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    Expanded(
-                      child: Row(children: [if (!mobile) fullscreen, playlist]),
-                    ),
                     more,
-                    volume,
+                    if (!mobile) volume,
+                    if (!mobile) fullscreen,
+                    playlist,
                   ],
                 ),
               ] else
@@ -439,18 +425,16 @@ class _PlayerControlsState extends State<PlayerControls> {
                   children: [
                     Row(
                       children: [
-                        Expanded(
-                          child: Row(
-                            children: [if (!mobile) fullscreen, playlist],
-                          ),
-                        ),
+                        const Spacer(),
                         SizedBox(width: mobile ? 224 : 136),
                         Expanded(
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: [
                               _buildSettings(context, snapshot),
-                              volume,
+                              if (!mobile) volume,
+                              if (!mobile) fullscreen,
+                              playlist,
                             ],
                           ),
                         ),
@@ -631,6 +615,7 @@ class _PlayerControlsState extends State<PlayerControls> {
       key: menuKey,
       tooltip: tooltip,
       icon: Icon(icon),
+      iconSize: 24,
       enabled: tracks.isNotEmpty || extraActions.isNotEmpty,
       onOpened: () => widget.onInteractionChanged?.call(true),
       onCanceled: () => widget.onInteractionChanged?.call(false),

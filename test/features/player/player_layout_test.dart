@@ -1,6 +1,7 @@
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart' show kDoubleTapTimeout;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -358,6 +359,7 @@ void main() {
       );
       expect(tester.takeException(), isNull);
     },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
 
   testWidgets(
@@ -401,6 +403,7 @@ void main() {
       expect(volumeButton.hitTestable(), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
 
   testWidgets(
@@ -417,9 +420,11 @@ void main() {
       expect(find.byKey(const Key('player_volume_slider')), findsNothing);
       final center = tester.getCenter(find.byKey(_videoKey));
       await tester.tapAt(center);
+      await tester.pump(kDoubleTapTimeout);
       await tester.pumpAndSettle();
       expect(_panelOpacity(tester), 0);
       await tester.tapAt(center);
+      await tester.pump(kDoubleTapTimeout);
       await tester.pumpAndSettle();
       expect(_panelOpacity(tester), 1);
       await tester.tap(find.byKey(const Key('player_more_button')));
@@ -441,29 +446,14 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(BottomSheet), findsNothing);
 
-      final volumeButton = find.byKey(const Key('player_volume_button'));
-      await tester.tap(volumeButton);
-      await tester.pumpAndSettle();
-      final slider = find.byKey(const Key('player_volume_slider'));
-      await tester.drag(slider, const Offset(-25, 0));
+      expect(find.byKey(const Key('player_volume_button')), findsNothing);
+      await tester.dragFrom(
+        Offset(center.dx + 80, center.dy),
+        const Offset(0, 80),
+      );
       await tester.pump();
       expect(engine.lastVolume, lessThan(75));
-      expect(tester.widget<Slider>(slider).value, engine.lastVolume);
-      await tester.pump(const Duration(seconds: 4));
-      expect(_panelOpacity(tester), 1);
-      await tester.tapAt(const Offset(10, 100));
-      await tester.pumpAndSettle();
-      await tester.pump(const Duration(seconds: 4));
-      await tester.pump(const Duration(milliseconds: 250));
-      expect(_panelOpacity(tester), 0);
-      await tester.tapAt(center);
-      await tester.pumpAndSettle();
-      await tester.tap(volumeButton);
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('player_volume_panel')), findsOneWidget);
-      await tester.tap(volumeButton);
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('player_volume_panel')), findsNothing);
+      expect(find.byKey(const Key('player_gesture_indicator')), findsOneWidget);
       expect(engine.stopCount, 0);
       await tester.pump(const Duration(seconds: 4));
       await tester.pump(const Duration(milliseconds: 250));

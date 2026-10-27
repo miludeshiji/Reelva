@@ -258,6 +258,7 @@ void main() {
     await tester.pump(kLongPressTimeout);
     expect(engine.lastSeekPosition, const Duration(seconds: 72));
     expect(engine.setRateCount, 0);
+    expect(find.byKey(const Key('player_speed_hold_indicator')), findsNothing);
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
     await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowRight);
@@ -265,12 +266,20 @@ void main() {
     expect(engine.lastRate, 3);
     await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump(const Duration(seconds: 1));
+    expect(find.text('3倍速中'), findsOneWidget);
+    final speedHint = tester.getCenter(
+      find.byKey(const Key('player_speed_hold_indicator')),
+    );
+    final video = tester.getRect(find.byKey(const Key('player_video_region')));
+    expect(speedHint.dx, video.center.dx);
+    expect(speedHint.dy, lessThan(video.center.dy));
     expect(engine.seekCount, 1);
     expect(engine.setRateCount, 1);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
     expect(engine.lastRate, 1.5);
     expect(engine.setRateCount, 2);
+    expect(find.byKey(const Key('player_speed_hold_indicator')), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -286,6 +295,8 @@ void main() {
       );
       await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
       expect(engine.lastRate, 3);
+      await tester.pump();
+      expect(find.text('3倍速中'), findsOneWidget);
       if (cancel) {
         await gesture.cancel();
       } else {
@@ -293,6 +304,10 @@ void main() {
       }
       await tester.pump();
       expect(engine.lastRate, 1.25);
+      expect(
+        find.byKey(const Key('player_speed_hold_indicator')),
+        findsNothing,
+      );
       expect(engine.pauseCount, 0);
       expect(engine.playCount, 0);
       await tester.pumpWidget(const SizedBox.shrink());

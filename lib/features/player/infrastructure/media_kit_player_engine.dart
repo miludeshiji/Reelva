@@ -621,8 +621,8 @@ class MediaKitPlayerEngine implements PlayerEngine {
       final subtitles = (await discover())
           .where(
             (subtitle) => matchesSubtitle(
-              video.displayName,
-              subtitle.displayName,
+              video.fileName,
+              subtitle.fileName,
               _settings.subtitleAutoLoad,
             ),
           )
