@@ -7,6 +7,86 @@ import 'package:reelva/features/player/presentation/player_controls.dart';
 import 'fake_player_engine.dart';
 
 void main() {
+  for (final width in [320.0, 800.0, 1440.0]) {
+    testWidgets(
+      '平台播放按钮居中且顺序正确，宽度 $width',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = Size(width, 600);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        final engine = FakePlayerEngine();
+        addTearDown(engine.dispose);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: PlayerControls(
+                snapshot: const PlaybackSnapshot(
+                  status: PlaybackStatus.paused,
+                  duration: Duration(minutes: 20),
+                ),
+                engine: engine,
+                isFullscreen: false,
+                onToggleFullscreen: () {},
+                onPreviousEpisode: () {},
+                onNextEpisode: () {},
+                onShowPlaylist: () {},
+                episodeLabel: '第 1 季 · 第 12 集',
+              ),
+            ),
+          ),
+        );
+        final windows =
+            Theme.of(tester.element(find.byType(PlayerControls))).platform ==
+            TargetPlatform.windows;
+        final buttons = [
+          'player_previous_episode_button',
+          if (!windows) 'player_seek_back_button',
+          'player_play_button',
+          if (!windows) 'player_seek_forward_button',
+          'player_next_episode_button',
+        ];
+        final centers = buttons
+            .map((key) => tester.getCenter(find.byKey(Key(key))))
+            .toList();
+        expect(
+          centers[buttons.indexOf('player_play_button')].dx,
+          closeTo(width / 2, 0.01),
+        );
+        for (var index = 1; index < centers.length; index++) {
+          expect(centers[index].dx, greaterThan(centers[index - 1].dx));
+          expect(centers[index].dy, centers.first.dy);
+        }
+        expect(
+          find.byKey(const Key('player_fullscreen_button')),
+          windows ? findsOneWidget : findsNothing,
+        );
+        if (windows) {
+          expect(
+            find.byKey(const Key('player_seek_back_button')),
+            findsNothing,
+          );
+          expect(
+            tester
+                .getCenter(find.byKey(const Key('player_fullscreen_button')))
+                .dx,
+            lessThan(
+              tester
+                  .getCenter(find.byKey(const Key('player_playlist_button')))
+                  .dx,
+            ),
+          );
+        }
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   group('PlayerControls State & Interaction Tests', () {
     testWidgets('没有内嵌轨道也能通过字幕菜单选择本地和源文件', (tester) async {
       final engine = FakePlayerEngine();
@@ -382,7 +462,14 @@ void main() {
         await tester.tap(mute);
         await tester.pumpAndSettle();
         expect(engine.lastVolume, 0);
-        expect(find.text('取消静音'), findsOneWidget);
+        expect(find.byTooltip('取消静音'), findsOneWidget);
+        expect(find.text('音量'), findsNothing);
+        expect(find.text('静音'), findsNothing);
+        expect(tester.getCenter(mute).dy, tester.getCenter(slider).dy);
+        expect(
+          tester.getCenter(mute).dx,
+          lessThan(tester.getCenter(slider).dx),
+        );
         expect(tester.widget<Slider>(slider).value, 0);
         expect(
           tester.widget<IconButton>(volumeButton).icon,
@@ -397,7 +484,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(engine.setVolumeCount, 2);
         expect(engine.lastVolume, 80);
-        expect(find.text('静音'), findsOneWidget);
+        expect(find.byTooltip('静音'), findsOneWidget);
 
         await tester.drag(slider, const Offset(-25, 0));
         await tester.pump();
@@ -417,7 +504,7 @@ void main() {
         await tester.drag(slider, const Offset(25, 0));
         await tester.pump();
         expect(engine.lastVolume, greaterThan(0));
-        expect(find.text('静音'), findsOneWidget);
+        expect(find.byTooltip('静音'), findsOneWidget);
 
         await tester.tap(volumeButton);
         await tester.pumpAndSettle();
@@ -439,7 +526,7 @@ void main() {
     );
 
     testWidgets(
-      'Narrow viewport with large text and hour-long duration keeps seek and fullscreen usable',
+      'Narrow viewport with large text and hour-long duration keeps seek usable',
       (tester) async {
         tester.view.physicalSize = const Size(320, 600);
         tester.view.devicePixelRatio = 1.0;
@@ -484,7 +571,7 @@ void main() {
         expect(slider.hitTestable(), findsOneWidget);
         expect(
           find.byKey(const Key('player_fullscreen_button')).hitTestable(),
-          findsOneWidget,
+          findsNothing,
         );
         await tester.drag(slider, const Offset(60, 0));
         await tester.pump();

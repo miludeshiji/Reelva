@@ -185,7 +185,9 @@ void main() {
             );
             await tester.tap(find.byType(BackButton));
             await tester.pumpAndSettle();
-            await tester.tap(find.byType(BackButton));
+            await tester.tap(
+              find.byKey(const Key('settings_subpage_back_button')),
+            );
           } else if (pageType == PlayerPage) {
             await tester.tap(find.byKey(const Key('player_back_button')));
           } else {

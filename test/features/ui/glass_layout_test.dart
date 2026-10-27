@@ -609,21 +609,53 @@ Future<void> _exerciseContent(WidgetTester tester, _Page page) async {
       await _reveal(tester, page, confirm);
       expect(confirm.hitTestable(), findsOneWidget);
     case _Page.details:
-      expect(find.byKey(const Key('work_details_title')), findsOneWidget);
+      await _reveal(tester, page, find.byKey(const Key('work_details_title')));
       expect(find.text(_details.work.title), findsWidgets);
-      await _reveal(tester, page, find.text(_overview));
+      expect(find.text('库中有 4 集'), findsOneWidget);
       await _reveal(
         tester,
         page,
-        find.byKey(const Key('work_version_item_102')),
+        find.byKey(const Key('work_episode_card_2_1')),
       );
+      expect(
+        tester.getTopLeft(find.byKey(const Key('work_season_tabs'))).dy,
+        lessThan(tester.getTopLeft(find.text('剧情简介')).dy),
+      );
+      await tester.tap(find.byKey(const Key('work_episode_card_2_1')));
+      await tester.pumpAndSettle();
       expect(find.text(_sourceError), findsOneWidget);
       expect(find.text(_edition), findsWidgets);
-      await _reveal(
-        tester,
-        page,
-        find.byKey(const Key('work_version_item_108')),
+      await tester.ensureVisible(
+        find.byKey(const Key('work_play_version_button_102')),
       );
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.descendant(
+                of: find.byKey(const Key('work_play_version_button_102')),
+                matching: find.byType(FilledButton),
+              ),
+            )
+            .onPressed,
+        isNull,
+      );
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('work_episode_card_2_4')),
+        200,
+        scrollable: find.descendant(
+          of: find.byKey(const Key('work_episode_list_2_2')),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('work_episode_card_2_4')).hitTestable(),
+        findsOneWidget,
+      );
+      await _reveal(tester, page, find.text(_overview));
     case _Page.player:
       final title = tester.widget<Text>(
         find.byKey(const Key('player_title_text')),

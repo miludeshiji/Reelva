@@ -901,14 +901,14 @@ void main() {
           expect(version.episodeNumber, 3);
           expect(version.episodeTitle, '第三集测试');
 
-          final versionItemFinder = find.byKey(
-            Key('work_version_item_${version.fileId}'),
+          final episodeCardFinder = find.byKey(
+            const Key('work_episode_card_2_3'),
           );
-          expect(versionItemFinder, findsOneWidget);
+          expect(episodeCardFinder, findsOneWidget);
           expect(
             find.descendant(
-              of: versionItemFinder,
-              matching: find.textContaining('S02E03'),
+              of: episodeCardFinder,
+              matching: find.text('第 3 集 · 第三集测试'),
             ),
             findsOneWidget,
           );

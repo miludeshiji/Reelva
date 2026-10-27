@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../app/theme/reelva_theme.dart';
@@ -28,6 +29,10 @@ class PlayerControls extends StatefulWidget {
     this.maxVolume = 100,
     this.onPickLocalSubtitle,
     this.onPickSourceSubtitle,
+    this.onPreviousEpisode,
+    this.onNextEpisode,
+    this.onShowPlaylist,
+    this.episodeLabel,
   });
 
   final PlaybackSnapshot snapshot;
@@ -39,6 +44,10 @@ class PlayerControls extends StatefulWidget {
   final double maxVolume;
   final VoidCallback? onPickLocalSubtitle;
   final VoidCallback? onPickSourceSubtitle;
+  final VoidCallback? onPreviousEpisode;
+  final VoidCallback? onNextEpisode;
+  final VoidCallback? onShowPlaylist;
+  final String? episodeLabel;
 
   static const List<double> supportedRates = [0.5, 1.0, 1.25, 1.5, 2.0, 3.0];
 
@@ -178,6 +187,9 @@ class _PlayerControlsState extends State<PlayerControls> {
     final theme = Theme.of(context);
     final snapshot = widget.snapshot;
     final engine = widget.engine;
+    final mobile =
+        defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
     final hasKnownDuration = snapshot.duration > Duration.zero;
     final totalDurationMs = hasKnownDuration
         ? snapshot.duration.inMilliseconds.toDouble()
@@ -246,31 +258,47 @@ class _PlayerControlsState extends State<PlayerControls> {
       spacing: ReelvaDesign.space4,
       children: [
         IconButton(
-          key: const Key('player_seek_back_button'),
-          icon: const Icon(Icons.replay_10_rounded),
-          tooltip: '后退 10 秒',
-          onPressed: isSeekEnabled
-              ? () {
-                  final target =
-                      snapshot.position - const Duration(seconds: 10);
-                  engine.seek(target < Duration.zero ? Duration.zero : target);
-                }
-              : null,
+          key: const Key('player_previous_episode_button'),
+          icon: const Icon(Icons.skip_previous_rounded),
+          tooltip: '上一集',
+          onPressed: widget.onPreviousEpisode,
         ),
+        if (mobile)
+          IconButton(
+            key: const Key('player_seek_back_button'),
+            icon: const Icon(Icons.replay_10_rounded),
+            tooltip: '后退 10 秒',
+            onPressed: isSeekEnabled
+                ? () {
+                    final target =
+                        snapshot.position - const Duration(seconds: 10);
+                    engine.seek(
+                      target < Duration.zero ? Duration.zero : target,
+                    );
+                  }
+                : null,
+          ),
         _buildPlaybackAction(context, snapshot, engine),
+        if (mobile)
+          IconButton(
+            key: const Key('player_seek_forward_button'),
+            icon: const Icon(Icons.forward_10_rounded),
+            tooltip: '快进 10 秒',
+            onPressed: isSeekEnabled
+                ? () {
+                    final target =
+                        snapshot.position + const Duration(seconds: 10);
+                    engine.seek(
+                      target > snapshot.duration ? snapshot.duration : target,
+                    );
+                  }
+                : null,
+          ),
         IconButton(
-          key: const Key('player_seek_forward_button'),
-          icon: const Icon(Icons.forward_10_rounded),
-          tooltip: '快进 10 秒',
-          onPressed: isSeekEnabled
-              ? () {
-                  final target =
-                      snapshot.position + const Duration(seconds: 10);
-                  engine.seek(
-                    target > snapshot.duration ? snapshot.duration : target,
-                  );
-                }
-              : null,
+          key: const Key('player_next_episode_button'),
+          icon: const Icon(Icons.skip_next_rounded),
+          tooltip: '下一集',
+          onPressed: widget.onNextEpisode,
         ),
       ],
     );
@@ -284,6 +312,24 @@ class _PlayerControlsState extends State<PlayerControls> {
       ),
       tooltip: widget.isFullscreen ? '退出全屏' : '全屏',
       onPressed: widget.onToggleFullscreen,
+    );
+    final playlist = Flexible(
+      child: TextButton.icon(
+        key: const Key('player_playlist_button'),
+        onPressed: widget.onShowPlaylist,
+        icon: const Icon(Icons.playlist_play_rounded),
+        label: Text(
+          widget.episodeLabel ?? '播放列表',
+          key: const Key('player_episode_label'),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        style: TextButton.styleFrom(
+          foregroundColor: theme.colorScheme.onSurface,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          minimumSize: const Size(40, 40),
+        ),
+      ),
     );
     final more = IconButton(
       key: const Key('player_more_button'),
@@ -365,7 +411,7 @@ class _PlayerControlsState extends State<PlayerControls> {
                   ),
                 ),
               if (compact) ...[
-                seekSlider,
+                SizedBox(height: 32, child: seekSlider),
                 timeDisplay,
               ] else
                 Row(
@@ -376,15 +422,43 @@ class _PlayerControlsState extends State<PlayerControls> {
                     bufferDisplay,
                   ],
                 ),
-              Row(
-                children: [
-                  transport,
-                  const Spacer(),
-                  if (compact) more else _buildSettings(context, snapshot),
-                  volume,
-                  fullscreen,
-                ],
-              ),
+              if (compact) ...[
+                Center(child: transport),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Row(children: [if (!mobile) fullscreen, playlist]),
+                    ),
+                    more,
+                    volume,
+                  ],
+                ),
+              ] else
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Row(
+                            children: [if (!mobile) fullscreen, playlist],
+                          ),
+                        ),
+                        SizedBox(width: mobile ? 224 : 136),
+                        Expanded(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              _buildSettings(context, snapshot),
+                              volume,
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    transport,
+                  ],
+                ),
             ],
           ),
         ),
@@ -393,7 +467,7 @@ class _PlayerControlsState extends State<PlayerControls> {
   }
 
   Widget _buildVolumeMenu(BuildContext context, PlaybackSnapshot snapshot) {
-    const panelWidth = 240.0;
+    const panelWidth = 280.0;
     final theme = Theme.of(context);
     final engine = widget.engine;
     return MenuAnchor(
@@ -422,46 +496,36 @@ class _PlayerControlsState extends State<PlayerControls> {
             return SizedBox(
               key: const Key('player_volume_panel'),
               width: panelWidth - 16,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+              child: Row(
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text('音量', style: theme.textTheme.labelLarge),
-                        ),
-                        Text(
-                          '${current.volume.round()}%',
-                          key: const Key('player_volume_text'),
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            fontFeatures: const [FontFeature.tabularFigures()],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Slider(
-                    key: const Key('player_volume_slider'),
-                    autofocus: true,
-                    value: current.volume.clamp(0.0, widget.maxVolume),
-                    max: widget.maxVolume,
-                    onChanged: (volume) {
-                      if (volume > 0) _lastNonZeroVolume = volume;
-                      engine.setVolume(volume);
-                    },
-                  ),
-                  MenuItemButton(
+                  IconButton(
                     key: const Key('player_mute_button'),
-                    closeOnActivate: false,
-                    leadingIcon: Icon(
+                    tooltip: isMuted ? '取消静音' : '静音',
+                    icon: Icon(
                       isMuted
                           ? Icons.volume_up_rounded
                           : Icons.volume_off_rounded,
                     ),
                     onPressed: () => _toggleMute(current),
-                    child: Text(isMuted ? '取消静音' : '静音'),
+                  ),
+                  Expanded(
+                    child: Slider(
+                      key: const Key('player_volume_slider'),
+                      autofocus: true,
+                      value: current.volume.clamp(0.0, widget.maxVolume),
+                      max: widget.maxVolume,
+                      onChanged: (volume) {
+                        if (volume > 0) _lastNonZeroVolume = volume;
+                        engine.setVolume(volume);
+                      },
+                    ),
+                  ),
+                  Text(
+                    '${current.volume.round()}%',
+                    key: const Key('player_volume_text'),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
                   ),
                 ],
               ),
@@ -499,8 +563,7 @@ class _PlayerControlsState extends State<PlayerControls> {
         _buildTrackMenu(
           context,
           menuKey: const Key('player_subtitle_track_button'),
-          textKey: const Key('player_subtitle_track_text'),
-          label: '字幕',
+          icon: Icons.subtitles_rounded,
           tooltip: '字幕轨道',
           tracks: snapshot.subtitleTracks,
           selectedId: snapshot.subtitleTrackId,
@@ -515,8 +578,7 @@ class _PlayerControlsState extends State<PlayerControls> {
         _buildTrackMenu(
           context,
           menuKey: const Key('player_audio_track_button'),
-          textKey: const Key('player_audio_track_text'),
-          label: '音轨',
+          icon: Icons.audiotrack_rounded,
           tooltip: '音频轨道',
           tracks: snapshot.audioTracks,
           selectedId: snapshot.audioTrackId,
@@ -525,7 +587,6 @@ class _PlayerControlsState extends State<PlayerControls> {
         PopupMenuButton<double>(
           key: const Key('player_rate_button'),
           tooltip: '播放倍速',
-          initialValue: snapshot.rate,
           onOpened: () => widget.onInteractionChanged?.call(true),
           onCanceled: () => widget.onInteractionChanged?.call(false),
           onSelected: (rate) {
@@ -536,6 +597,7 @@ class _PlayerControlsState extends State<PlayerControls> {
               .map(
                 (rate) => GlassPopupMenuItem<double>(
                   value: rate,
+                  selected: rate == snapshot.rate,
                   child: Text('${rate}x'),
                 ),
               )
@@ -558,8 +620,7 @@ class _PlayerControlsState extends State<PlayerControls> {
   Widget _buildTrackMenu(
     BuildContext context, {
     required Key menuKey,
-    required Key textKey,
-    required String label,
+    required IconData icon,
     required String tooltip,
     required List<PlaybackTrack> tracks,
     required String? selectedId,
@@ -569,7 +630,7 @@ class _PlayerControlsState extends State<PlayerControls> {
     return PopupMenuButton<String>(
       key: menuKey,
       tooltip: tooltip,
-      initialValue: selectedId,
+      icon: Icon(icon),
       enabled: tracks.isNotEmpty || extraActions.isNotEmpty,
       onOpened: () => widget.onInteractionChanged?.call(true),
       onCanceled: () => widget.onInteractionChanged?.call(false),
@@ -586,6 +647,7 @@ class _PlayerControlsState extends State<PlayerControls> {
         ...tracks.map(
           (track) => GlassPopupMenuItem<String>(
             value: track.id,
+            selected: track.id == selectedId,
             child: Row(
               children: [
                 Expanded(
@@ -608,21 +670,6 @@ class _PlayerControlsState extends State<PlayerControls> {
           ),
         ),
       ],
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: ReelvaDesign.space8,
-          vertical: ReelvaDesign.space12,
-        ),
-        child: Text(
-          label,
-          key: textKey,
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            color: tracks.isEmpty && extraActions.isEmpty
-                ? Theme.of(context).disabledColor
-                : Theme.of(context).colorScheme.onSurface,
-          ),
-        ),
-      ),
     );
   }
 }

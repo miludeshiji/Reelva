@@ -380,6 +380,7 @@ void main() {
           router.dispose();
         }
       },
+      variant: TargetPlatformVariant.only(TargetPlatform.windows),
     );
 
     testWidgets('Escape key exits fullscreen', (tester) async {
@@ -417,7 +418,7 @@ void main() {
         find.byKey(const Key('fullscreen_exit_back_button')),
         findsNothing,
       );
-    });
+    }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
     testWidgets(
       'Pending file selection returning after page disposal does not throw or open resource',

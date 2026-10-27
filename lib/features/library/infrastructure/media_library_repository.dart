@@ -1598,6 +1598,17 @@ class MediaLibraryRepository {
     return _watchWorkDetailsInternal(workId).first;
   }
 
+  /// 播放时沿用已有文件关联读取作品与季集，不触发全库识别。
+  Future<WorkDetails?> getWorkDetailsForFile(int fileId) async {
+    final assignment = await (db.select(
+      db.mediaAssignments,
+    )..where((a) => a.fileId.equals(fileId))).getSingleOrNull();
+    if (assignment == null) return null;
+    final work = await _assignedWork(assignment);
+    if (work == null) return null;
+    return _watchWorkDetailsInternal(work.id).first;
+  }
+
   /// 获取未匹配的本地作品（无元数据锁且源为 local）。
   Future<List<LibraryWork>> unmatchedWorks() async {
     await recognizePendingFiles();

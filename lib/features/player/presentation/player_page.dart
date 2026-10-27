@@ -11,10 +11,12 @@ import 'package:window_manager/window_manager.dart';
 import '../../../app/theme/reelva_theme.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../shared/widgets/glass_widgets.dart';
+import '../../sources/application/source_providers.dart';
 import '../application/playback_session.dart';
 import '../application/player_providers.dart';
 import '../application/player_settings_provider.dart';
 import '../domain/playback_resource.dart';
+import '../domain/playback_playlist_entry.dart';
 import '../domain/playback_snapshot.dart';
 import '../domain/player_engine.dart';
 import '../domain/player_shortcuts.dart';
@@ -71,6 +73,243 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   bool _rightKeyPressed = false;
   bool _statisticsVisible = false;
   PlayerShortcutAction? _rightTapAction;
+  bool _switchingEpisode = false;
+  Size? _windowVideoSize;
+  Future<void> _windowSizeUpdate = Future<void>.value();
+
+  void _syncWindowVideoSize(PlaybackSnapshot snapshot) {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.windows) return;
+    if (snapshot.status == PlaybackStatus.idle) {
+      _windowVideoSize = null;
+      return;
+    }
+    if (_isFullscreen ||
+        _isTogglingFullscreen ||
+        snapshot.videoWidth <= 0 ||
+        snapshot.videoHeight <= 0) {
+      return;
+    }
+    final size = Size(
+      snapshot.videoWidth.toDouble(),
+      snapshot.videoHeight.toDouble(),
+    );
+    if (_windowVideoSize == size) return;
+    _windowVideoSize = size;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _windowSizeUpdate = _windowSizeUpdate
+          .then((_) async {
+            if (!mounted ||
+                _isExiting ||
+                _isFullscreen ||
+                _windowVideoSize != size) {
+              return;
+            }
+            if (await windowManager.isFullScreen()) return;
+            if (await windowManager.isMaximized()) {
+              await windowManager.unmaximize();
+              await WidgetsBinding.instance.endOfFrame;
+            }
+            if (!mounted ||
+                _isExiting ||
+                _isFullscreen ||
+                _windowVideoSize != size) {
+              return;
+            }
+            final bounds = await windowManager.getBounds();
+            if (!mounted ||
+                _isExiting ||
+                _isFullscreen ||
+                _windowVideoSize != size) {
+              return;
+            }
+            final view = View.of(context);
+            final clientSize = view.physicalSize / view.devicePixelRatio;
+            // window_manager 使用外框尺寸，Flutter View 是视频所在的客户区。
+            final frameWidth = (bounds.width - clientSize.width).clamp(
+              0.0,
+              double.infinity,
+            );
+            final frameHeight = (bounds.height - clientSize.height).clamp(
+              0.0,
+              double.infinity,
+            );
+            final fitted = applyBoxFit(
+              BoxFit.contain,
+              size,
+              clientSize,
+            ).destination;
+            await windowManager.setBounds(
+              Rect.fromCenter(
+                center: bounds.center,
+                width: fitted.width + frameWidth,
+                height: fitted.height + frameHeight,
+              ),
+            );
+          })
+          .catchError((Object error, StackTrace stack) {
+            AppLogger.instance.error(
+              '按视频比例调整窗口失败',
+              error: error,
+              stackTrace: stack,
+            );
+          });
+    });
+  }
+
+  int get _playlistIndex =>
+      _currentResource?.playlist.indexWhere(
+        (entry) => entry.fileId == _currentResource?.libraryFileId,
+      ) ??
+      -1;
+
+  Future<void> _playEpisode(int index) async {
+    if (_switchingEpisode || _isExiting) return;
+    final playlist = _currentResource?.playlist;
+    if (playlist == null ||
+        index < 0 ||
+        index >= playlist.length ||
+        index == _playlistIndex ||
+        !playlist[index].available) {
+      return;
+    }
+    final actionId = ++_actionCounter;
+    setState(() => _switchingEpisode = true);
+    try {
+      final resource = await ref
+          .read(sourceControllerProvider.notifier)
+          .resolvePlayback(playlist[index].fileId);
+      if (!mounted || _isExiting || actionId != _actionCounter) return;
+      _cancelSpeedHold();
+      final next = resource.copyWith(playlist: playlist);
+      setState(() {
+        _currentResource = next;
+        _statisticsVisible = false;
+        _windowVideoSize = null;
+      });
+      await _session!.engine.open(next);
+    } catch (error, stack) {
+      if (!mounted || _isExiting || actionId != _actionCounter) return;
+      AppLogger.instance.error('切换剧集失败', error: error, stackTrace: stack);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('无法播放该集，请检查媒体源后重试')));
+    } finally {
+      if (mounted) {
+        setState(() => _switchingEpisode = false);
+        _showControls();
+      }
+    }
+  }
+
+  Future<void> _showPlaylist() async {
+    final resource = _currentResource;
+    if (resource == null) return;
+    final entries = resource.playlist;
+    final current = _playlistIndex;
+    final rowHeight = 72 * MediaQuery.textScalerOf(context).scale(1);
+    final scroll = ScrollController(
+      initialScrollOffset: current < 0 ? 0 : current * rowHeight,
+    );
+    _controlsInteractions++;
+    _showControls();
+    try {
+      final selected = await showDialog<int>(
+        context: context,
+        builder: (context) => Dialog(
+          child: SizedBox(
+            width: 440,
+            height: MediaQuery.sizeOf(context).height * 0.7,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 8, 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '播放列表',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: '关闭播放列表',
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: entries.isEmpty
+                      ? ListTile(
+                          leading: const Icon(Icons.graphic_eq_rounded),
+                          title: Text(resource.displayName),
+                          subtitle: const Text('正在播放'),
+                          selected: true,
+                        )
+                      : ListView.builder(
+                          key: const Key('player_playlist'),
+                          controller: scroll,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          itemExtent: rowHeight,
+                          itemCount: entries.length,
+                          itemBuilder: (context, index) {
+                            final entry = entries[index];
+                            return ListTile(
+                              key: ValueKey(
+                                'player_playlist_entry_${entry.fileId}',
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                  ReelvaDesign.radiusSmall,
+                                ),
+                              ),
+                              selected: index == current,
+                              enabled: entry.available && !_switchingEpisode,
+                              leading: Icon(
+                                index == current
+                                    ? Icons.graphic_eq_rounded
+                                    : Icons.play_arrow_rounded,
+                              ),
+                              title: Text(
+                                entry.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Text(
+                                entry.available
+                                    ? entry.episodeLabel ?? '当前视频'
+                                    : '${entry.episodeLabel ?? ''} · 暂不可播放',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              trailing: index == current
+                                  ? const Icon(Icons.check_rounded)
+                                  : null,
+                              onTap: () => Navigator.pop(context, index),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      if (mounted &&
+          !_isExiting &&
+          _currentResource == resource &&
+          selected != null) {
+        await _playEpisode(selected);
+      }
+    } finally {
+      scroll.dispose();
+      if (mounted) {
+        _controlsInteractions--;
+        _showControls();
+        _focusNode.requestFocus();
+      }
+    }
+  }
 
   void _setSpeedHold(_SpeedHoldSource source, bool held) {
     final engine = _session?.engine;
@@ -432,6 +671,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       if (mounted) {
         setState(() {
           _isFullscreen = targetFullscreen;
+          if (!targetFullscreen) _windowVideoSize = null;
         });
       }
     } else {
@@ -1031,9 +1271,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           ),
           if (overlay)
             PopupMenuButton<String>(
-              key: const Key('player_source_menu_button'),
+              key: const Key('player_options_menu_button'),
               icon: const Icon(Icons.more_vert_rounded),
-              tooltip: '打开视频',
+              tooltip: '播放选项',
               onOpened: () {
                 _controlsInteractions++;
                 _showControls();
@@ -1042,30 +1282,17 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                 _controlsInteractions--;
                 _scheduleControlsHide();
               },
-              onSelected: (value) async {
-                try {
-                  if (value == 'file') {
-                    await _pickNativeVideo();
-                  } else {
-                    await _openNetworkVideo();
-                  }
-                } finally {
-                  if (mounted) {
-                    _controlsInteractions--;
-                    _showControls();
-                  }
-                }
+              onSelected: (_) {
+                _controlsInteractions--;
+                setState(() => _statisticsVisible = true);
+                _showControls();
+                _focusNode.requestFocus();
               },
               itemBuilder: (_) => const [
-                GlassPopupMenuItem(
-                  key: Key('appbar_pick_file_button'),
-                  value: 'file',
-                  child: Text('选择本地视频'),
-                ),
-                GlassPopupMenuItem(
-                  key: Key('appbar_open_url_button'),
-                  value: 'url',
-                  child: Text('输入网络链接'),
+                GlassPopupMenuItem<String>(
+                  key: Key('player_video_info_button'),
+                  value: 'statistics',
+                  child: Text('视频信息'),
                 ),
               ],
             )
@@ -1164,6 +1391,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     PlayerEngine engine, {
     required bool overlay,
   }) {
+    final entries =
+        _currentResource?.playlist ?? const <PlaybackPlaylistEntry>[];
+    final index = _playlistIndex;
     return MouseRegion(
       onEnter: (_) {
         _pointerOverControls = true;
@@ -1192,6 +1422,19 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           onToggleFullscreen: () => _setFullscreen(!_isFullscreen),
           onPickLocalSubtitle: () => _pickSubtitle(fromSource: false),
           onPickSourceSubtitle: () => _pickSubtitle(fromSource: true),
+          onPreviousEpisode:
+              !_switchingEpisode && index > 0 && entries[index - 1].available
+              ? () => _playEpisode(index - 1)
+              : null,
+          onNextEpisode:
+              !_switchingEpisode &&
+                  index >= 0 &&
+                  index + 1 < entries.length &&
+                  entries[index + 1].available
+              ? () => _playEpisode(index + 1)
+              : null,
+          onShowPlaylist: _currentResource == null ? null : _showPlaylist,
+          episodeLabel: index < 0 ? null : entries[index].episodeLabel,
           onInteractionChanged: (interacting) {
             if (!mounted) return;
             if (interacting) {
@@ -1462,6 +1705,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           if (snapshot.volume > 0) _lastNonZeroVolume = snapshot.volume;
           final idle = snapshot.status == PlaybackStatus.idle;
           _syncVideoOrientation(snapshot);
+          _syncWindowVideoSize(snapshot);
           final immersive = !idle || _isFullscreen;
 
           void handleReplayOrRetry() async {

@@ -111,7 +111,7 @@ class _PlayerStatisticsOverlayState extends State<PlayerStatisticsOverlay> {
                   children: [
                     const Expanded(
                       child: Text(
-                        '播放信息',
+                        '视频信息',
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
@@ -120,7 +120,7 @@ class _PlayerStatisticsOverlayState extends State<PlayerStatisticsOverlay> {
                     ),
                     IconButton(
                       onPressed: widget.onClose,
-                      tooltip: '关闭播放信息',
+                      tooltip: '关闭视频信息',
                       icon: const Icon(Icons.close, size: 18),
                       visualDensity: VisualDensity.compact,
                     ),

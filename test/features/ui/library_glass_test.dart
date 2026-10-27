@@ -5,6 +5,7 @@ import '../metadata/nfo_test_helpers.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -195,11 +196,16 @@ Future<void> _tapVisible(WidgetTester tester, Finder finder) async {
 
 Future<void> _pumpDetails(
   WidgetTester tester,
-  _RecordingSourceController controller,
-) async {
+  _RecordingSourceController controller, {
+  WorkDetails details = _details,
+}) async {
   final router = GoRouter(
     initialLocation: '/library/work/7',
     routes: [
+      GoRoute(
+        path: '/library',
+        builder: (context, state) => const Scaffold(body: Text('影视库测试页')),
+      ),
       GoRoute(
         path: '/library/work/:id',
         builder: (context, state) => const WorkDetailsPage(workId: 7),
@@ -220,7 +226,7 @@ Future<void> _pumpDetails(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        workDetailsProvider.overrideWith((ref, id) => Stream.value(_details)),
+        workDetailsProvider.overrideWith((ref, id) => Stream.value(details)),
         sourceControllerProvider.overrideWith(() => controller),
       ],
       child: MaterialApp.router(theme: ReelvaTheme.light, routerConfig: router),
@@ -781,12 +787,72 @@ void main() {
     expect(find.byKey(const Key('library_work_card_2')), findsOneWidget);
   });
 
-  testWidgets('真实季集可选择和展开，离线版本禁用，可手选可用版本播放', (tester) async {
+  testWidgets('移动端详情封面铺至状态栏，滚动后顶部操作位置固定且仍可使用', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.padding = const FakeViewPadding(top: 32, bottom: 24);
+    tester.view.viewPadding = const FakeViewPadding(top: 32, bottom: 24);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetPadding);
+    addTearDown(tester.view.resetViewPadding);
+
+    await _pumpDetails(tester, _RecordingSourceController());
+    final back = find.byKey(const Key('work_details_back_button'));
+    final more = find.byKey(const Key('work_more_button'));
+    final title = find.text('作品详情');
+    final backRect = tester.getRect(back);
+    final moreRect = tester.getRect(more);
+    final titleRect = tester.getRect(title);
+    final contentTop = tester
+        .getTopLeft(find.byKey(const Key('work_details_title')))
+        .dy;
+    expect(
+      tester.getTopLeft(find.byKey(const Key('work_details_cover'))).dy,
+      0,
+    );
+    expect(backRect.top, greaterThanOrEqualTo(32));
+    expect(moreRect.top, greaterThanOrEqualTo(32));
+
+    await tester.drag(
+      find.byKey(const Key('work_details_scroll_view')),
+      const Offset(0, -600),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.getTopLeft(find.byKey(const Key('work_details_title'))).dy,
+      lessThan(contentTop),
+      reason: '正文已随手势向上滚动',
+    );
+    expect(tester.getRect(back), backRect);
+    expect(tester.getRect(more), moreRect);
+    expect(tester.getRect(title), titleRect);
+    expect(back.hitTestable(), findsOneWidget);
+    expect(more.hitTestable(), findsOneWidget);
+
+    await tester.tap(more);
+    await tester.pumpAndSettle();
+    expect(find.text('手动匹配').last.hitTestable(), findsOneWidget);
+    expect(find.text('本地编辑').last.hitTestable(), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    await tester.tap(back);
+    await tester.pumpAndSettle();
+    expect(find.text('影视库测试页'), findsOneWidget);
+  });
+
+  testWidgets('季标签切换横向剧集卡片，同集版本归并且集数按季集去重', (tester) async {
     final controller = _RecordingSourceController();
     await _pumpDetails(tester, controller);
-    expect(find.byKey(const Key('work_version_item_70')), findsOneWidget);
-    expect(find.byKey(const Key('work_version_item_71')), findsOneWidget);
-    expect(find.byKey(const Key('work_version_item_72')), findsOneWidget);
+    expect(find.text('库中有 2 集'), findsOneWidget);
+    expect(find.text('本季库中有 1 集'), findsOneWidget);
+    expect(find.byKey(const Key('work_episode_card_1_1')), findsOneWidget);
+    expect(find.byKey(const Key('work_episode_card_2_2')), findsNothing);
+    expect(find.text('2 个版本'), findsOneWidget);
+    expect(find.byType(DropdownButton<int>), findsNothing);
+
+    await _tapVisible(tester, find.byKey(const Key('work_episode_card_1_1')));
+    expect(find.byType(AlertDialog), findsOneWidget);
     expect(
       tester
           .widget<FilledButton>(
@@ -798,28 +864,61 @@ void main() {
           .onPressed,
       isNull,
     );
-
-    await _tapVisible(tester, find.byKey(const Key('work_season_selector')));
-    await tester.tap(find.text('第 2 季').last);
+    expect(find.text('媒体源暂不可用'), findsOneWidget);
+    await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('work_version_item_70')), findsNothing);
-    expect(find.byKey(const Key('work_version_item_71')), findsNothing);
-    expect(find.byKey(const Key('work_version_item_72')), findsOneWidget);
-    expect(find.text('第 2 集 (S02E02) · 重逢'), findsOneWidget);
 
-    final seasonTitle = find.descendant(
-      of: find.byKey(const PageStorageKey('work_season_7_2')),
-      matching: find.text('第 2 季'),
-    );
-    await _tapVisible(tester, seasonTitle);
-    expect(find.byKey(const Key('work_play_version_button_72')), findsNothing);
-    await _tapVisible(tester, seasonTitle);
-    await _tapVisible(
-      tester,
-      find.byKey(const Key('work_play_version_button_72')),
-    );
+    await _tapVisible(tester, find.byKey(const Key('work_season_tab_2')));
+    expect(find.byKey(const Key('work_episode_card_1_1')), findsNothing);
+    expect(find.byKey(const Key('work_episode_card_2_2')), findsOneWidget);
+    expect(find.text('第 2 集 · 重逢'), findsOneWidget);
+    await _tapVisible(tester, find.byKey(const Key('work_episode_card_2_2')));
     expect(controller.resolvedFiles, [72]);
     expect(find.text('播放文件 72'), findsOneWidget);
+  });
+
+  testWidgets('同一集可手选可用文件版本播放', (tester) async {
+    final controller = _RecordingSourceController();
+    await _pumpDetails(tester, controller);
+    await _tapVisible(tester, find.byKey(const Key('work_episode_card_1_1')));
+    await _tapVisible(
+      tester,
+      find.byKey(const Key('work_play_version_button_71')),
+    );
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(controller.resolvedFiles, [71]);
+    expect(find.text('播放文件 71'), findsOneWidget);
+  });
+
+  testWidgets('集数区分不同季和特别篇，未分集文件保留入口且不虚增集数', (tester) async {
+    final details = _details.copyWith(
+      versions: [
+        ..._details.versions,
+        _details.versions.last.copyWith(fileId: 73, episodeNumber: 1),
+        _details.versions.last.copyWith(
+          fileId: 74,
+          seasonNumber: 0,
+          episodeNumber: 1,
+        ),
+        const LibraryVersion(
+          fileId: 75,
+          fileName: '未分集.mkv',
+          sourceName: '本地媒体源',
+          available: true,
+        ),
+      ],
+    );
+    await _pumpDetails(tester, _RecordingSourceController(), details: details);
+    expect(find.text('库中有 4 集'), findsOneWidget);
+    expect(find.text('本季库中有 1 集 · 1 个未分集文件'), findsOneWidget);
+    expect(
+      find.byKey(const Key('work_episode_card_1_file_75')),
+      findsOneWidget,
+    );
+    await _tapVisible(tester, find.byKey(const Key('work_season_tab_0')));
+    expect(find.text('特别篇'), findsOneWidget);
+    expect(find.text('本季库中有 1 集'), findsOneWidget);
+    expect(find.byKey(const Key('work_episode_card_0_1')), findsOneWidget);
   });
 
   testWidgets('开始播放跳过离线文件，解析首个可用版本', (tester) async {
@@ -828,5 +927,14 @@ void main() {
     await _tapVisible(tester, find.byKey(const Key('work_start_play_button')));
     expect(controller.resolvedFiles, [71]);
     expect(find.text('播放文件 71'), findsOneWidget);
+  });
+
+  testWidgets('开始播放使用当前选中的季', (tester) async {
+    final controller = _RecordingSourceController();
+    await _pumpDetails(tester, controller);
+    await _tapVisible(tester, find.byKey(const Key('work_season_tab_2')));
+    await _tapVisible(tester, find.byKey(const Key('work_start_play_button')));
+    expect(controller.resolvedFiles, [72]);
+    expect(find.text('播放文件 72'), findsOneWidget);
   });
 }

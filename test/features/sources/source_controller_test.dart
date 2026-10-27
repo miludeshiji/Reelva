@@ -7,6 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:reelva/core/database/app_database.dart';
 import 'package:reelva/features/library/infrastructure/media_library_repository.dart';
 import 'package:reelva/features/metadata/application/metadata_providers.dart';
+import 'package:reelva/features/metadata/domain/tmdb_models.dart';
+import 'package:reelva/features/metadata/domain/work_metadata.dart';
 import 'package:reelva/features/player/domain/playback_resource.dart';
 import 'package:reelva/features/progress/infrastructure/playback_progress_repository.dart';
 import 'package:reelva/features/sources/application/source_providers.dart';
@@ -564,6 +566,70 @@ void main() {
       expect(continueList.first.fileId, video.fileId);
       expect(continueList.first.available, isFalse);
     });
+    test('剧集播放资源使用刮削集名，按季集排序且同集多个版本只保留一个', () async {
+      final source = await repo.upsertSource(
+        kind: 'local',
+        rootLocator: '/series',
+        name: '剧集源',
+      );
+      fakeAdapter.entriesByDir['/series'] = [
+        for (final name in [
+          'second.mkv',
+          'first-a.mkv',
+          'first-b.mkv',
+          'next-season.mkv',
+        ])
+          MediaEntry(
+            externalId: name,
+            locator: name,
+            name: name,
+            isDirectory: false,
+          ),
+      ];
+      final controller = container.read(sourceControllerProvider.notifier);
+      await controller.refreshSource(source.id);
+      final files = {
+        for (final video in await repo.watchLibrary().first)
+          video.fileName: video.fileId,
+      };
+      await repo.applyMetadataToFiles({
+        files['second.mkv']!: const TmdbEpisode(
+          seasonNumber: 1,
+          episodeNumber: 2,
+          title: '雨后的约定',
+        ),
+        files['first-a.mkv']!: const TmdbEpisode(
+          seasonNumber: 1,
+          episodeNumber: 1,
+          title: '初次相遇',
+        ),
+        files['first-b.mkv']!: const TmdbEpisode(
+          seasonNumber: 1,
+          episodeNumber: 1,
+          title: '初次相遇',
+        ),
+        files['next-season.mkv']!: const TmdbEpisode(
+          seasonNumber: 2,
+          episodeNumber: 1,
+          title: '新的旅程',
+        ),
+      }, const WorkMetadata(type: 'series', title: '旅途', tmdbId: 100));
+      final resource = await controller.resolvePlayback(files['first-b.mkv']!);
+      expect(resource.displayName, '第 1 季 · 第 1 集 · 初次相遇');
+      expect(resource.playlist.map((entry) => entry.title), [
+        '初次相遇',
+        '雨后的约定',
+        '新的旅程',
+      ]);
+      expect(resource.playlist.first.fileId, files['first-b.mkv']);
+      expect(resource.playlist.map((entry) => entry.episodeLabel), [
+        '第 1 季 · 第 1 集',
+        '第 1 季 · 第 2 集',
+        '第 2 季 · 第 1 集',
+      ]);
+      expect(resource.uri.toString(), 'file:///videos/first-b.mkv');
+    });
+
     test(
       'resolvePlayback looks up video and source and delegates to adapter',
       () async {

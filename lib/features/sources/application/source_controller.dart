@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
 import '../../../core/logging/app_logger.dart';
+import '../../library/domain/library_work.dart';
+import '../../player/domain/playback_playlist_entry.dart';
 import '../../player/domain/playback_resource.dart';
 import '../domain/source_models.dart';
 import '../infrastructure/remote_credentials_store.dart';
@@ -332,7 +334,7 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
   /// 将媒体文件解析为播放器可直接播放的资源
   ///
   /// 查询媒体文件 -> 检查所属启用的媒体源 -> 调用适配器解析播放 URI。
-  /// UI 层不直接执行原生调用或数据库查询。保留库中持久化的真实文件名作为显示名。
+  /// UI 层不直接执行原生调用或数据库查询。已匹配剧集携带集名与按季集排序的播放列表。
   Future<PlaybackResource> resolvePlayback(int fileId) async {
     final repo = ref.read(mediaLibraryRepositoryProvider);
     final video = await repo.getVideo(fileId);
@@ -359,11 +361,61 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
 
     try {
       final resource = await adapter.resolvePlayback(source, video.externalId);
-      final displayName = video.fileName.isNotEmpty
+      var displayName = video.fileName.isNotEmpty
           ? video.fileName
           : resource.displayName;
+      final details = await repo.getWorkDetailsForFile(fileId);
+      final playlist = <PlaybackPlaylistEntry>[];
+      if (details != null) {
+        final episodes = <(int, int), LibraryVersion>{};
+        for (final version in details.versions) {
+          if (version.episodeNumber == null) continue;
+          final key = (version.seasonNumber ?? 1, version.episodeNumber!);
+          final previous = episodes[key];
+          if (previous == null ||
+              version.fileId == fileId ||
+              (previous.fileId != fileId &&
+                  version.available &&
+                  (!previous.available ||
+                      (version.sourceName == video.sourceName &&
+                          previous.sourceName != video.sourceName)))) {
+            episodes[key] = version;
+          }
+        }
+        for (final version in episodes.values) {
+          final title = version.episodeTitle?.trim();
+          playlist.add(
+            PlaybackPlaylistEntry(
+              fileId: version.fileId,
+              title: title == null || title.isEmpty
+                  ? '第 ${version.episodeNumber} 集'
+                  : title,
+              available: version.available,
+              seasonNumber: version.seasonNumber,
+              episodeNumber: version.episodeNumber,
+            ),
+          );
+        }
+        if (playlist.isEmpty) {
+          if (details.work.metadataSource != 'local' ||
+              details.work.metadataLocked) {
+            displayName = details.work.title;
+          }
+          playlist.add(
+            PlaybackPlaylistEntry(
+              fileId: fileId,
+              title: displayName,
+              available: video.available,
+            ),
+          );
+        } else {
+          final current = playlist.where((entry) => entry.fileId == fileId);
+          if (current.isNotEmpty) displayName = current.first.displayTitle;
+        }
+      }
       return resource.copyWith(
         displayName: displayName,
+        playlist: List.unmodifiable(playlist),
         libraryFileId: () => fileId,
         sourceId: source.id,
         discoverSubtitles: () => discoverSourceSubtitles(

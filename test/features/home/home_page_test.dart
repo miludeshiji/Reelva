@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:drift/native.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart';
@@ -22,6 +23,7 @@ import 'package:reelva/features/progress/presentation/watch_history_page.dart';
 import 'package:reelva/features/sources/application/source_providers.dart';
 import 'package:reelva/features/sources/domain/media_source_adapter.dart';
 import 'package:reelva/features/sources/domain/source_models.dart';
+import 'package:reelva/shared/widgets/poster_image.dart';
 import 'package:reelva/features/sources/sources_page.dart';
 import 'package:reelva/shared/widgets/empty_state_view.dart';
 
@@ -594,8 +596,12 @@ void main() {
     );
 
     testWidgets(
-      'Recently added section displays works, version count badge, and navigates to details',
+      'Recently added covers and badges enlarge on hover without moving text, and cards open details',
       (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(1200, 900);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
         final db = AppDatabase(executor: NativeDatabase.memory());
         final router = createRouter(initialLocation: '/');
 
@@ -637,8 +643,51 @@ void main() {
           expect(find.byKey(const Key('recent_work_card_11')), findsOneWidget);
           expect(find.text('2 版本'), findsOneWidget);
 
-          // Tap 沙丘 navigates to WorkDetailsPage(workId: 10)
-          await tester.tap(find.byKey(const Key('recent_work_card_10')));
+          final card = find.byKey(const Key('recent_work_card_10'));
+          await tester.ensureVisible(card);
+          await tester.pumpAndSettle();
+          final poster = find.descendant(
+            of: card,
+            matching: find.byType(PosterImage),
+          );
+          final title = find
+              .descendant(of: card, matching: find.text('沙丘'))
+              .last;
+          final metadata = find.descendant(
+            of: card,
+            matching: find.text('2021'),
+          );
+          final posterRect = tester.getRect(poster);
+          final badgeRect = tester.getRect(find.text('2 版本'));
+          final titleRect = tester.getRect(title);
+          final metadataRect = tester.getRect(metadata);
+          final mouse = await tester.createGesture(
+            kind: PointerDeviceKind.mouse,
+          );
+          await mouse.addPointer(location: Offset.zero);
+          await mouse.moveTo(posterRect.center);
+          await tester.pumpAndSettle();
+          expect(
+            tester.getRect(poster).width,
+            closeTo(posterRect.width * 1.03, 0.1),
+          );
+          expect(
+            tester.getRect(poster).height,
+            closeTo(posterRect.height * 1.03, 0.1),
+          );
+          expect(
+            tester.getRect(find.text('2 版本')).width,
+            closeTo(badgeRect.width * 1.03, 0.1),
+          );
+          expect(tester.getRect(title), titleRect);
+          expect(tester.getRect(metadata), metadataRect);
+          await mouse.moveTo(Offset.zero);
+          await tester.pumpAndSettle();
+          expect(tester.getRect(poster), posterRect);
+          await mouse.removePointer();
+
+          // 标题区域仍可打开作品详情。
+          await tester.tap(title);
           await tester.pumpAndSettle();
 
           expect(find.byType(WorkDetailsPage), findsOneWidget);

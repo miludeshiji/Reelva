@@ -148,7 +148,7 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.f8);
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('player_statistics_overlay')), findsOneWidget);
-    await tester.tap(find.byTooltip('关闭播放信息'));
+    await tester.tap(find.byTooltip('关闭视频信息'));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('player_statistics_overlay')), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());

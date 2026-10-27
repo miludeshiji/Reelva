@@ -213,6 +213,12 @@ class WorkDetails {
   final LibraryWork work;
   final List<LibraryVersion> versions;
 
+  int get episodeCount => versions
+      .where((version) => version.episodeNumber != null)
+      .map((version) => (version.seasonNumber ?? 1, version.episodeNumber!))
+      .toSet()
+      .length;
+
   WorkDetails copyWith({LibraryWork? work, List<LibraryVersion>? versions}) {
     return WorkDetails(
       work: work ?? this.work,

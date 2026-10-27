@@ -384,12 +384,14 @@ class _HomePageState extends ConsumerState<HomePage> {
                       mainAxisExtent: recentHeight,
                     ),
                     delegate: SliverChildBuilderDelegate((context, index) {
-                      return _buildRecentWorkCard(
-                        context,
-                        recentWorks[index],
+                      final work = recentWorks[index];
+                      return _RecentWorkCard(
+                        key: ValueKey(work.id),
+                        work: work,
                         isDesktop: isDesktop,
                         posterHeight: posterHeight,
                         titleLines: titleLines,
+                        onTap: () => _openWorkDetails(work.id),
                       );
                     }, childCount: recentWorks.length),
                   ),
@@ -1011,88 +1013,118 @@ class _HomePageState extends ConsumerState<HomePage> {
       ),
     );
   }
+}
 
-  Widget _buildRecentWorkCard(
-    BuildContext context,
-    LibraryWork work, {
-    required bool isDesktop,
-    required double posterHeight,
-    required int titleLines,
-  }) {
+class _RecentWorkCard extends StatefulWidget {
+  const _RecentWorkCard({
+    super.key,
+    required this.work,
+    required this.isDesktop,
+    required this.posterHeight,
+    required this.titleLines,
+    required this.onTap,
+  });
+
+  final LibraryWork work;
+  final bool isDesktop;
+  final double posterHeight;
+  final int titleLines;
+  final VoidCallback onTap;
+
+  @override
+  State<_RecentWorkCard> createState() => _RecentWorkCardState();
+}
+
+class _RecentWorkCardState extends State<_RecentWorkCard> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final work = widget.work;
+    final isDesktop = widget.isDesktop;
     final radius = BorderRadius.circular(ReelvaDesign.radiusSmall);
     return Material(
       type: MaterialType.transparency,
       child: InkWell(
         key: Key('recent_work_card_${work.id}'),
         borderRadius: radius,
-        onTap: () => _openWorkDetails(work.id),
+        onTap: widget.onTap,
+        onHover: (hovered) => setState(() => _hovered = hovered),
+        hoverColor: Colors.transparent,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             SizedBox(
-              height: posterHeight,
-              child: ClipRRect(
-                borderRadius: radius,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    PosterImage(
-                      posterPath: isDesktop
-                          ? work.posterPath
-                          : work.backdropPath ?? work.posterPath,
-                      title: work.title,
-                      borderRadius: BorderRadius.zero,
-                    ),
-                    if (work.versionCount > 1)
-                      Align(
-                        alignment: Alignment.topRight,
-                        child: Container(
-                          margin: const EdgeInsets.all(ReelvaDesign.space4),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 5,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.7),
-                            borderRadius: BorderRadius.circular(
-                              ReelvaDesign.space4,
+              height: widget.posterHeight,
+              child: AnimatedScale(
+                scale: _hovered ? 1.03 : 1,
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : const Duration(milliseconds: 200),
+                curve: _hovered ? Curves.easeOutBack : Curves.easeOutCubic,
+                child: ClipRRect(
+                  borderRadius: radius,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      PosterImage(
+                        posterPath: isDesktop
+                            ? work.posterPath
+                            : work.backdropPath ?? work.posterPath,
+                        title: work.title,
+                        borderRadius: BorderRadius.zero,
+                      ),
+                      if (work.versionCount > 1)
+                        Align(
+                          alignment: Alignment.topRight,
+                          child: Container(
+                            margin: const EdgeInsets.all(ReelvaDesign.space4),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 2,
                             ),
-                          ),
-                          child: Text(
-                            '${work.versionCount} 版本',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.7),
+                              borderRadius: BorderRadius.circular(
+                                ReelvaDesign.space4,
+                              ),
+                            ),
+                            child: Text(
+                              '${work.versionCount} 版本',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    if (!work.available)
-                      const Align(
-                        alignment: Alignment.bottomLeft,
-                        child: Padding(
-                          padding: EdgeInsets.all(ReelvaDesign.space8),
-                          child: Tooltip(
-                            message: '媒体文件当前不可用，可前往详情恢复',
-                            child: Icon(
-                              Icons.cloud_off_rounded,
-                              color: Colors.white,
-                              size: 20,
+                      if (!work.available)
+                        const Align(
+                          alignment: Alignment.bottomLeft,
+                          child: Padding(
+                            padding: EdgeInsets.all(ReelvaDesign.space8),
+                            child: Tooltip(
+                              message: '媒体文件当前不可用，可前往详情恢复',
+                              child: Icon(
+                                Icons.cloud_off_rounded,
+                                color: Colors.white,
+                                size: 20,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
             const SizedBox(height: ReelvaDesign.space8),
             Text(
               work.title,
-              maxLines: titleLines,
+              maxLines: widget.titleLines,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: isDesktop ? 14 : 13,

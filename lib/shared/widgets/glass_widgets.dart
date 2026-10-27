@@ -141,8 +141,11 @@ class GlassPopupMenuItem<T> extends PopupMenuItem<T> {
     super.textStyle,
     super.labelTextStyle,
     super.mouseCursor,
+    this.selected = false,
     required super.child,
   });
+
+  final bool selected;
 
   @override
   PopupMenuItemState<T, GlassPopupMenuItem<T>> createState() =>
@@ -153,7 +156,9 @@ class _GlassPopupMenuItemState<T>
     extends PopupMenuItemState<T, GlassPopupMenuItem<T>> {
   @override
   Widget build(BuildContext context) => Material(
-    type: MaterialType.transparency,
+    color: widget.selected
+        ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08)
+        : Colors.transparent,
     borderRadius: BorderRadius.circular(ReelvaDesign.radiusSmall),
     clipBehavior: Clip.antiAlias,
     child: super.build(context),

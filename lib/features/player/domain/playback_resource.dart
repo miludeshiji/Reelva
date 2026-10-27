@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import 'playback_playlist_entry.dart';
+
 /// 表示一个可供播放的媒体资源
 ///
 /// 包含资源统一标识符（URI）、展示名称以及请求 HTTP 头。
@@ -16,6 +18,7 @@ class PlaybackResource {
     this.errors,
     this.sourceId,
     this.discoverSubtitles,
+    this.playlist = const [],
   });
 
   final Uri uri;
@@ -23,6 +26,7 @@ class PlaybackResource {
   final Map<String, String> httpHeaders;
   final int? libraryFileId;
   final int? sourceId;
+  final List<PlaybackPlaylistEntry> playlist;
 
   /// 按需枚举源目录中的外挂字幕，不随视频准备过程分配字幕租约。
   final Future<List<PlaybackResource>> Function()? discoverSubtitles;
@@ -48,6 +52,7 @@ class PlaybackResource {
     Stream<String>? errors,
     int? sourceId,
     Future<List<PlaybackResource>> Function()? discoverSubtitles,
+    List<PlaybackPlaylistEntry>? playlist,
   }) {
     return PlaybackResource(
       uri: uri ?? this.uri,
@@ -61,6 +66,7 @@ class PlaybackResource {
       errors: errors ?? this.errors,
       sourceId: sourceId ?? this.sourceId,
       discoverSubtitles: discoverSubtitles ?? this.discoverSubtitles,
+      playlist: playlist ?? this.playlist,
     );
   }
 
@@ -78,6 +84,7 @@ class PlaybackResource {
           displayName == other.displayName &&
           libraryFileId == other.libraryFileId &&
           sourceId == other.sourceId &&
+          listEquals(playlist, other.playlist) &&
           discoverSubtitles == other.discoverSubtitles &&
           prepare == other.prepare &&
           release == other.release &&
@@ -90,6 +97,7 @@ class PlaybackResource {
     displayName,
     libraryFileId,
     sourceId,
+    Object.hashAll(playlist),
     discoverSubtitles,
     prepare,
     release,

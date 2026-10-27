@@ -190,10 +190,10 @@ void main() {
             Brightness.dark,
           );
           final back = tester.getCenter(
-            find.byKey(const Key('player_seek_back_button')),
+            find.byKey(const Key('player_previous_episode_button')),
           );
           final forward = tester.getCenter(
-            find.byKey(const Key('player_seek_forward_button')),
+            find.byKey(const Key('player_next_episode_button')),
           );
           expect(forward.dx - back.dx, lessThan(150));
           expect(forward.dy, back.dy);
@@ -294,6 +294,7 @@ void main() {
         );
         expect(tester.takeException(), isNull);
       },
+      variant: TargetPlatformVariant.only(TargetPlatform.windows),
     );
   }
 
@@ -394,10 +395,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.pump(const Duration(seconds: 4));
       await tester.pump(const Duration(milliseconds: 250));
-      expect(find.byKey(_fullscreenKey).hitTestable(), findsNothing);
+      expect(volumeButton.hitTestable(), findsNothing);
       await tester.tapAt(tester.getCenter(find.byKey(_videoKey)));
       await tester.pumpAndSettle();
-      expect(find.byKey(_fullscreenKey).hitTestable(), findsOneWidget);
+      expect(volumeButton.hitTestable(), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
