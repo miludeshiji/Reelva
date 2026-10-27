@@ -35,7 +35,6 @@ class SyncCipher {
   Future<Map<String, dynamic>> decrypt(String text, String password) =>
       Isolate.run(() async {
         try {
-          if (text.length > 8 * 1024 * 1024) throw const FormatException();
           final envelope = jsonDecode(text) as Map<String, dynamic>;
           if (envelope['format'] != _format) throw const FormatException();
           final salt = base64Decode(envelope['salt'] as String);

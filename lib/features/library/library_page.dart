@@ -32,7 +32,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
   String _search = '';
   String? _type;
   bool _recentlyAdded = false;
-  bool _refreshing = false;
 
   Future<void> _exportMetadata() async {
     final result = await ref.read(nfoControllerProvider.notifier).export();
@@ -55,26 +54,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     super.dispose();
   }
 
-  Future<void> _triggerRefresh() async {
-    if (_refreshing) return;
-    setState(() => _refreshing = true);
-    try {
-      final sources = await ref
-          .read(mediaLibraryRepositoryProvider)
-          .watchSources()
-          .first;
-      for (final source in sources) {
-        if (!mounted) return;
-        await ref
-            .read(sourceControllerProvider.notifier)
-            .refreshSource(source.id);
-      }
-      if (mounted) {
-        await ref.read(metadataControllerProvider.notifier).refresh();
-      }
-    } finally {
-      if (mounted) setState(() => _refreshing = false);
-    }
+  void _triggerRefresh() {
+    ref.read(metadataControllerProvider.notifier).refresh();
   }
 
   Future<void> _reviewWork(LibraryWork work) async {
@@ -171,8 +152,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
         (progress) => progress.values.any((scan) => scan.running),
       ),
     );
-    final isBuildingLibrary =
-        _refreshing || isScanning || metaTaskState.running;
+    final isBuildingLibrary = isScanning || metaTaskState.running;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -562,8 +542,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                               size: ReelvaDesign.pageHeaderButtonSize,
                               tooltip: '导出已有影视库的 NFO 与图片',
                               onPressed:
-                                  _refreshing ||
-                                      nfoTask.running ||
+                                  nfoTask.running ||
                                       metaTaskState.running ||
                                       isScanning
                                   ? null
@@ -575,7 +554,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                               top: ReelvaDesign.space12,
                               right: ReelvaDesign.space24,
                             ),
-                            child: _refreshing || metaTaskState.running
+                            child: metaTaskState.running
                                 ? const SizedBox(
                                     width: 48,
                                     height: 48,
@@ -596,9 +575,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                                     icon: Icons.refresh_rounded,
                                     size: ReelvaDesign.pageHeaderButtonSize,
                                     tooltip: '刷新并识别影视元数据',
-                                    onPressed: _refreshing
-                                        ? null
-                                        : _triggerRefresh,
+                                    onPressed: _triggerRefresh,
                                   ),
                           ),
                         ],

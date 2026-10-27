@@ -22,7 +22,7 @@ class SyncConfiguration {
   /// HTTP Basic 认证密码
   final String password;
 
-  /// 独立于 WebDAV 登录密码；配置后启用应用设置与凭据的加密同步。
+  /// 独立于 WebDAV 登录密码；留空使用普通 JSON，填写后加密配置与索引。
   final String encryptionPassword;
 
   /// 校验并规整同步根端点 URL

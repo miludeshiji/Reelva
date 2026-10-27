@@ -102,6 +102,7 @@ void main() {
         syncConfigurationStoreProvider.overrideWithValue(syncStore),
         syncRepositoryProvider.overrideWithValue(_SyncRepository()),
         syncServiceProvider.overrideWith((ref, configuration) => syncService),
+        pendingSourceBindingsProvider.overrideWith((ref) async => []),
       ],
       child: MaterialApp.router(theme: ReelvaTheme.light, routerConfig: router),
     );

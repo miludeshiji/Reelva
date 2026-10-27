@@ -120,13 +120,17 @@ class _RecordingSourceController extends SourceController {
 
 class _ManualRefreshRepository extends MediaLibraryRepository {
   _ManualRefreshRepository(super.db);
+  int sourceReads = 0;
 
   @override
-  Stream<List<MediaSourceConfig>> watchSources() => Stream.value(const []);
+  Stream<List<MediaSourceConfig>> watchSources() {
+    sourceReads++;
+    return Stream.value(const []);
+  }
 }
 
 void manualRefreshTests() {
-  testWidgets('进入影视库不触发匹配，点击刷新后执行', (tester) async {
+  testWidgets('进入影视库不触发匹配，点击刷新只匹配已有索引而不重扫来源', (tester) async {
     final db = AppDatabase(
       executor: DatabaseConnection(
         NativeDatabase.memory(),
@@ -134,6 +138,7 @@ void manualRefreshTests() {
       ),
     );
     final metadata = _ReviewMetadataController();
+    final repository = _ManualRefreshRepository(db);
     addTearDown(() async {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
@@ -143,9 +148,7 @@ void manualRefreshTests() {
       ProviderScope(
         overrides: [
           appDatabaseProvider.overrideWithValue(db),
-          mediaLibraryRepositoryProvider.overrideWithValue(
-            _ManualRefreshRepository(db),
-          ),
+          mediaLibraryRepositoryProvider.overrideWithValue(repository),
           metadataControllerProvider.overrideWith(() => metadata),
         ],
         child: MaterialApp(theme: ReelvaTheme.light, home: const LibraryPage()),
@@ -156,6 +159,7 @@ void manualRefreshTests() {
     await tester.tap(find.byKey(const Key('library_refresh_metadata_button')));
     await tester.pumpAndSettle();
     expect(metadata.refreshCount, 1);
+    expect(repository.sourceReads, 0);
   });
 }
 

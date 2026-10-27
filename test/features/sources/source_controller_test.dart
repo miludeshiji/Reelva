@@ -124,6 +124,19 @@ void main() {
   });
 
   group('SourceController', () {
+    test('绑定已有索引时添加目录不触发首次扫描', () async {
+      fakeAdapter.directorySelection = const DirectorySelection(
+        kind: 'local',
+        rootLocator: '/indexed',
+        name: '已同步目录',
+      );
+      final source = await container
+          .read(sourceControllerProvider.notifier)
+          .addDirectory(scanAfterAdd: false);
+      expect(source, isNotNull);
+      expect(fakeAdapter.listEntriesCallCount, 0);
+      expect(container.read(sourceControllerProvider), isEmpty);
+    });
     test('源扫描完成后不自动触发元数据匹配', () async {
       final source = await repo.upsertSource(
         kind: 'local',

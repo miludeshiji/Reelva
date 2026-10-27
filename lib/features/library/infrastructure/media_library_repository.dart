@@ -660,7 +660,7 @@ class MediaLibraryRepository {
       for (final entry in entries) {
         final incomingMs = entry.modifiedAt?.millisecondsSinceEpoch;
 
-        final existing =
+        var existing =
             await (db.select(db.mediaEntries)..where(
                   (e) =>
                       e.sourceId.equals(sourceId) &
@@ -668,12 +668,25 @@ class MediaLibraryRepository {
                 ))
                 .getSingleOrNull();
 
+        if (existing == null &&
+            Uri.tryParse(entry.locator)?.scheme == 'reelva-index') {
+          existing =
+              await (db.select(db.mediaEntries)..where(
+                    (e) =>
+                        e.sourceId.equals(sourceId) &
+                        e.relativeLocator.equals(entry.locator) &
+                        e.externalEntryId.like('reelva-index:%'),
+                  ))
+                  .getSingleOrNull();
+        }
+
         int entryId;
         if (existing != null) {
           entryId = existing.id;
           final existingMs = existing.modifiedAt;
 
           final statChanged =
+              existing.externalEntryId != entry.externalId ||
               existing.size != entry.size ||
               existingMs != incomingMs ||
               existing.etag != entry.etag ||
@@ -684,8 +697,9 @@ class MediaLibraryRepository {
           if (statChanged) {
             await (db.update(
               db.mediaEntries,
-            )..where((e) => e.id.equals(existing.id))).write(
+            )..where((e) => e.id.equals(entryId))).write(
               MediaEntriesCompanion(
+                externalEntryId: Value(entry.externalId),
                 relativeLocator: Value(entry.locator),
                 name: Value(entry.name),
                 isDirectory: Value(entry.isDirectory),
@@ -699,7 +713,7 @@ class MediaLibraryRepository {
           } else {
             await (db.update(
               db.mediaEntries,
-            )..where((e) => e.id.equals(existing.id))).write(
+            )..where((e) => e.id.equals(entryId))).write(
               MediaEntriesCompanion(
                 available: const Value(true),
                 lastSeenScanId: Value(scanId),

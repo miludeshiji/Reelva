@@ -34,6 +34,11 @@ class WebDavSyncTransport implements SyncTransport, ApplicationSyncTransport {
     r'^([0-9a-f]{32})-([1-9][0-9]*)\.json$',
   );
 
+  static final RegExp _applicationFileNameRegex = RegExp(
+    r'^application-([0-9a-f]{32})\.json$',
+  );
+  static final RegExp _strongEtagRegex = RegExp(r'^"[^"\x00-\x20\x7f]*"$');
+
   static const String _propfindXml =
       '<?xml version="1.0" encoding="utf-8" ?>\n'
       '<D:propfind xmlns:D="DAV:">\n'
@@ -55,35 +60,69 @@ class WebDavSyncTransport implements SyncTransport, ApplicationSyncTransport {
         responseType: ResponseType.plain,
         allowedStatusCodes: {HttpStatus.notFound},
       );
-      if (response.statusCode == HttpStatus.notFound) return null;
-      final etag = response.headers.value(HttpHeaders.etagHeader);
-      if (response.statusCode != HttpStatus.ok ||
-          response.data is! String ||
-          etag == null ||
-          etag.startsWith('W/')) {
-        throw const SyncException('无法读取应用配置，WebDAV 需提供有效的 ETag');
+      String? primary;
+      String? etag;
+      if (response.statusCode != HttpStatus.notFound) {
+        if (response.statusCode != HttpStatus.ok || response.data is! String) {
+          throw const SyncException('读取应用配置失败');
+        }
+        primary = response.data as String;
+        final header = response.headers.value(HttpHeaders.etagHeader)?.trim();
+        etag = header != null && _strongEtagRegex.hasMatch(header)
+            ? header
+            : null;
       }
-      return ApplicationSyncSnapshot(response.data as String, etag);
+      final updates = <String>[];
+      for (final fileName in await _listFiles(_applicationFileNameRegex)) {
+        final body = await _downloadApplicationFile(fileName);
+        updates.add(body);
+      }
+      if (primary == null && updates.isEmpty) return null;
+      return ApplicationSyncSnapshot(
+        primary ?? updates.removeAt(0),
+        etag,
+        updates: updates,
+      );
     } on SyncException {
       rethrow;
     } catch (_) {
-      throw const SyncException('读取加密应用配置失败，请检查 WebDAV 连接');
+      throw const SyncException('读取应用配置失败，请检查 WebDAV 连接');
     }
   }
 
+  Future<String> _downloadApplicationFile(String fileName) async {
+    final response = await http.request(
+      _batchUri(fileName),
+      headers: _buildHeaders(),
+      responseType: ResponseType.plain,
+    );
+    if (response.statusCode != HttpStatus.ok || response.data is! String) {
+      throw const SyncException('读取应用配置快照失败');
+    }
+    return response.data as String;
+  }
+
   @override
-  Future<bool> uploadApplicationData(String body, {String? etag}) async {
+  Future<bool> uploadApplicationData(
+    String body, {
+    required String deviceId,
+    String? etag,
+  }) async {
+    final deviceFileName = 'application-$deviceId.json';
+    if (!_applicationFileNameRegex.hasMatch(deviceFileName)) {
+      throw const SyncException('设备标识格式不合法');
+    }
     await _ensureCollectionExists();
     final headers = _buildHeaders(
       contentType: 'application/json; charset=utf-8',
     );
-    headers[etag == null
-            ? HttpHeaders.ifNoneMatchHeader
-            : HttpHeaders.ifMatchHeader] =
-        etag ?? '*';
+    final conditionalUpdate = etag != null && _strongEtagRegex.hasMatch(etag);
+    // 同一设备的同步已串行化；缺少强 ETag 时各设备只更新自己的快照。
+    final fileName = conditionalUpdate ? 'application-v1.json' : deviceFileName;
+    if (conditionalUpdate) headers[HttpHeaders.ifMatchHeader] = etag;
     try {
       final response = await http.request(
-        _syncDirUri.resolve('application-v1.json'),
+        _batchUri(fileName),
         method: 'PUT',
         headers: headers,
         data: body,
@@ -96,13 +135,13 @@ class WebDavSyncTransport implements SyncTransport, ApplicationSyncTransport {
         HttpStatus.created,
         HttpStatus.noContent,
       }.contains(response.statusCode)) {
-        throw const SyncException('写入加密应用配置失败');
+        throw const SyncException('写入应用配置失败');
       }
       return true;
     } on SyncException {
       rethrow;
     } catch (_) {
-      throw const SyncException('写入加密应用配置失败，请检查 WebDAV 连接');
+      throw const SyncException('写入应用配置失败，请检查 WebDAV 连接');
     }
   }
 
@@ -162,7 +201,17 @@ class WebDavSyncTransport implements SyncTransport, ApplicationSyncTransport {
   }
 
   @override
-  Future<List<SyncRemoteBatch>> listBatches() async {
+  Future<List<SyncRemoteBatch>> listBatches() async => [
+    for (final fileName in await _listFiles(_batchFileNameRegex))
+      SyncRemoteBatch(
+        deviceId: _batchFileNameRegex.firstMatch(fileName)!.group(1)!,
+        sequence: int.parse(
+          _batchFileNameRegex.firstMatch(fileName)!.group(2)!,
+        ),
+      ),
+  ];
+
+  Future<List<String>> _listFiles(RegExp fileNamePattern) async {
     final headers = _buildHeaders(
       contentType: 'application/xml; charset="utf-8"',
       depth: 1,
@@ -189,7 +238,7 @@ class WebDavSyncTransport implements SyncTransport, ApplicationSyncTransport {
     }
 
     if (response.statusCode == HttpStatus.notFound) {
-      return <SyncRemoteBatch>[];
+      return <String>[];
     }
 
     // 严格要求 207 Multi-Status
@@ -223,7 +272,7 @@ class WebDavSyncTransport implements SyncTransport, ApplicationSyncTransport {
         .where((s) => s.isNotEmpty)
         .toList();
 
-    final deduplicatedBatches = <String, SyncRemoteBatch>{};
+    final fileNames = <String>{};
 
     for (final resp in responseElements) {
       final hrefEl = resp.descendants
@@ -284,7 +333,7 @@ class WebDavSyncTransport implements SyncTransport, ApplicationSyncTransport {
       }
 
       final fileName = itemSegments.last;
-      final match = _batchFileNameRegex.firstMatch(fileName);
+      final match = fileNamePattern.firstMatch(fileName);
       if (match == null) {
         // 刻意跳过非同步批次命名的文件
         continue;
@@ -328,18 +377,10 @@ class WebDavSyncTransport implements SyncTransport, ApplicationSyncTransport {
         }
       }
 
-      final deviceId = match.group(1)!;
-      final sequence = int.parse(match.group(2)!);
-      final batchKey = '$deviceId-$sequence';
-
-      // 相同批次去重
-      deduplicatedBatches[batchKey] = SyncRemoteBatch(
-        deviceId: deviceId,
-        sequence: sequence,
-      );
+      fileNames.add(fileName);
     }
 
-    return deduplicatedBatches.values.toList();
+    return fileNames.toList()..sort();
   }
 
   @override

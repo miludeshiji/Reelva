@@ -22,6 +22,63 @@ void main() {
         'content://com.android.externalstorage.documents/tree/primary%3AMovies',
   );
 
+  test('同步索引按需解析目标路径，不遍历其他目录，且拒绝越界路径', () async {
+    final directories = <String?>[];
+    const folder = 'content://provider/tree/root/document/folder';
+    const video = 'content://provider/tree/root/document/video';
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          final args = call.arguments as Map<dynamic, dynamic>;
+          if (call.method == 'listChildren') {
+            directories.add(args['parentUri'] as String?);
+            return {
+              'entries': args['parentUri'] == null
+                  ? [
+                      {
+                        'externalId': folder,
+                        'locator': folder,
+                        'name': 'Movies',
+                        'isDirectory': true,
+                      },
+                      {
+                        'externalId': 'content://provider/other',
+                        'locator': 'content://provider/other',
+                        'name': 'Other',
+                        'isDirectory': true,
+                      },
+                    ]
+                  : [
+                      {
+                        'externalId': video,
+                        'locator': video,
+                        'name': 'Movie.mkv',
+                        'isDirectory': false,
+                      },
+                    ],
+              'hasMore': false,
+            };
+          }
+          expect(call.method, 'statDocument');
+          expect(args['uri'], video);
+          return {'name': 'Movie.mkv'};
+        });
+    const adapter = AndroidSafSourceAdapter(channel: channel);
+    final resource = await adapter.resolvePlayback(
+      testConfig,
+      Uri(
+        scheme: 'reelva-index',
+        pathSegments: ['Movies', 'Movie.mkv'],
+      ).toString(),
+    );
+    expect(resource.uri.toString(), video);
+    expect(directories, [null, folder]);
+    await expectLater(
+      adapter.resolvePlayback(testConfig, 'reelva-index:../outside.mkv'),
+      throwsA(isA<MediaSourceException>()),
+    );
+    expect(directories, hasLength(2));
+  });
+
   group('AndroidSafSourceAdapter pickDirectory 测试', () {
     test('用户取消选择时安全返回 null', () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

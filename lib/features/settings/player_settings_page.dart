@@ -98,14 +98,12 @@ class _PlayerSettingsPageState extends ConsumerState<PlayerSettingsPage> {
   Widget _toggle({
     required String key,
     required String title,
-    required String subtitle,
     required bool value,
     required ValueChanged<bool> onChanged,
   }) => SwitchListTile.adaptive(
     key: Key(key),
     contentPadding: EdgeInsets.zero,
     title: Text(title),
-    subtitle: Text(subtitle),
     value: value,
     onChanged: (next) => setState(() => onChanged(next)),
   );
@@ -183,7 +181,6 @@ class _PlayerSettingsPageState extends ConsumerState<PlayerSettingsPage> {
               _toggle(
                 key: 'player_setting_hwdec',
                 title: '硬件解码',
-                subtitle: '自动选择设备支持的硬件解码器，不支持的格式使用软件解码。',
                 value: _draft.hardwareDecoding,
                 onChanged: (value) =>
                     _draft = _draft.copyWith(hardwareDecoding: value),
@@ -191,7 +188,6 @@ class _PlayerSettingsPageState extends ConsumerState<PlayerSettingsPage> {
               _toggle(
                 key: 'player_setting_high_quality',
                 title: '高质量缩放',
-                subtitle: '提升放大、缩小与色度缩放质量，会增加 GPU 负载。',
                 value: _draft.highQualityRendering,
                 onChanged: (value) =>
                     _draft = _draft.copyWith(highQualityRendering: value),
@@ -199,7 +195,6 @@ class _PlayerSettingsPageState extends ConsumerState<PlayerSettingsPage> {
               _toggle(
                 key: 'player_setting_deband',
                 title: '去色带',
-                subtitle: '减轻天空、暗部等渐变区域的条带。',
                 value: _draft.deband,
                 onChanged: (value) => _draft = _draft.copyWith(deband: value),
               ),
@@ -221,7 +216,6 @@ class _PlayerSettingsPageState extends ConsumerState<PlayerSettingsPage> {
               _toggle(
                 key: 'player_setting_cache',
                 title: '预读缓存',
-                subtitle: '在内存中预读媒体以减少网络波动造成的停顿，不写入磁盘。',
                 value: _draft.cacheEnabled,
                 onChanged: (value) =>
                     _draft = _draft.copyWith(cacheEnabled: value),
@@ -238,13 +232,11 @@ class _PlayerSettingsPageState extends ConsumerState<PlayerSettingsPage> {
                 onChanged: (value) =>
                     _draft = _draft.copyWith(cacheSizeMb: value),
               ),
-              const Text('按需使用内存，不会预先占满；回退缓存另设较小上限。'),
             ]),
             _section('音频', [
               _toggle(
                 key: 'player_setting_pitch',
                 title: '倍速音调修正',
-                subtitle: '改变播放速度时尽量保持原有音调。',
                 value: _draft.pitchCorrection,
                 onChanged: (value) =>
                     _draft = _draft.copyWith(pitchCorrection: value),
@@ -260,7 +252,6 @@ class _PlayerSettingsPageState extends ConsumerState<PlayerSettingsPage> {
                 onChanged: (value) =>
                     _draft = _draft.copyWith(maxVolume: value),
               ),
-              const Text('超过 100% 为软件放大，可能产生失真。'),
               _choice(
                 key: 'player_setting_auto_audio',
                 label: '自动加载同目录音频',
@@ -276,8 +267,6 @@ class _PlayerSettingsPageState extends ConsumerState<PlayerSettingsPage> {
                 controller: _languages,
                 decoration: const InputDecoration(
                   labelText: '优先字幕语言',
-                  helperText: '语言代码以英文逗号分隔，越靠前越优先；留空自动选择。',
-                  helperMaxLines: 3,
                   errorMaxLines: 3,
                 ),
                 validator: (_) =>
@@ -293,19 +282,12 @@ class _PlayerSettingsPageState extends ConsumerState<PlayerSettingsPage> {
                 onChanged: (value) =>
                     _draft = _draft.copyWith(subtitleAutoLoad: value),
               ),
-              const Text(
-                '支持本地、WebDAV、SMB 和 Android 授权目录中的同目录字幕；单独打开的网络地址或 Android 单文件可在播放页手动选择字幕。',
-              ),
               const SizedBox(height: 16),
               TextFormField(
                 key: const Key('player_setting_sub_font'),
                 controller: _font,
                 maxLength: 128,
-                decoration: const InputDecoration(
-                  labelText: '字幕字体',
-                  helperText: '填写字体名称；Android 自带 Noto Sans CJK SC，桌面使用系统字体。',
-                  helperMaxLines: 3,
-                ),
+                decoration: const InputDecoration(labelText: '字幕字体'),
                 validator: (value) =>
                     value == null || value.trim().isEmpty ? '请输入字幕字体名称' : null,
               ),
@@ -357,11 +339,9 @@ class _PlayerSettingsPageState extends ConsumerState<PlayerSettingsPage> {
                 onChanged: (value) =>
                     _draft = _draft.copyWith(assStyleOverride: value),
               ),
-              const Text('字号和描边等设置主要用于普通文本字幕；要覆盖 ASS 样式，请选择自定义字幕样式。'),
               _toggle(
                 key: 'player_setting_blend_subtitles',
                 title: '字幕随视频处理',
-                subtitle: '在视频分辨率下合成字幕，使字幕随视频缩放与色彩处理。',
                 value: _draft.blendSubtitles,
                 onChanged: (value) =>
                     _draft = _draft.copyWith(blendSubtitles: value),

@@ -50,6 +50,7 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
     String? name,
     List<String> extensions = defaultVideoExtensions,
     List<String> excludedDirectories = defaultExcludedDirectories,
+    bool scanAfterAdd = true,
   }) async {
     final platform =
         ref.read(platformOverrideProvider) ?? defaultTargetPlatform;
@@ -81,7 +82,7 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
       excludedDirectories: excludedDirectories,
     );
 
-    unawaited(refreshSource(source.id));
+    if (scanAfterAdd) unawaited(refreshSource(source.id));
     return source;
   }
 
@@ -458,6 +459,7 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
     final nfoService = ref.read(nfoServiceProvider);
     final queue = Queue<String>();
     queue.add(source.rootLocator);
+    final directoryPaths = <String, List<String>>{source.rootLocator: []};
     final visitedDirIds = <String>{source.rootLocator};
     int visitedCount = 0;
     int videoCount = 0;
@@ -482,7 +484,7 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
         final directoryEntries = <MediaEntry>[];
         final childDirectories = <String>[];
         final stream = adapter.listEntries(source, currentDirId);
-        await for (final entry in stream) {
+        await for (var entry in stream) {
           if (_cancellations[id] == true) {
             break;
           }
@@ -492,6 +494,22 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
             continue;
           }
 
+          if (source.kind == 'androidSaf') {
+            final path = [...directoryPaths[currentDirId]!, entry.name];
+            if (entry.isDirectory) directoryPaths[entry.externalId] = path;
+            entry = MediaEntry(
+              externalId: entry.externalId,
+              locator: Uri(
+                scheme: 'reelva-index',
+                pathSegments: path,
+              ).toString(),
+              name: entry.name,
+              isDirectory: entry.isDirectory,
+              size: entry.size,
+              modifiedAt: entry.modifiedAt,
+              etag: entry.etag,
+            );
+          }
           directoryEntries.add(entry);
           if (entry.isDirectory) {
             if (excludedDirs.contains(entry.name.toLowerCase())) {

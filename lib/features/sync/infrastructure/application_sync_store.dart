@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:cryptography/cryptography.dart';
 
 import '../../library/infrastructure/media_library_repository.dart';
 import '../../metadata/infrastructure/tmdb_token_store.dart';
@@ -13,6 +14,8 @@ import '../../sources/domain/source_models.dart';
 import '../../sources/infrastructure/remote_credentials_store.dart';
 import '../domain/application_sync.dart';
 import '../domain/sync_models.dart';
+import '../../../core/database/app_database.dart';
+import 'library_index_store.dart';
 
 /// 配置同步的基线与凭据均留在安全存储，SQLite 仅保留现有的凭据引用。
 class ApplicationSyncStore {
@@ -25,9 +28,11 @@ class ApplicationSyncStore {
     FlutterSecureStorage? storage,
     TargetPlatform? platform,
     DateTime Function()? clock,
+    Set<int> Function()? activeScans,
   }) : _storage = storage ?? const FlutterSecureStorage(),
        platform = platform ?? defaultTargetPlatform,
-       _clock = clock ?? DateTime.now;
+       _clock = clock ?? DateTime.now,
+       _activeScans = activeScans ?? _noScans;
 
   final MediaLibraryRepository repository;
   final RemoteCredentialsStore credentials;
@@ -37,18 +42,35 @@ class ApplicationSyncStore {
   final FlutterSecureStorage _storage;
   final TargetPlatform platform;
   final DateTime Function() _clock;
+  final Set<int> Function() _activeScans;
+  static Set<int> _noScans() => {};
   static const _storageKey = 'reelva_application_sync_state_v1';
+  static const _indexStorageKey = 'library_index_sync_v1';
 
   Future<_LocalState> _read(String scope) async {
     final raw = await _storage.read(key: _storageKey);
     if (raw == null) return _LocalState(scope);
     final json = jsonDecode(raw) as Map<String, dynamic>;
     if (json['scope'] != scope) return _LocalState(scope);
+    var document = ApplicationSyncDocument.fromJson(
+      json['document'] as Map<String, dynamic>,
+    );
+    final cached = await (repository.db.select(
+      repository.db.syncState,
+    )..where((row) => row.key.equals(_indexStorageKey))).getSingleOrNull();
+    if (cached != null) {
+      final indexes = jsonDecode(cached.value) as Map<String, dynamic>;
+      if (indexes['scope'] == scope) {
+        document = document.merge(
+          ApplicationSyncDocument.fromJson(
+            indexes['document'] as Map<String, dynamic>,
+          ),
+        );
+      }
+    }
     return _LocalState(
       scope,
-      document: ApplicationSyncDocument.fromJson(
-        json['document'] as Map<String, dynamic>,
-      ),
+      document: document,
       observed: (json['observed'] as Map<String, dynamic>)
           .cast<String, String>(),
       bindings: (json['bindings'] as Map<String, dynamic>)
@@ -56,15 +78,43 @@ class ApplicationSyncStore {
     );
   }
 
-  Future<void> _save(_LocalState state) => _storage.write(
-    key: _storageKey,
-    value: jsonEncode({
-      'scope': state.scope,
-      'document': state.document.toJson(),
-      'observed': state.observed,
-      'bindings': state.bindings,
-    }),
-  );
+  Future<void> _save(_LocalState state) async {
+    final records = state.document.records;
+    await _storage.write(
+      key: _storageKey,
+      value: jsonEncode({
+        'scope': state.scope,
+        'document': ApplicationSyncDocument({
+          for (final e in records.entries)
+            if (!e.key.startsWith('index:')) e.key: e.value,
+        }).toJson(),
+        'observed': state.observed,
+        'bindings': state.bindings,
+      }),
+    );
+    await repository.db
+        .into(repository.db.syncState)
+        .insertOnConflictUpdate(
+          SyncStateCompanion.insert(
+            key: _indexStorageKey,
+            value: jsonEncode({
+              'scope': state.scope,
+              'document': ApplicationSyncDocument({
+                for (final e in records.entries)
+                  if (e.key.startsWith('index:')) e.key: e.value,
+              }).toJson(),
+            }),
+          ),
+        );
+  }
+
+  static Future<String> _signature(String key, Object? value) async {
+    final json = canonicalJson(value);
+    if (!key.startsWith('index:')) return json;
+    return (await Sha256().hash(utf8.encode(json))).bytes
+        .map((b) => b.toRadixString(16).padLeft(2, '0'))
+        .join();
+  }
 
   static String _identity(String kind, String root) => '$kind:$root';
 
@@ -111,6 +161,11 @@ class ApplicationSyncStore {
               ? (await credentials.read(row.credentialRef)).toJson()
               : null,
       };
+      if (row.enabled && !_activeScans().contains(row.id)) {
+        final index = await LibraryIndexStore(repository.db)
+            .capture(await repository.getSource(row.id));
+        if (index != null) values['index:$key'] = index;
+      }
     }
     return values;
   }
@@ -121,14 +176,15 @@ class ApplicationSyncStore {
     final id = await deviceId();
     final records = {...state.document.records};
     for (final entry in values.entries) {
-      final signature = canonicalJson(entry.value);
+      final signature = await _signature(entry.key, entry.value);
       // 新设备只修改画质等平台设置时，不用默认快捷键覆盖已有通用按键。
       if (entry.key == 'shortcuts' &&
           !state.observed.containsKey(entry.key) &&
           signature == canonicalJson(const PlayerInputSettings().toJson())) {
         continue;
       }
-      if (state.observed[entry.key] == signature ||
+      if (state.observed[entry.key] == signature &&
+              records.containsKey(entry.key) ||
           !state.observed.containsKey(entry.key) && entry.value == null) {
         continue;
       }
@@ -159,6 +215,7 @@ class ApplicationSyncStore {
     var applied = 0;
     for (final entry in merged.records.entries) {
       final key = entry.key;
+      if (key.startsWith('index:')) continue;
       final value = entry.value.value;
       if (current.containsKey(key) &&
           canonicalJson(current[key]) == canonicalJson(value)) {
@@ -194,8 +251,43 @@ class ApplicationSyncStore {
       applied++;
     }
     state.document = merged;
+    for (final entry in merged.records.entries.where(
+      (e) => e.key.startsWith('index:'),
+    )) {
+      final signature = await _signature(entry.key, entry.value.value);
+      if (current.containsKey(entry.key) &&
+          await _signature(entry.key, current[entry.key]) == signature) {
+        continue;
+      }
+      final source = await _indexSource(state, entry.key.substring(6));
+      if (source == null ||
+          !source.enabled ||
+          _activeScans().contains(source.id)) {
+        continue;
+      }
+      await LibraryIndexStore(repository.db)
+          .restore(source, entry.value.value!);
+      state.observed[entry.key] = signature;
+      applied++;
+    }
     await _save(state);
     return applied;
+  }
+
+  Future<MediaSourceConfig?> _indexSource(_LocalState state, String key) {
+    final value = state.document.records[key]?.value;
+    if (value == null) return Future.value(null);
+    final kind = value['kind'] as String;
+    if (kind == 'webdav' || kind == 'smb') {
+      return repository.findSourceByRoot(kind, value['rootLocator'] as String);
+    }
+    final binding = state.bindings[key];
+    if (binding == null) return Future.value(null);
+    final split = binding.indexOf(':');
+    return repository.findSourceByRoot(
+      binding.substring(0, split),
+      binding.substring(split + 1),
+    );
   }
 
   Future<bool> _applySource(
@@ -287,6 +379,14 @@ class ApplicationSyncStore {
     }
     state.bindings[key] = identity;
     state.observed[key] = canonicalJson(state.document.records[key]!.value);
+    final index = state.document.records['index:$key'];
+    if (index != null) {
+      await LibraryIndexStore(repository.db).restore(source, index.value!);
+      state.observed['index:$key'] = await _signature(
+        'index:$key',
+        index.value,
+      );
+    }
     await _save(state);
   }
 }

@@ -8,6 +8,7 @@ import '../../player/domain/player_shortcuts.dart';
 import '../../sources/domain/source_models.dart';
 import '../../sources/infrastructure/remote_credentials_store.dart';
 import 'sync_models.dart';
+import '../infrastructure/library_index_store.dart';
 
 class ApplicationSyncRecord {
   const ApplicationSyncRecord({required this.version, required this.value});
@@ -21,7 +22,7 @@ class ApplicationSyncRecord {
   };
 }
 
-/// 按设置类别、平台及媒体源分别合并，不包含影视元数据或设备运行状态。
+/// 按设置类别、平台、媒体源及索引快照分别合并，不包含设备运行状态。
 class ApplicationSyncDocument {
   const ApplicationSyncDocument(this.records);
 
@@ -71,7 +72,10 @@ class ApplicationSyncDocument {
       '${base64Url.encode(utf8.encode('$kind:$root'))}';
 
   static void _validate(String key, Map<String, dynamic>? value) {
-    if (key == 'tmdb') {
+    if (key.startsWith('index:source:')) {
+      if (value == null) throw const FormatException();
+      LibraryIndexStore.validate(value);
+    } else if (key == 'tmdb') {
       if (value != null &&
           !TmdbTokenStore.isValidToken(value['token'] as String)) {
         throw const FormatException();
@@ -115,16 +119,25 @@ class ApplicationSyncDocument {
 }
 
 class ApplicationSyncSnapshot {
-  const ApplicationSyncSnapshot(this.body, this.etag);
+  const ApplicationSyncSnapshot(
+    this.body,
+    this.etag, {
+    this.updates = const [],
+  });
   final String body;
-  final String etag;
+  final String? etag;
+  final List<String> updates;
 }
 
 abstract interface class ApplicationSyncTransport {
   Future<ApplicationSyncSnapshot?> downloadApplicationData();
 
-  /// 返回 false 表示远端已发生变更，调用方必须重新读取并合并。
-  Future<bool> uploadApplicationData(String body, {String? etag});
+  /// 有强 ETag 时条件更新原文件，否则保存独立快照；false 表示条件冲突。
+  Future<bool> uploadApplicationData(
+    String body, {
+    required String deviceId,
+    String? etag,
+  });
 }
 
 class PendingSourceBinding {

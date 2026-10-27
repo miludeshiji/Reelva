@@ -176,6 +176,7 @@ class _SyncSettingsCardState extends ConsumerState<SyncSettingsCard> {
             name: pending.name,
             extensions: pending.extensions,
             excludedDirectories: pending.excludedDirectories,
+            scanAfterAdd: false,
           );
       if (!mounted || source == null) return;
       await ref
@@ -459,7 +460,7 @@ class _SyncSettingsCardState extends ConsumerState<SyncSettingsCard> {
                     isSameIdentity &&
                         currentConfig.encryptionPassword.isNotEmpty
                     ? '留空保留现有加密密码'
-                    : '至少 12 个字符，各设备填写相同密码',
+                    : '可留空；加密密码至少 12 个字符',
                 prefixIcon: const Icon(Icons.enhanced_encryption_outlined),
                 border: const OutlineInputBorder(),
                 isDense: true,
@@ -467,8 +468,8 @@ class _SyncSettingsCardState extends ConsumerState<SyncSettingsCard> {
             ),
             const SizedBox(height: 8),
             Text(
-              '设置加密密码后，同步媒体源、账号凭据、TMDB 密钥、播放器设置与快捷键。'
-              '未设置时仅同步观看进度。影视资料从媒体目录的 NFO 读取。',
+              '配置、凭据与影视库索引都会同步。未设置密码时明文保存；'
+              '设置后加密，各设备使用相同密码。',
               style: theme.textTheme.bodySmall,
             ),
 

@@ -28,11 +28,68 @@ class AndroidSafSourceAdapter
   @override
   String get kind => 'androidSaf';
 
+  /// 同步索引只保存相对路径，使用文件时仅定位该路径，不扫描整棵树。
+  Future<String> _resolveIndexedPath(
+    MediaSourceConfig source,
+    String locator,
+  ) async {
+    final uri = Uri.tryParse(locator);
+    if (uri?.scheme != 'reelva-index') return locator;
+    final parts = locator
+        .substring(locator.indexOf(':') + 1)
+        .split('/')
+        .map(Uri.decodeComponent)
+        .toList();
+    if (uri!.hasAuthority ||
+        uri.hasQuery ||
+        uri.hasFragment ||
+        parts.any(
+          (s) =>
+              s.isEmpty ||
+              s == '.' ||
+              s == '..' ||
+              s.contains('/') ||
+              s.contains(r'\') ||
+              s.contains('\u0000'),
+        )) {
+      throw const MediaSourceException('索引路径无效', code: 'INVALID_ARGUMENT');
+    }
+    var directory = source.rootLocator;
+    for (var i = 0; i < parts.length; i++) {
+      MediaEntry? found;
+      await for (final entry in listEntries(source, directory)) {
+        if (entry.name == parts[i] &&
+            (i == parts.length - 1 || entry.isDirectory)) {
+          found = entry;
+          break;
+        }
+      }
+      if (found == null) {
+        throw const MediaSourceException(
+          '索引中的文件已不存在，请手动刷新媒体源',
+          code: 'NOT_FOUND',
+        );
+      }
+      directory = found.externalId;
+    }
+    return directory;
+  }
+
   /// 文档 ID 不一定是路径，优先询问 provider；不支持路径查询时遍历授权树。
   Future<String?> findParentDirectory(
     MediaSourceConfig source,
     String documentId,
   ) async {
+    final indexed = Uri.tryParse(documentId);
+    if (indexed?.scheme == 'reelva-index') {
+      final parts = indexed!.pathSegments;
+      return parts.length <= 1
+          ? source.rootLocator
+          : Uri(
+              scheme: 'reelva-index',
+              pathSegments: parts.take(parts.length - 1),
+            ).toString();
+    }
     try {
       final parent = await channel.invokeMethod<String>('parentDocument', {
         'treeUri': source.rootLocator,
@@ -106,6 +163,7 @@ class AndroidSafSourceAdapter
     MediaSourceConfig source,
     String directoryId,
   ) async* {
+    directoryId = await _resolveIndexedPath(source, directoryId);
     final treeUri = source.rootLocator;
     if (!treeUri.startsWith('content://')) {
       throw const MediaSourceException(
@@ -204,6 +262,7 @@ class AndroidSafSourceAdapter
 
   @override
   Future<MediaStat> stat(MediaSourceConfig source, String entryId) async {
+    entryId = await _resolveIndexedPath(source, entryId);
     try {
       final response = await channel.invokeMethod<Map<dynamic, dynamic>>(
         'statDocument',
@@ -245,6 +304,7 @@ class AndroidSafSourceAdapter
     String entryId, {
     int maxBytes = 2 * 1024 * 1024,
   }) async {
+    entryId = await _resolveIndexedPath(source, entryId);
     try {
       final bytes = await channel.invokeMethod<Uint8List>('readSidecar', {
         'treeUri': source.rootLocator,
@@ -268,6 +328,7 @@ class AndroidSafSourceAdapter
     bool createOnly = false,
   }) async {
     validateSidecarName(name);
+    directoryId = await _resolveIndexedPath(source, directoryId);
     try {
       await channel.invokeMethod<void>('writeSidecar', {
         'treeUri': source.rootLocator,
@@ -286,6 +347,7 @@ class AndroidSafSourceAdapter
     MediaSourceConfig source,
     String entryId,
   ) async {
+    entryId = await _resolveIndexedPath(source, entryId);
     final uri = Uri.tryParse(entryId);
     if (uri == null ||
         !uri.hasScheme ||

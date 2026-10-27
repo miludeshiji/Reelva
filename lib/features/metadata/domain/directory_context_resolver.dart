@@ -11,7 +11,14 @@ class DirectoryContextResolver {
   }) {
     String? relative;
     String rootName = '';
-    if (kind == 'local') {
+    final indexed = Uri.tryParse(locator);
+    if (kind == 'androidSaf' && indexed?.scheme == 'reelva-index') {
+      final root = Uri.parse(rootLocator);
+      if (root.authority == 'com.android.externalstorage.documents') {
+        rootName = root.pathSegments.last.split('/').last.split(':').last;
+      }
+      relative = indexed!.pathSegments.join('/');
+    } else if (kind == 'local') {
       final windows = RegExp(r'^[A-Za-z]:|\\').hasMatch(rootLocator);
       final context = p.Context(
         style: windows ? p.Style.windows : p.Style.posix,

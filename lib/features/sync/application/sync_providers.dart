@@ -41,13 +41,19 @@ final applicationSyncStoreProvider = Provider<ApplicationSyncStore>((ref) {
     tmdb: ref.watch(tmdbTokenStoreProvider),
     player: ref.watch(playerSettingsStoreProvider),
     deviceId: ref.watch(syncRepositoryProvider).deviceId,
+    activeScans: () => ref
+        .read(sourceControllerProvider)
+        .entries
+        .where((e) => e.value.running)
+        .map((e) => e.key)
+        .toSet(),
   );
 });
 
 final pendingSourceBindingsProvider =
     FutureProvider<List<PendingSourceBinding>>((ref) async {
       final config = await ref.watch(syncConfigurationProvider.future);
-      if (config == null || config.encryptionPassword.isEmpty) return [];
+      if (config == null) return [];
       return ref
           .watch(applicationSyncStoreProvider)
           .pendingSources(config.endpoint.toString());
@@ -71,22 +77,20 @@ final syncServiceProvider = Provider.family<SyncService, SyncConfiguration>((
   return SyncService(
     repository: repository,
     transport: transport,
-    applicationSync: config.encryptionPassword.isEmpty
-        ? null
-        : ApplicationSyncService(
-            store: ref.watch(applicationSyncStoreProvider),
-            transport: WebDavSyncTransport(
-              http: ref.watch(remoteHttpClientProvider),
-              configuration: config,
-            ),
-            scope: config.endpoint.toString(),
-            password: config.encryptionPassword,
-            onApplied: () async {
-              await ref.read(playerSettingsProvider.notifier).reload();
-              ref.invalidate(tmdbCredentialConfiguredProvider);
-              ref.invalidate(pendingSourceBindingsProvider);
-            },
-          ),
+    applicationSync: ApplicationSyncService(
+      store: ref.watch(applicationSyncStoreProvider),
+      transport: WebDavSyncTransport(
+        http: ref.watch(remoteHttpClientProvider),
+        configuration: config,
+      ),
+      scope: config.endpoint.toString(),
+      password: config.encryptionPassword,
+      onApplied: () async {
+        await ref.read(playerSettingsProvider.notifier).reload();
+        ref.invalidate(tmdbCredentialConfiguredProvider);
+        ref.invalidate(pendingSourceBindingsProvider);
+      },
+    ),
   );
 });
 
