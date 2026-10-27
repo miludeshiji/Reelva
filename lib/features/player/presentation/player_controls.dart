@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app/theme/reelva_theme.dart';
 import '../../../shared/widgets/glass_widgets.dart' show GlassPopupMenuItem;
+import 'player_selection_panel.dart';
 import '../domain/playback_snapshot.dart';
 import '../domain/player_engine.dart';
 
@@ -47,7 +48,7 @@ class PlayerControls extends StatefulWidget {
   final VoidCallback? onPreviousEpisode;
   final VoidCallback? onNextEpisode;
   final VoidCallback? onShowPlaylist;
-  final Key? playlistAnchorKey;
+  final GlobalKey? playlistAnchorKey;
 
   static const List<double> supportedRates = [0.5, 1.0, 1.25, 1.5, 2.0, 3.0];
 
@@ -59,6 +60,7 @@ class _PlayerControlsState extends State<PlayerControls> {
   double _lastNonZeroVolume = 100.0;
   double? _dragPositionMs;
   FocusNode? _focusBeforeVolumeMenu;
+  final _playlistAnchorKey = GlobalKey();
 
   @override
   void initState() {
@@ -314,7 +316,7 @@ class _PlayerControlsState extends State<PlayerControls> {
       onPressed: widget.onToggleFullscreen,
     );
     final playlist = KeyedSubtree(
-      key: widget.playlistAnchorKey,
+      key: widget.playlistAnchorKey ?? _playlistAnchorKey,
       child: IconButton(
         key: const Key('player_playlist_button'),
         onPressed: widget.onShowPlaylist,
@@ -552,8 +554,9 @@ class _PlayerControlsState extends State<PlayerControls> {
         _buildTrackMenu(
           context,
           menuKey: const Key('player_subtitle_track_button'),
+          panelKey: const Key('player_subtitle_panel'),
           icon: Icons.subtitles_rounded,
-          tooltip: '字幕轨道',
+          tooltip: '字幕',
           tracks: snapshot.subtitleTracks,
           selectedId: snapshot.subtitleTrackId,
           onSelected: engine.setSubtitleTrack,
@@ -567,8 +570,9 @@ class _PlayerControlsState extends State<PlayerControls> {
         _buildTrackMenu(
           context,
           menuKey: const Key('player_audio_track_button'),
+          panelKey: const Key('player_audio_panel'),
           icon: Icons.audiotrack_rounded,
-          tooltip: '音频轨道',
+          tooltip: '音频',
           tracks: snapshot.audioTracks,
           selectedId: snapshot.audioTrackId,
           onSelected: engine.setAudioTrack,
@@ -609,6 +613,7 @@ class _PlayerControlsState extends State<PlayerControls> {
   Widget _buildTrackMenu(
     BuildContext context, {
     required Key menuKey,
+    required Key panelKey,
     required IconData icon,
     required String tooltip,
     required List<PlaybackTrack> tracks,
@@ -616,50 +621,75 @@ class _PlayerControlsState extends State<PlayerControls> {
     required ValueChanged<String> onSelected,
     Map<String, (String, VoidCallback)> extraActions = const {},
   }) {
-    return PopupMenuButton<String>(
+    return IconButton(
       key: menuKey,
       tooltip: tooltip,
       icon: Icon(icon),
       iconSize: 24,
-      enabled: tracks.isNotEmpty || extraActions.isNotEmpty,
-      onOpened: () => widget.onInteractionChanged?.call(true),
-      onCanceled: () => widget.onInteractionChanged?.call(false),
-      onSelected: (track) {
-        widget.onInteractionChanged?.call(false);
-        final action = extraActions[track];
-        if (action != null) {
-          action.$2();
-        } else {
-          onSelected(track);
-        }
-      },
-      itemBuilder: (context) => [
-        ...tracks.map(
-          (track) => GlassPopupMenuItem<String>(
-            value: track.id,
-            selected: track.id == selectedId,
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(track.label, overflow: TextOverflow.ellipsis),
-                ),
-                if (track.id == selectedId) ...[
-                  const SizedBox(width: ReelvaDesign.space8),
-                  const Icon(Icons.check, size: 16),
-                ],
-              ],
-            ),
-          ),
-        ),
-        if (tracks.isNotEmpty && extraActions.isNotEmpty)
-          const PopupMenuDivider(),
-        ...extraActions.entries.map(
-          (entry) => GlassPopupMenuItem<String>(
-            value: entry.key,
-            child: Text(entry.value.$1),
-          ),
-        ),
-      ],
+      onPressed: tracks.isEmpty && extraActions.isEmpty
+          ? null
+          : () async {
+              final onInteractionChanged = widget.onInteractionChanged;
+              onInteractionChanged?.call(true);
+              String? selected;
+              try {
+                selected = await showDialog<String>(
+                  context: context,
+                  useSafeArea: false,
+                  builder: (context) => PlayerSelectionPanel(
+                    anchorKey: widget.playlistAnchorKey ?? _playlistAnchorKey,
+                    panelKey: panelKey,
+                    title: tooltip,
+                    child: ListView(
+                      shrinkWrap: true,
+                      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                      children: [
+                        for (final track in tracks)
+                          ListTile(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(
+                                ReelvaDesign.radiusSmall,
+                              ),
+                            ),
+                            selected: track.id == selectedId,
+                            leading: Icon(icon),
+                            title: Text(
+                              track.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: track.id == selectedId
+                                ? const Icon(Icons.check_rounded, size: 20)
+                                : null,
+                            onTap: () => Navigator.pop(context, track.id),
+                          ),
+                        if (tracks.isNotEmpty && extraActions.isNotEmpty)
+                          const Divider(),
+                        for (final entry in extraActions.entries)
+                          ListTile(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(
+                                ReelvaDesign.radiusSmall,
+                              ),
+                            ),
+                            title: Text(entry.value.$1),
+                            onTap: () => Navigator.pop(context, entry.key),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              } finally {
+                onInteractionChanged?.call(false);
+              }
+              if (!mounted || selected == null) return;
+              final action = extraActions[selected];
+              if (action != null) {
+                action.$2();
+              } else {
+                onSelected(selected);
+              }
+            },
     );
   }
 }

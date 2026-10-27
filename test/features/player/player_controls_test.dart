@@ -118,7 +118,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: PlayerControls(
+            bottomNavigationBar: PlayerControls(
               snapshot: const PlaybackSnapshot(status: PlaybackStatus.playing),
               engine: engine,
               isFullscreen: false,
@@ -624,7 +624,7 @@ void main() {
         await tester.pumpWidget(
           MaterialApp(
             home: Scaffold(
-              body: PlayerControls(
+              bottomNavigationBar: PlayerControls(
                 snapshot: const PlaybackSnapshot(
                   status: PlaybackStatus.playing,
                   position: Duration(seconds: 10),
@@ -645,8 +645,19 @@ void main() {
         // Audio track popup
         final audioBtn = find.byKey(const Key('player_audio_track_button'));
         expect(audioBtn, findsOneWidget);
+        expect(find.byTooltip('音频'), findsOneWidget);
+        expect(find.byTooltip('音频轨道'), findsNothing);
         await tester.tap(audioBtn);
         await tester.pumpAndSettle();
+        final anchor = tester.getRect(
+          find.byKey(const Key('player_playlist_button')),
+        );
+        final audioPanel = tester.getRect(
+          find.byKey(const Key('player_audio_panel')),
+        );
+        expect(audioPanel.width, 280);
+        expect(audioPanel.right, closeTo(anchor.right, 0.01));
+        expect(audioPanel.bottom, closeTo(anchor.top - 8, 0.01));
 
         expect(find.text('国语配音'), findsOneWidget);
         await tester.tap(find.text('国语配音'));
@@ -660,8 +671,15 @@ void main() {
           const Key('player_subtitle_track_button'),
         );
         expect(subtitleBtn, findsOneWidget);
+        expect(find.byTooltip('字幕'), findsOneWidget);
+        expect(find.byTooltip('字幕轨道'), findsNothing);
         await tester.tap(subtitleBtn);
         await tester.pumpAndSettle();
+        final subtitlePanel = tester.getRect(
+          find.byKey(const Key('player_subtitle_panel')),
+        );
+        expect(subtitlePanel.width, audioPanel.width);
+        expect(subtitlePanel.bottomRight, audioPanel.bottomRight);
 
         expect(find.text('简体中文'), findsOneWidget);
         await tester.tap(find.text('简体中文'));

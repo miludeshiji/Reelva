@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:reelva/features/player/application/player_providers.dart';
 import 'package:reelva/features/player/domain/playback_snapshot.dart';
 import 'package:reelva/features/player/presentation/player_page.dart';
@@ -10,6 +12,7 @@ import 'fake_player_engine.dart';
 
 void main() {
   testWidgets('Windows 按视频比例调整客户区，保留标题栏与边框且不随进度重复缩放', (tester) async {
+    FlutterSecureStorage.setMockInitialValues({});
     tester.view.devicePixelRatio = 2;
     tester.view.physicalSize = const Size(2560, 1440);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -50,6 +53,17 @@ void main() {
     final engine = FakePlayerEngine(
       initialSnapshot: const PlaybackSnapshot(status: PlaybackStatus.opening),
     );
+    final router = GoRouter(
+      initialLocation: '/player',
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (_, _) => const Scaffold(body: Text('应用页面')),
+        ),
+        GoRoute(path: '/player', builder: (_, _) => const PlayerPage()),
+      ],
+    );
+    addTearDown(router.dispose);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -57,7 +71,7 @@ void main() {
             createFakeSession(engine: engine),
           ),
         ],
-        child: const MaterialApp(home: PlayerPage()),
+        child: MaterialApp.router(routerConfig: router),
       ),
     );
     await tester.pump();
@@ -91,6 +105,14 @@ void main() {
     await tester.tap(find.byKey(const Key('fullscreen_exit_back_button')));
     await tester.pumpAndSettle();
     expect(resized, hasLength(3));
+    await tester.tap(find.byKey(const Key('player_back_button')));
+    await tester.pumpAndSettle();
+    expect(find.text('应用页面'), findsOneWidget);
+    expect(resized, hasLength(4));
+    expect(resized.last['width'], 1296);
+    expect(resized.last['height'], 759);
+    expect(resized.last['x'], 100);
+    expect(resized.last['y'], 80);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
     await engine.dispose();

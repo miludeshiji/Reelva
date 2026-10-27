@@ -1,6 +1,8 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:reelva/app/desktop_preferences.dart';
 import 'package:reelva/shared/widgets/glass_widgets.dart';
 
 const _destinations = [
@@ -63,7 +65,7 @@ class GlassBottomNavigationBar extends StatelessWidget {
   }
 }
 
-class GlassSidebar extends StatefulWidget {
+class GlassSidebar extends ConsumerWidget {
   const GlassSidebar({
     super.key,
     required this.selectedIndex,
@@ -74,21 +76,15 @@ class GlassSidebar extends StatefulWidget {
   final ValueChanged<int> onDestinationSelected;
 
   @override
-  State<GlassSidebar> createState() => _GlassSidebarState();
-}
-
-class _GlassSidebarState extends State<GlassSidebar> {
-  bool _isCollapsed = false;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isCollapsed = ref.watch(sidebarCollapsedProvider);
     return AnimatedContainer(
       key: const ValueKey('glass_sidebar'),
       duration: MediaQuery.disableAnimationsOf(context)
           ? Duration.zero
           : _sidebarTransitionDuration,
       curve: Curves.easeInOutCubic,
-      width: _isCollapsed ? 112 : 248,
+      width: isCollapsed ? 112 : 248,
       child: Padding(
         padding: const EdgeInsets.all(ReelvaDesign.space16),
         child: _GlassSurface(
@@ -103,20 +99,20 @@ class _GlassSidebarState extends State<GlassSidebar> {
                     children: [
                       IconButton(
                         key: const ValueKey('sidebar_toggle'),
-                        tooltip: _isCollapsed ? '展开侧栏' : '收起侧栏',
+                        tooltip: isCollapsed ? '展开侧栏' : '收起侧栏',
                         icon: Icon(
-                          _isCollapsed
+                          isCollapsed
                               ? Icons.menu_rounded
                               : Icons.menu_open_rounded,
                           color: ReelvaDesign.ink,
                         ),
-                        onPressed: () => setState(() {
-                          _isCollapsed = !_isCollapsed;
-                        }),
+                        onPressed: ref
+                            .read(sidebarCollapsedProvider.notifier)
+                            .toggle,
                       ),
                       Expanded(
                         child: _SidebarLabel(
-                          visible: !_isCollapsed,
+                          visible: !isCollapsed,
                           child: const Padding(
                             padding: EdgeInsets.only(
                               left: ReelvaDesign.space12,
@@ -146,10 +142,10 @@ class _GlassSidebarState extends State<GlassSidebar> {
                     if (index > 0) const SizedBox(height: ReelvaDesign.space8),
                     _NavigationButton(
                       index: index,
-                      selected: index == widget.selectedIndex,
+                      selected: index == selectedIndex,
                       isSidebar: true,
-                      iconOnly: _isCollapsed,
-                      onTap: () => widget.onDestinationSelected(index),
+                      iconOnly: isCollapsed,
+                      onTap: () => onDestinationSelected(index),
                     ),
                   ],
                 ],

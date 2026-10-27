@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:reelva/features/player/application/player_providers.dart';
 import 'package:reelva/features/player/domain/playback_playlist_entry.dart';
 import 'package:reelva/features/player/domain/playback_resource.dart';
+import 'package:reelva/features/player/domain/playback_snapshot.dart';
 import 'package:reelva/features/player/presentation/player_controls.dart';
 import 'package:reelva/features/player/presentation/player_page.dart';
 import 'package:reelva/features/sources/application/source_providers.dart';
@@ -139,6 +140,7 @@ void main() {
     await tester.tap(playlist);
     await tester.pumpAndSettle();
     final panel = find.byKey(const Key('player_playlist_panel'));
+    expect(Theme.of(tester.element(panel)).brightness, Brightness.dark);
     var anchorRect = tester.getRect(playlist);
     var panelRect = tester.getRect(panel);
     expect(panelRect.width, 280);
@@ -186,6 +188,35 @@ void main() {
     await tester.tap(previous);
     await tester.pumpAndSettle();
     expect(engine.lastOpenedResource!.libraryFileId, 12);
+
+    engine.emit(
+      engine.snapshot.copyWith(
+        subtitleTracks: const [PlaybackTrack(id: 'zh', label: '简体中文')],
+        audioTracks: const [PlaybackTrack(id: 'zh', label: '国语')],
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('player_more_button')));
+    await tester.pumpAndSettle();
+    for (final type in ['subtitle', 'audio']) {
+      await tester.tap(find.byKey(Key('player_${type}_track_button')));
+      await tester.pumpAndSettle();
+      final trackPanel = tester.getRect(
+        find.byKey(Key('player_${type}_panel')),
+      );
+      expect(
+        Theme.of(tester.element(find.byKey(Key('player_${type}_panel'))))
+            .brightness,
+        Brightness.dark,
+      );
+      final playlistAnchor = tester.getRect(playlist);
+      expect(trackPanel.right, closeTo(playlistAnchor.right, 0.01));
+      expect(trackPanel.bottom, closeTo(playlistAnchor.top - 8, 0.01));
+      await tester.tap(find.byTooltip(type == 'subtitle' ? '关闭字幕' : '关闭音频'));
+      await tester.pumpAndSettle();
+    }
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
 }

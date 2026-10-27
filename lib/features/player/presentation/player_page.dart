@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../../../app/theme/reelva_theme.dart';
+import '../../../app/desktop_window_controller.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../shared/widgets/glass_widgets.dart';
 import '../../sources/application/source_providers.dart';
@@ -25,6 +26,7 @@ import '../infrastructure/android_screen_brightness.dart';
 import '../infrastructure/windows_player_input.dart';
 import 'network_address_dialog.dart';
 import 'player_controls.dart';
+import 'player_selection_panel.dart';
 import 'player_statistics_overlay.dart';
 import 'source_subtitle_dialog.dart';
 
@@ -82,6 +84,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   bool _switchingEpisode = false;
   Size? _windowVideoSize;
   Future<void> _windowSizeUpdate = Future<void>.value();
+  Future<void> _windowPreparation = Future<void>.value();
+  Future<void>? _windowRestore;
+  DesktopWindowController? _desktopWindow;
   final _screenBrightness = const AndroidScreenBrightness();
   bool _brightnessAdjusted = false;
   _ScreenAdjustment? _verticalGesture;
@@ -253,6 +258,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _windowSizeUpdate = _windowSizeUpdate
           .then((_) async {
+            await _windowPreparation;
             if (!mounted ||
                 _isExiting ||
                 _isFullscreen ||
@@ -368,109 +374,58 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     _showControls();
     try {
       final selected = await showDialog<int>(
-        context: context,
+        context: _playlistAnchorKey.currentContext!,
         useSafeArea: false,
-        builder: (context) => LayoutBuilder(
-          builder: (context, constraints) {
-            final button =
-                _playlistAnchorKey.currentContext!.findRenderObject()!
-                    as RenderBox;
-            final anchor = button.localToGlobal(Offset.zero) & button.size;
-            final safePadding = MediaQuery.paddingOf(context);
-            final availableHeight = (anchor.top - safePadding.top - 16).clamp(
-              0.0,
-              constraints.maxHeight * 0.7,
-            );
-            return Dialog(
-              alignment: Alignment.bottomRight,
-              insetPadding: EdgeInsets.only(
-                left: safePadding.left + 8,
-                top: safePadding.top + 8,
-                right: constraints.maxWidth - anchor.right,
-                bottom: constraints.maxHeight - anchor.top + 8,
-              ),
-              constraints: const BoxConstraints(minWidth: 0, maxWidth: 280),
-              child: SizedBox(
-                key: const Key('player_playlist_panel'),
-                width: 280,
-                height: availableHeight,
-                child: Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 8, 8, 8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              '播放列表',
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: '关闭播放列表',
-                            onPressed: () => Navigator.pop(context),
-                            icon: const Icon(Icons.close_rounded),
-                          ),
-                        ],
+        builder: (context) => PlayerSelectionPanel(
+          anchorKey: _playlistAnchorKey,
+          panelKey: const Key('player_playlist_panel'),
+          title: '播放列表',
+          child: entries.isEmpty
+              ? ListTile(
+                  leading: const Icon(Icons.graphic_eq_rounded),
+                  title: Text(resource.displayName),
+                  subtitle: const Text('正在播放'),
+                  selected: true,
+                )
+              : ListView.builder(
+                  shrinkWrap: true,
+                  key: const Key('player_playlist'),
+                  controller: scroll,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  itemExtent: rowHeight,
+                  itemCount: entries.length,
+                  itemBuilder: (context, index) {
+                    final entry = entries[index];
+                    return ListTile(
+                      key: ValueKey('player_playlist_entry_${entry.fileId}'),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(
+                          ReelvaDesign.radiusSmall,
+                        ),
                       ),
-                    ),
-                    Expanded(
-                      child: entries.isEmpty
-                          ? ListTile(
-                              leading: const Icon(Icons.graphic_eq_rounded),
-                              title: Text(resource.displayName),
-                              subtitle: const Text('正在播放'),
-                              selected: true,
-                            )
-                          : ListView.builder(
-                              key: const Key('player_playlist'),
-                              controller: scroll,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                              ),
-                              itemExtent: rowHeight,
-                              itemCount: entries.length,
-                              itemBuilder: (context, index) {
-                                final entry = entries[index];
-                                return ListTile(
-                                  key: ValueKey(
-                                    'player_playlist_entry_${entry.fileId}',
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(
-                                      ReelvaDesign.radiusSmall,
-                                    ),
-                                  ),
-                                  selected: index == current,
-                                  enabled:
-                                      entry.available && !_switchingEpisode,
-                                  leading: Icon(
-                                    index == current
-                                        ? Icons.graphic_eq_rounded
-                                        : Icons.play_arrow_rounded,
-                                  ),
-                                  title: Text(
-                                    entry.title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  subtitle: Text(
-                                    entry.available
-                                        ? entry.episodeLabel ?? '当前视频'
-                                        : '${entry.episodeLabel ?? ''} · 暂不可播放',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  onTap: () => Navigator.pop(context, index),
-                                );
-                              },
-                            ),
-                    ),
-                  ],
+                      selected: index == current,
+                      enabled: entry.available && !_switchingEpisode,
+                      leading: Icon(
+                        index == current
+                            ? Icons.graphic_eq_rounded
+                            : Icons.play_arrow_rounded,
+                      ),
+                      title: Text(
+                        entry.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        entry.available
+                            ? entry.episodeLabel ?? '当前视频'
+                            : '${entry.episodeLabel ?? ''} · 暂不可播放',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      onTap: () => Navigator.pop(context, index),
+                    );
+                  },
                 ),
-              ),
-            );
-          },
         ),
       );
       if (mounted &&
@@ -638,6 +593,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     _input = ref.read(playerSettingsProvider).input;
     WidgetsBinding.instance.addObserver(this);
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+      _desktopWindow = ref.read(desktopWindowControllerProvider);
+      _windowPreparation = _desktopWindow!.beginPlayback();
       FocusManager.instance.addListener(_syncWindowsIme);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _syncWindowsIme();
@@ -742,6 +699,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     _endScreenAdjustment(cancel: true);
     unawaited(_restoreScreenBrightness());
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+      if (!_isWindowClosing) unawaited(_restoreAppWindow());
       FocusManager.instance.removeListener(_syncWindowsIme);
       _syncWindowsIme();
       windowManager.removeListener(this);
@@ -763,28 +721,17 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     _session?.engine.stop().catchError((Object e, StackTrace st) {
       AppLogger.instance.error('卸载页面停止播放引擎异常', error: e, stackTrace: st);
     });
-    if (_isFullscreen) {
-      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
-        windowManager.setFullScreen(false).catchError((
-          Object e,
-          StackTrace st,
-        ) {
-          AppLogger.instance.error(
-            '销毁还原 Windows 全屏模式异常',
-            error: e,
-            stackTrace: st,
-          );
-        });
-      } else if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-        SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge)
-            .catchError((Object e, StackTrace st) {
-              AppLogger.instance.error(
-                '销毁还原 Android 沉浸模式异常',
-                error: e,
-                stackTrace: st,
-              );
-            });
-      }
+    if (_isFullscreen &&
+        !kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge)
+          .catchError((Object e, StackTrace st) {
+            AppLogger.instance.error(
+              '销毁还原 Android 沉浸模式异常',
+              error: e,
+              stackTrace: st,
+            );
+          });
     }
     super.dispose();
   }
@@ -820,6 +767,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     if (_isFullscreen) {
       await _setFullscreen(false);
     }
+    await _restoreAppWindow();
 
     if (!mounted) return;
     setState(() => _canPopAfterExit = true);
@@ -836,6 +784,12 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     await disposal;
   }
 
+  Future<void> _restoreAppWindow() =>
+      _windowRestore ??= _windowSizeUpdate.then((_) async {
+        await _windowPreparation;
+        await _desktopWindow?.endPlayback();
+      });
+
   Future<void> _setFullscreen(bool targetFullscreen) async {
     if (_isTogglingFullscreen || _isFullscreen == targetFullscreen) return;
     _isTogglingFullscreen = true;
@@ -843,6 +797,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     var nativeSuccess = true;
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
       try {
+        await _windowPreparation;
         await windowManager.setFullScreen(targetFullscreen);
       } catch (e, st) {
         nativeSuccess = false;

@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:reelva/app/app.dart';
+import 'package:reelva/app/desktop_preferences.dart';
 import 'package:reelva/app/router.dart';
 import 'package:reelva/core/database/app_database.dart';
 import 'package:reelva/features/home/home_page.dart';
@@ -20,11 +21,18 @@ import 'package:reelva/shared/widgets/glass_navigation.dart';
 
 import 'features/player/fake_player_engine.dart';
 
-Widget createTestApp({required AppDatabase db, GoRouter? router}) {
+Widget createTestApp({
+  required AppDatabase db,
+  GoRouter? router,
+  bool sidebarCollapsed = false,
+}) {
   return ProviderScope(
     overrides: [
       appDatabaseProvider.overrideWithValue(db),
       playerSessionProvider.overrideWith((ref) => createFakeSession()),
+      sidebarCollapsedProvider.overrideWith(
+        () => SidebarCollapsedController(initialValue: sidebarCollapsed),
+      ),
       if (router != null) routerProvider.overrideWithValue(router),
     ],
     child: const ReelvaApp(),
@@ -117,6 +125,17 @@ void main() {
           expect(find.byType(HomePage), findsOneWidget);
           expect(tester.getSize(sidebar).width, 112);
 
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pumpAndSettle();
+          final collapsed = await const DesktopPreferencesStore()
+              .readSidebarCollapsed();
+          expect(collapsed, isTrue);
+          await tester.pumpWidget(
+            createTestApp(db: db, sidebarCollapsed: collapsed),
+          );
+          await tester.pumpAndSettle();
+          expect(tester.getSize(sidebar).width, 112);
+
           await tester.tap(toggle);
           await tester.pumpAndSettle();
           expect(tester.getSize(sidebar).width, 248);
@@ -139,6 +158,7 @@ void main() {
           await db.close();
         }
       },
+      variant: TargetPlatformVariant.only(TargetPlatform.windows),
     );
 
     testWidgets(

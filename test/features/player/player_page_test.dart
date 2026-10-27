@@ -85,6 +85,13 @@ void main() {
         .setMockMethodCallHandler(windowManagerChannel, (
           MethodCall methodCall,
         ) async {
+          if (methodCall.method == 'getBounds') {
+            return {'x': 10.0, 'y': 10.0, 'width': 1280.0, 'height': 720.0};
+          }
+          if (methodCall.method == 'isMaximized' ||
+              methodCall.method == 'isFullScreen') {
+            return false;
+          }
           return true;
         });
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -895,6 +902,13 @@ void main() {
               call,
             ) async {
               windowManagerCalls.add(call.method);
+              if (call.method == 'getBounds') {
+                return {'x': 10.0, 'y': 10.0, 'width': 1280.0, 'height': 720.0};
+              }
+              if (call.method == 'isMaximized' ||
+                  call.method == 'isFullScreen') {
+                return false;
+              }
               if (call.method == 'isPreventClose') {
                 return true;
               }
@@ -959,6 +973,12 @@ void main() {
           .setMockMethodCallHandler(const MethodChannel('window_manager'), (
             call,
           ) async {
+            if (call.method == 'getBounds') {
+              return {'x': 10.0, 'y': 10.0, 'width': 1280.0, 'height': 720.0};
+            }
+            if (call.method == 'isMaximized' || call.method == 'isFullScreen') {
+              return false;
+            }
             if (call.method == 'isPreventClose') return true;
             return true;
           });
