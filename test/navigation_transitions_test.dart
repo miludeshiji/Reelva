@@ -72,11 +72,21 @@ void main() {
           const MethodChannel('window_manager'),
           (call) async => true,
         );
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('reelva/player_input'),
+          (call) async => null,
+        );
   });
 
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(const MethodChannel('window_manager'), null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('reelva/player_input'),
+          null,
+        );
   });
 
   testWidgets(
@@ -201,6 +211,8 @@ void main() {
             );
           } else if (pageType == PlayerPage) {
             await tester.tap(find.byKey(const Key('player_back_button')));
+            // 播放器先在下一帧放行路由返回，再由后续帧启动退出动画。
+            await tester.pump();
           } else {
             await tester.tap(find.byKey(const Key('work_details_back_button')));
           }
