@@ -235,11 +235,40 @@ class OpenListService {
       if (_cancelledTasks.contains(id)) {
         throw const MediaSourceException('网盘操作已取消', code: 'cancelled');
       }
-      return await _data(method, {
+      final result = await _data(method, {
         'accountId': accountId,
         ...arguments,
         'taskId': id,
       });
+      if (method == 'upload') {
+        while (true) {
+          final status = await _data('taskStatus', {
+            'accountId': accountId,
+            'taskId': id,
+          });
+          if (status['done'] is! bool) {
+            throw const MediaSourceException(
+              '网盘上传状态无效',
+              code: 'invalid_response',
+            );
+          }
+          if (status['done'] == true) {
+            if (_cancelledTasks.contains(id)) {
+              throw const MediaSourceException('网盘操作已取消', code: 'cancelled');
+            }
+            if (status['error'] != null) {
+              throw const MediaSourceException(
+                '网盘文件上传失败，请检查目录写入权限、剩余空间或重新授权后重试',
+                code: 'operation_failed',
+              );
+            }
+            break;
+          }
+          // 取消后仍等待内核结束，避免提前释放任务或删除正在读取的临时文件。
+          await Future<void>.delayed(const Duration(milliseconds: 200));
+        }
+      }
+      return result;
     } finally {
       _tasks.remove(id);
       _cancelledTasks.remove(id);
@@ -285,6 +314,13 @@ class OpenListService {
   }) => operation('link', accountId, {
     'path': normalizeOpenListPath(path),
   }, taskId: taskId);
+
+  Future<void> upload(String accountId, String path, String localPath) async {
+    await operation('upload', accountId, {
+      'path': normalizeOpenListPath(path),
+      'localPath': localPath,
+    });
+  }
 
   Future<void> cancel(String taskId) async {
     final account = _tasks[taskId];

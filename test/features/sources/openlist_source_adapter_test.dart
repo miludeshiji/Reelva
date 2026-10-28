@@ -476,7 +476,7 @@ void main() {
     expect(links, 2);
   });
 
-  test('父目录定位保留源根边界，写入返回明确只读错误', () async {
+  test('父目录定位保留源根边界', () async {
     expect(await adapter.parentDirectory(source, source.rootLocator), isNull);
     expect(
       await adapter.parentDirectory(source, 'movie.mkv'),
@@ -490,10 +490,211 @@ void main() {
       adapter.parentDirectory(source, '../movie.mkv'),
       throwsA(isA<MediaSourceException>()),
     );
+    expect(rpc.calls, isEmpty);
+  });
+
+  test('写入在调用内核前拒绝目录越界和无效文件名', () async {
+    for (final directory in ['../Other', '/Other', r'Show\Other']) {
+      await expectLater(
+        adapter.writeBytes(source, directory, 'movie.nfo', Uint8List(1)),
+        throwsA(isA<MediaSourceException>()),
+      );
+    }
+    for (final name in ['', '../movie.nfo', r'Show\movie.nfo', '..']) {
+      await expectLater(
+        adapter.writeBytes(source, source.rootLocator, name, Uint8List(1)),
+        throwsA(_sourceError('invalid_name')),
+      );
+    }
+    expect(rpc.calls, isEmpty);
+  });
+
+  test('新建前刷新目录，出现同名文件时不上传', () async {
+    rpc.operation = (method, arguments) {
+      expect(method, 'list');
+      expect(arguments['refresh'], isTrue);
+      return {
+        'data': {
+          'entries': [_entry('MOVIE.NFO', '/Movies/MOVIE.NFO')],
+        },
+      };
+    };
+    await expectLater(
+      adapter.writeBytes(
+        source,
+        source.rootLocator,
+        'movie.nfo',
+        Uint8List(1),
+        createOnly: true,
+      ),
+      throwsA(_sourceError('write_conflict')),
+    );
+    expect(rpc.calls.where((call) => call.method == 'upload'), isEmpty);
+  });
+
+  test('根目录 NFO 和子目录图片保持原始字节，上传结束前保留临时文件', () async {
+    for (final (directory, name, path) in [
+      (source.rootLocator, '电影 #1 100%.nfo', '/Movies/电影 #1 100%.nfo'),
+      ('剧名/Season 01', 'poster.jpg', '/Movies/剧名/Season 01/poster.jpg'),
+    ]) {
+      final bytes = Uint8List.fromList([0xff, 0xd8, 0, 128, 42]);
+      final entered = Completer<void>();
+      final completed = Completer<Map<String, dynamic>>();
+      late File temporary;
+      var polls = 0;
+      var finished = false;
+      rpc.operation = (method, arguments) async {
+        switch (method) {
+          case 'list':
+            return const {
+              'data': {'entries': <Map<String, dynamic>>[]},
+            };
+          case 'upload':
+            expect(arguments['accountId'], _accountId);
+            expect(arguments['path'], path);
+            temporary = File(arguments['localPath'] as String);
+            expect(await temporary.readAsBytes(), bytes);
+            return {
+              'data': {'taskId': arguments['taskId']},
+            };
+          case 'taskStatus':
+            if (++polls == 1) {
+              entered.complete();
+              return const {
+                'data': {'done': false},
+              };
+            }
+            return completed.future;
+          default:
+            throw StateError('Unexpected method: $method');
+        }
+      };
+      final writing = adapter
+          .writeBytes(source, directory, name, bytes, createOnly: true)
+          .then((_) => finished = true);
+      await entered.future;
+      expect(finished, isFalse);
+      expect(await temporary.exists(), isTrue);
+      final upload = rpc.calls.lastWhere((call) => call.method == 'upload');
+      expect(
+        rpc.calls.where(
+          (call) =>
+              call.method == 'releaseTask' &&
+              call.arguments['taskId'] == upload.arguments['taskId'],
+        ),
+        isEmpty,
+      );
+      completed.complete(const {
+        'data': {'done': true},
+      });
+      await writing;
+      expect(await temporary.parent.exists(), isFalse);
+      expect(
+        rpc.calls.lastWhere((call) => call.method == 'releaseTask').arguments,
+        {'accountId': _accountId, 'taskId': upload.arguments['taskId']},
+      );
+    }
+  });
+
+  test('上传失败保留安全错误、清理临时文件并可重试', () async {
+    final temporaryFiles = <File>[];
+    var fail = true;
+    rpc.operation = (method, arguments) {
+      if (method == 'upload') {
+        temporaryFiles.add(File(arguments['localPath'] as String));
+        return {
+          'data': {'taskId': arguments['taskId']},
+        };
+      }
+      expect(method, 'taskStatus');
+      return {
+        'data': {
+          'done': true,
+          if (fail)
+            'error': {
+              'code': 'operation_failed',
+              'message': 'cookie=private-upload-session https://signed.test/',
+            },
+        },
+      };
+    };
     await expectLater(
       adapter.writeBytes(source, source.rootLocator, 'movie.nfo', Uint8List(1)),
-      throwsA(_sourceError('read_only_source')),
+      throwsA(
+        isA<MediaSourceException>()
+            .having((error) => error.code, 'code', 'operation_failed')
+            .having(
+              (error) => error.toString(),
+              'safe text',
+              allOf(
+                isNot(contains('private-upload-session')),
+                isNot(contains('signed.test')),
+              ),
+            ),
+      ),
     );
-    expect(rpc.calls, isEmpty);
+    expect(await temporaryFiles.single.parent.exists(), isFalse);
+    fail = false;
+    await adapter.writeBytes(
+      source,
+      source.rootLocator,
+      'movie.nfo',
+      Uint8List(1),
+    );
+    expect(await temporaryFiles.last.parent.exists(), isFalse);
+    expect(
+      rpc.calls.where((call) => call.method == 'releaseTask'),
+      hasLength(2),
+    );
+  });
+
+  test('取消上传后等待内核真正结束再释放任务和临时文件', () async {
+    final entered = Completer<void>();
+    final completed = Completer<Map<String, dynamic>>();
+    late File temporary;
+    var polls = 0;
+    rpc.operation = (method, arguments) {
+      if (method == 'upload') {
+        temporary = File(arguments['localPath'] as String);
+        return {
+          'data': {'taskId': arguments['taskId']},
+        };
+      }
+      expect(method, 'taskStatus');
+      if (++polls == 1) {
+        entered.complete();
+        return const {
+          'data': {'done': false},
+        };
+      }
+      return completed.future;
+    };
+    final writing = adapter.writeBytes(
+      source,
+      source.rootLocator,
+      'movie.nfo',
+      Uint8List(1),
+    );
+    final cancelled = expectLater(writing, throwsA(_sourceError('cancelled')));
+    await entered.future;
+    await service.cancelAccount(_accountId);
+    expect(await temporary.exists(), isTrue);
+    expect(rpc.calls.where((call) => call.method == 'releaseTask'), isEmpty);
+    completed.complete(const {
+      'data': {'done': true},
+    });
+    await cancelled;
+    expect(await temporary.parent.exists(), isFalse);
+    final upload = rpc.calls.singleWhere((call) => call.method == 'upload');
+    expect(
+      rpc.calls
+          .singleWhere((call) => call.method == 'cancel')
+          .arguments['taskId'],
+      upload.arguments['taskId'],
+    );
+    expect(
+      rpc.calls.where((call) => call.method == 'releaseTask'),
+      hasLength(1),
+    );
   });
 }

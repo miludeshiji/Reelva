@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -12,8 +13,8 @@ import 'openlist_service.dart';
 import 'remote_http_client.dart';
 import 'remote_playback_bridge.dart';
 
-/// 网盘只读取媒体、字幕及现有目录元数据，不主动上传或覆盖网盘文件。
-class OpenListSourceAdapter implements ReadOnlyMediaSidecarAdapter {
+/// 网盘媒体、字幕读取与目录 NFO、图片读写共用账号授权和根目录边界。
+class OpenListSourceAdapter implements MediaSidecarAdapter {
   OpenListSourceAdapter({
     required this.service,
     required this.http,
@@ -235,9 +236,31 @@ class OpenListSourceAdapter implements ReadOnlyMediaSidecarAdapter {
     String? expectedEtag,
     bool createOnly = false,
   }) async {
-    throw const MediaSourceException(
-      '网盘媒体源仅支持读取目录元数据',
-      code: 'read_only_source',
-    );
+    validateSidecarName(name);
+    final root = OpenListRoot.parse(source.rootLocator);
+    final directory = root.resolve(directoryId, source.rootLocator);
+    if (createOnly) {
+      final entries = await listEntries(source, directoryId).toList();
+      if (entries.any(
+        (entry) => entry.name.toLowerCase() == name.toLowerCase(),
+      )) {
+        throw const MediaSourceException(
+          '网盘目录已出现同名文件，请重新导出以读取最新内容',
+          code: 'write_conflict',
+        );
+      }
+    }
+    final temporary = await Directory.systemTemp.createTemp('reelva-sidecar-');
+    try {
+      final file = File(p.join(temporary.path, 'sidecar'));
+      await file.writeAsBytes(bytes, flush: true);
+      await service.upload(
+        root.accountId,
+        p.posix.join(directory, name),
+        file.path,
+      );
+    } finally {
+      await temporary.delete(recursive: true);
+    }
   }
 }
