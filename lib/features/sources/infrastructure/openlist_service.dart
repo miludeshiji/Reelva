@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:path_provider/path_provider.dart';
 
+import '../../../core/logging/app_logger.dart';
 import '../domain/openlist_models.dart';
 import '../domain/source_models.dart';
 import 'openlist_rpc.dart';
@@ -44,6 +45,8 @@ class OpenListService {
   }
 
   Future<void> _initialize() async {
+    final watch = Stopwatch()..start();
+    AppLogger.instance.info('开始初始化网盘内核', module: '网盘');
     await _data('initialize', {'dataDir': await _dataDirectory()});
     final active = await activeAccountIds?.call();
     if (active != null) {
@@ -55,6 +58,10 @@ class OpenListService {
         }
       }
     }
+    AppLogger.instance.info(
+      '网盘内核初始化完成，耗时=${watch.elapsedMilliseconds}ms',
+      module: '网盘',
+    );
   }
 
   Future<T> _serialize<T>(String id, Future<T> Function() action) async {
@@ -229,6 +236,10 @@ class OpenListService {
     String? taskId,
   }) async {
     final id = taskId ?? newTaskId();
+    final watch = Stopwatch()..start();
+    if (method == 'link') {
+      AppLogger.instance.info('开始解析网盘下载链接：taskId=$id', module: '网盘');
+    }
     _tasks[id] = accountId;
     try {
       await _serialize(accountId, () => _ensureAccount(accountId));
@@ -267,6 +278,12 @@ class OpenListService {
           // 取消后仍等待内核结束，避免提前释放任务或删除正在读取的临时文件。
           await Future<void>.delayed(const Duration(milliseconds: 200));
         }
+      }
+      if (method == 'link') {
+        AppLogger.instance.info(
+          '网盘下载链接解析完成：taskId=$id，耗时=${watch.elapsedMilliseconds}ms',
+          module: '网盘',
+        );
       }
       return result;
     } finally {
@@ -365,7 +382,18 @@ class OpenListService {
     String method,
     Map<String, dynamic> arguments,
   ) async {
-    final response = await rpc.invoke(method, arguments);
+    final Map<String, dynamic> response;
+    try {
+      response = await rpc.invoke(method, arguments);
+    } catch (error, stack) {
+      AppLogger.instance.error(
+        '网盘内核调用失败：method=$method',
+        module: '网盘',
+        error: error.runtimeType,
+        stackTrace: stack,
+      );
+      rethrow;
+    }
     final error = response['error'];
     if (error is Map) {
       final rawCode = error['code'];
@@ -383,6 +411,12 @@ class OpenListService {
           }.contains(rawCode)
           ? rawCode as String
           : 'operation_failed';
+      if (code != 'cancelled') {
+        AppLogger.instance.warning(
+          '网盘操作失败：method=$method，code=$code',
+          module: '网盘',
+        );
+      }
       throw MediaSourceException(switch (code) {
         'unauthorized' || 'invalid_token' => '网盘登录已失效，请重新授权',
         'not_found' => '网盘文件或目录不存在',

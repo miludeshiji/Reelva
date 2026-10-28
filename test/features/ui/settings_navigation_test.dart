@@ -6,6 +6,7 @@ import 'package:reelva/app/theme/reelva_theme.dart';
 import 'package:reelva/features/metadata/application/metadata_providers.dart';
 import 'package:reelva/features/metadata/infrastructure/tmdb_token_store.dart';
 import 'package:reelva/features/settings/settings_page.dart';
+import 'package:reelva/features/settings/logs_page.dart';
 import 'package:reelva/features/settings/player_settings_page.dart';
 import 'package:reelva/features/settings/player_shortcuts_page.dart';
 import 'package:reelva/features/settings/settings_subpages.dart';
@@ -108,7 +109,7 @@ void main() {
     );
   }
 
-  testWidgets('五个设置入口打开独立子页并在返回后保留主页滚动位置', (tester) async {
+  testWidgets('设置入口打开独立子页并在返回后保留主页滚动位置', (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(390, 568);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -123,6 +124,7 @@ void main() {
         (key: 'settings_tmdb_tile', type: TmdbSettingsPage),
         (key: 'settings_sync_tile', type: SyncSettingsPage),
         (key: 'settings_cache_tile', type: PosterCacheSettingsPage),
+        (key: 'settings_logs_tile', type: LogsPage),
       ]) {
         final tile = find.byKey(Key(entry.key));
         await tester.ensureVisible(tile);

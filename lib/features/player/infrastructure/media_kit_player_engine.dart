@@ -164,6 +164,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
             _player.state.playing &&
             !_player.state.buffering &&
             !_player.state.completed) {
+          AppLogger.instance.info('播放进度已推进，从可恢复错误中恢复', module: '播放器');
           _recoverableErrorPosition = null;
           _updateSnapshot(
             _snapshot.copyWith(
@@ -406,6 +407,11 @@ class MediaKitPlayerEngine implements PlayerEngine {
   Future<void> open(PlaybackResource resource, {Duration? resumeAt}) {
     if (_disposed) return Future.value();
     final epoch = ++_openEpoch;
+    final watch = Stopwatch()..start();
+    AppLogger.instance.info(
+      '开始打开媒体：请求=$epoch，fileId=${resource.libraryFileId}，续播=${resumeAt?.inSeconds ?? 0}s',
+      module: '播放器',
+    );
     _subtitleSelectionVersion = 0;
     _isOpening = true;
     _pendingResumeAt = resumeAt;
@@ -456,6 +462,10 @@ class MediaKitPlayerEngine implements PlayerEngine {
       if (resource.prepare != null) {
         try {
           effectiveResource = await resource.prepare!();
+          AppLogger.instance.info(
+            '播放资源准备完成：请求=$epoch，耗时=${watch.elapsedMilliseconds}ms',
+            module: '播放器',
+          );
         } catch (e, st) {
           _isOpening = false;
           if (_disposed || epoch != _openEpoch) return;
@@ -604,6 +614,10 @@ class MediaKitPlayerEngine implements PlayerEngine {
       _syncTracks(_player.state.tracks, _player.state.track);
       _syncVideoSize(_player.state.videoParams);
       _checkResumeRange(_player.state.duration);
+      AppLogger.instance.info(
+        '媒体已打开并请求播放：请求=$epoch，耗时=${watch.elapsedMilliseconds}ms',
+        module: '播放器',
+      );
       unawaited(_autoLoadSubtitles(resource, epoch));
     });
   }
@@ -987,6 +1001,9 @@ class MediaKitPlayerEngine implements PlayerEngine {
   @override
   Future<void> stop() {
     if (_disposed) return Future.value();
+    if (_snapshot.status != PlaybackStatus.idle) {
+      AppLogger.instance.info('停止播放并释放资源', module: '播放器');
+    }
     _openEpoch++;
     _isOpening = false;
     _pendingResumeAt = null;

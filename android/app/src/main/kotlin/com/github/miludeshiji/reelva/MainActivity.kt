@@ -30,6 +30,7 @@ class MainActivity : FlutterActivity() {
 
     private var channel: MethodChannel? = null
     private var appUpdateBridge: AppUpdateBridge? = null
+    private var logExportBridge: LogExportBridge? = null
     private var openListBridge: OpenListBridge? = null
     private var brightnessChannel: MethodChannel? = null
     private var brightnessBeforePlayback: Float? = null
@@ -43,6 +44,7 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         appUpdateBridge = AppUpdateBridge(this, flutterEngine.dartExecutor.binaryMessenger)
+        logExportBridge = LogExportBridge(this, flutterEngine.dartExecutor.binaryMessenger)
         openListBridge = OpenListBridge(flutterEngine.dartExecutor.binaryMessenger)
         lifecycleGeneration++
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).apply {
@@ -90,6 +92,8 @@ class MainActivity : FlutterActivity() {
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         appUpdateBridge?.close()
         appUpdateBridge = null
+        logExportBridge?.close()
+        logExportBridge = null
         openListBridge?.close()
         openListBridge = null
         lifecycleGeneration++
@@ -202,6 +206,7 @@ class MainActivity : FlutterActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (appUpdateBridge?.onActivityResult(requestCode) == true) return
+        if (logExportBridge?.onActivityResult(requestCode, resultCode, data) == true) return
         if (requestCode == REQUEST_CODE_PICK_DIRECTORY) {
             handleDirectoryPickerResult(resultCode, data)
             return

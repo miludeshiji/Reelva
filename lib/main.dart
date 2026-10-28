@@ -7,6 +7,7 @@ import 'package:reelva/app/desktop_preferences.dart';
 import 'package:reelva/app/desktop_window_controller.dart';
 import 'package:reelva/core/errors/error_handling.dart';
 import 'package:reelva/core/logging/app_logger.dart';
+import 'package:reelva/core/logging/app_log_store.dart';
 import 'package:reelva/features/player/application/player_settings_provider.dart';
 import 'package:reelva/features/player/domain/player_settings.dart';
 import 'package:reelva/features/player/infrastructure/media_kit_player_engine.dart';
@@ -33,7 +34,13 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   _registerLicenses();
   installErrorHandling();
+  await AppLogStore.instance.initialize();
+  AppLogger.instance.info(
+    '应用启动，平台：${defaultTargetPlatform.name}',
+    module: '启动',
+  );
   initializeMediaKit();
+  AppLogger.instance.info('播放器内核初始化完成', module: '启动');
 
   const playerSettingsStore = PlayerSettingsStore();
   var playerSettings = PlayerSettings.defaultsFor(defaultTargetPlatform);
@@ -75,4 +82,5 @@ Future<void> main() async {
       child: const ReelvaApp(),
     ),
   );
+  AppLogger.instance.info('应用初始化完成', module: '启动');
 }

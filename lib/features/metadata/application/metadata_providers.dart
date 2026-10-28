@@ -150,12 +150,17 @@ class MetadataController extends Notifier<MetadataTaskState> {
       _hasQueuedRefresh = false;
       if (!ref.mounted) return;
       state = const MetadataTaskState(running: true);
+      final watch = Stopwatch()..start();
+      AppLogger.instance.info('开始匹配影视库元数据', module: 'TMDB');
 
       try {
         final service = ref.read(metadataServiceProvider);
         final res = await service.refresh(
           onProgress: (phase, processed, total) {
             if (!ref.mounted) return;
+            if (phase != state.phase) {
+              AppLogger.instance.info('匹配阶段：${phase.name}', module: 'TMDB');
+            }
             state = state.copyWith(
               phase: phase,
               processed: processed,
@@ -166,6 +171,13 @@ class MetadataController extends Notifier<MetadataTaskState> {
             if (ref.mounted) state = state.copyWith(activeCount: active);
           },
         );
+        final summary =
+            '匹配完成：匹配=${res.matched}，待确认=${res.needsReview}，跳过=${res.skipped}，错误=${res.errors.length}，仅本地=${res.localOnly}，耗时=${watch.elapsedMilliseconds}ms';
+        if (res.errors.isEmpty) {
+          AppLogger.instance.info(summary, module: 'TMDB');
+        } else {
+          AppLogger.instance.warning(summary, module: 'TMDB');
+        }
         if (!ref.mounted) return;
 
         // 成功完成时刷新凭据配置缓存状态
@@ -178,7 +190,12 @@ class MetadataController extends Notifier<MetadataTaskState> {
           error: res.errors.isNotEmpty ? res.errors.join('; ') : null,
         );
       } catch (e, st) {
-        AppLogger.instance.error('元数据任务执行异常', error: e, stackTrace: st);
+        AppLogger.instance.error(
+          '元数据任务执行异常',
+          module: 'TMDB',
+          error: e,
+          stackTrace: st,
+        );
         if (!ref.mounted) return;
 
         final safeMessage = e is MetadataException

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../../core/logging/app_logger.dart';
 import '../domain/sync_models.dart';
 import '../domain/sync_transport.dart';
 import '../infrastructure/sync_repository.dart';
@@ -35,20 +36,43 @@ class SyncService {
       return _activeSync!;
     }
 
-    final future = _doSynchronize().whenComplete(() {
-      _activeSync = null;
-    });
+    final watch = Stopwatch()..start();
+    AppLogger.instance.info('开始跨设备同步', module: '同步');
+    final future = _doSynchronize()
+        .then(
+          (report) {
+            AppLogger.instance.info(
+              '同步完成：上传=${report.uploaded}，下载=${report.downloaded}，应用=${report.applied}，待应用=${report.pending}，耗时=${watch.elapsedMilliseconds}ms',
+              module: '同步',
+            );
+            return report;
+          },
+          onError: (Object error, StackTrace stack) {
+            AppLogger.instance.error(
+              '跨设备同步失败，耗时=${watch.elapsedMilliseconds}ms',
+              module: '同步',
+              error: error,
+              stackTrace: stack,
+            );
+            Error.throwWithStackTrace(error, stack);
+          },
+        )
+        .whenComplete(() {
+          _activeSync = null;
+        });
     _activeSync = future;
     return future;
   }
 
   Future<SyncReport> _doSynchronize() async {
+    AppLogger.instance.info('同步应用配置与影视库索引', module: '同步');
     final configurationApplied = await applicationSync?.synchronize() ?? 0;
     // 1. 捕获本地最新变更至出站待同步记录
     await repository.captureLocalChanges();
 
     // 2. 依次读取并上传发件箱批次
     int uploadedRecords = 0;
+    AppLogger.instance.info('上传观看进度增量', module: '同步');
     while (true) {
       final batch = await repository.prepareUpload();
       if (batch == null) {
@@ -61,6 +85,10 @@ class SyncService {
 
     // 3. 列出远程批次并读取本地各设备游标
     final remoteBatches = await transport.listBatches();
+    AppLogger.instance.info(
+      '下载并合并观看进度：远端批次=${remoteBatches.length}',
+      module: '同步',
+    );
     final cursors = await repository.readCursors();
 
     // 4. 游标增量过滤：仅保留序号大于本地已持久化游标的批次

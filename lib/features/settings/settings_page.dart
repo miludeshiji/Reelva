@@ -114,6 +114,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         Semantics(header: true, child: Text('其他', style: sectionStyle)),
         const SizedBox(height: ReelvaDesign.space8),
         _SettingsTile(
+          key: const Key('settings_logs_tile'),
+          icon: Icons.receipt_long_outlined,
+          title: '日志',
+          subtitle: '查看、搜索与导出运行日志',
+          onTap: () => _openPage('/settings/logs'),
+        ),
+        const SizedBox(height: ReelvaDesign.space12),
+        _SettingsTile(
           key: const Key('settings_about_tile'),
           icon: Icons.language_rounded,
           title: '关于 Reelva',

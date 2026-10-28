@@ -9,13 +9,13 @@ Reelva 是客户端优先的跨平台影视库与播放器，首批目标平台�
 | `lib/main.dart` | 绑定、错误处理、media_kit 与 Windows 窗口初始化，Riverpod 入口 |
 | `lib/app/` | 根应用、路由和自适应导航 |
 | `lib/core/database/` | SQLite / Drift 数据库结构定义与迁移管理（Schema v4，保留 v1/v2/v3 数据） |
-| `lib/core/errors/`、`lib/core/logging/` | 错误处理与日志脱敏 |
+| `lib/core/errors/`、`lib/core/logging/` | 错误处理、日志脱敏、文件轮转与跨平台日志导出 |
 | `lib/features/sources/` | 本地/SAF、WebDAV、SMB 与 OpenList 网盘媒体源管理、登录和扫描，凭据快照、内核运行时、远程播放解析及按需读取桥接 |
 | `lib/features/library/` | 作品分页海报墙、电影/季集详情、多版本选择与解析播放 |
 | `lib/features/metadata/` | 文件名解析、TMDB 请求与缓存、匹配评分、自动/手动匹配及安全凭据 |
 | `lib/features/player/` | 播放器领域、应用、基础设施与播放界面分层 |
 | `lib/features/home/`、`lib/features/progress/` | 首页继续观看与最近添加、按作品/剧集保存进度、节流与播放生命周期管理 |
-| `lib/features/settings/` | 播放器偏好、TMDB 凭据、缓存管理、同步设置入口与关于界面 |
+| `lib/features/settings/` | 播放器偏好、TMDB 凭据、缓存管理、同步设置入口、日志与关于界面 |
 | `lib/features/sync/` | 稳定作品身份、增量批次、冲突合并、同步状态与可选 WebDAV 传输 |
 | `lib/shared/widgets/` | 共用空状态、品牌标识与有回收策略的海报图片缓存 |
 | `test/` | 导航、数据库迁移、识别与匹配、扫描与播放、同步合并及协议测试 |

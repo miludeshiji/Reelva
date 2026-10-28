@@ -530,6 +530,8 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
   }
 
   Future<void> _executeScan(int id) async {
+    final watch = Stopwatch()..start();
+    AppLogger.instance.info('开始扫描：sourceId=$id', module: '扫描');
     _safeSetState(
       (s) => {
         ...s,
@@ -749,6 +751,10 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
       }
 
       await repo.finishScan(id, scanId);
+      AppLogger.instance.info(
+        '扫描完成：sourceId=$id，目录=$visitedCount，视频=$videoCount，耗时=${watch.elapsedMilliseconds}ms',
+        module: '扫描',
+      );
       _safeSetState(
         (s) => {
           ...s,
@@ -775,7 +781,12 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
         );
         return;
       }
-      AppLogger.instance.error('扫描媒体源失败: $id', error: e, stackTrace: st);
+      AppLogger.instance.error(
+        '扫描媒体源失败: $id',
+        module: '扫描',
+        error: e,
+        stackTrace: st,
+      );
       final safeMessage = e is MediaSourceException
           ? e.message
           : '扫描媒体源失败，请检查网络或目录权限';
@@ -793,6 +804,13 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
           ),
         },
       );
+    } finally {
+      if (_cancellations[id] == true) {
+        AppLogger.instance.info(
+          '扫描取消：sourceId=$id，目录=$visitedCount，视频=$videoCount，耗时=${watch.elapsedMilliseconds}ms',
+          module: '扫描',
+        );
+      }
     }
   }
 

@@ -207,6 +207,7 @@ class TmdbClient {
     int attempts = 0;
     while (true) {
       attempts++;
+      final watch = Stopwatch()..start();
       try {
         final response = await _schedule(
           token,
@@ -237,6 +238,12 @@ class TmdbClient {
         return data;
       } on DioException catch (dioErr) {
         final statusCode = dioErr.response?.statusCode;
+        if (dioErr.type != DioExceptionType.cancel) {
+          AppLogger.instance.warning(
+            'TMDB 请求失败：type=${dioErr.type.name}，status=$statusCode，尝试=$attempts，耗时=${watch.elapsedMilliseconds}ms',
+            module: 'TMDB',
+          );
+        }
 
         // 429 Rate Limit 处理：更新共享允许时间，有界范围内重试，超限绝不过早重试
         if (statusCode == 429) {

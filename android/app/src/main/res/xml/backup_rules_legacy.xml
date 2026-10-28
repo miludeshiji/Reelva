@@ -6,5 +6,6 @@
     <exclude domain="sharedpref" path="FlutterSecureStorageConfiguration.xml"/>
     <!-- Keep ordinary library database backup, but never copy native credentials. -->
     <exclude domain="file" path="openlist/"/>
+    <exclude domain="file" path="logs/"/>
     <exclude domain="root" path="app_webview/"/>
 </full-backup-content>
