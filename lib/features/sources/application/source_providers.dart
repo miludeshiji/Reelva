@@ -26,14 +26,7 @@ final platformOverrideProvider = Provider<TargetPlatform?>((ref) => null);
 ///
 /// 在 Provider 销毁时安全关闭数据库连接，异常由 [AppLogger] 统一脱敏记录。
 final appDatabaseProvider = Provider<AppDatabase>((ref) {
-  final credentials = ref.watch(remoteCredentialsStoreProvider);
-  final db = AppDatabase(
-    removeRetiredCredentials: (references) async {
-      for (final reference in references) {
-        await credentials.delete(reference);
-      }
-    },
-  );
+  final db = AppDatabase();
   ref.onDispose(() async {
     try {
       await db.close();
