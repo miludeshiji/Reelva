@@ -6,6 +6,10 @@ import '../../../core/logging/app_logger.dart';
 import '../../library/infrastructure/media_library_repository.dart';
 import '../domain/media_source_adapter.dart';
 import '../domain/source_models.dart';
+import '../domain/openlist_models.dart';
+import '../infrastructure/openlist_rpc.dart';
+import '../infrastructure/openlist_service.dart';
+import '../infrastructure/openlist_source_adapter.dart';
 import '../infrastructure/android_saf_source_adapter.dart';
 import '../infrastructure/local_source_adapter.dart';
 import '../infrastructure/remote_credentials_store.dart';
@@ -63,6 +67,36 @@ final remotePlaybackBridgeProvider = Provider<RemotePlaybackBridge>((ref) {
   return RemotePlaybackBridge(http: http);
 });
 
+final openListRpcProvider = Provider<OpenListRpcClient>(
+  (ref) => EmbeddedOpenListRpc(),
+);
+
+final openListServiceProvider = Provider<OpenListService>((ref) {
+  final repository = ref.watch(mediaLibraryRepositoryProvider);
+  final service = OpenListService(
+    rpc: ref.watch(openListRpcProvider),
+    credentials: ref.watch(remoteCredentialsStoreProvider),
+    activeAccountIds: () async {
+      final sources = await repository.db
+          .select(repository.db.mediaSources)
+          .get();
+      return {
+        for (final source in sources)
+          if (source.kind == 'openlist' && source.enabled)
+            OpenListRoot.parse(source.rootLocator).accountId,
+      };
+    },
+  );
+  ref.onDispose(() async {
+    try {
+      await service.close();
+    } catch (error, stack) {
+      AppLogger.instance.error('关闭网盘内核失败', error: error, stackTrace: stack);
+    }
+  });
+  return service;
+});
+
 /// 媒体源适配器注册表 Provider
 ///
 /// 包含 LocalSourceAdapter 与 AndroidSafSourceAdapter；构造器中不执行任何插件调用。
@@ -80,6 +114,11 @@ final sourceAdaptersProvider = Provider<Map<String, MediaSourceAdapter>>((ref) {
       playback: playback,
     ),
     'smb': SmbSourceAdapter(credentials: credentials, playback: playback),
+    'openlist': OpenListSourceAdapter(
+      service: ref.watch(openListServiceProvider),
+      http: http,
+      playback: playback,
+    ),
   };
 });
 

@@ -30,6 +30,7 @@ class MainActivity : FlutterActivity() {
 
     private var channel: MethodChannel? = null
     private var appUpdateBridge: AppUpdateBridge? = null
+    private var openListBridge: OpenListBridge? = null
     private var brightnessChannel: MethodChannel? = null
     private var brightnessBeforePlayback: Float? = null
     private var pendingPickerResult: MethodChannel.Result? = null
@@ -42,6 +43,7 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         appUpdateBridge = AppUpdateBridge(this, flutterEngine.dartExecutor.binaryMessenger)
+        openListBridge = OpenListBridge(flutterEngine.dartExecutor.binaryMessenger)
         lifecycleGeneration++
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).apply {
             setMethodCallHandler { call, result ->
@@ -88,6 +90,8 @@ class MainActivity : FlutterActivity() {
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         appUpdateBridge?.close()
         appUpdateBridge = null
+        openListBridge?.close()
+        openListBridge = null
         lifecycleGeneration++
         cleanupResources()
         channel?.setMethodCallHandler(null)

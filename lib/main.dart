@@ -16,6 +16,12 @@ void _registerLicenses() {
   LicenseRegistry.addLicense(() async* {
     final license = await rootBundle.loadString('assets/licenses/libsmb2.txt');
     yield LicenseEntryWithLineBreaks(['libsmb2'], license);
+    final openListLicense = await rootBundle.loadString(
+      'assets/licenses/openlist.txt',
+    );
+    yield LicenseEntryWithLineBreaks([
+      'Venera OpenList Core (AGPL-3.0)',
+    ], openListLicense);
     final fontLicense = await rootBundle.loadString(
       'assets/licenses/NotoSansCJK.txt',
     );

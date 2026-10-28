@@ -16,30 +16,41 @@ class RemoteCredentials {
     this.password = '',
     this.domain = '',
     this.playbackHeaders = const {},
+    this.openListDriver,
+    this.openListAuthorization = const {},
   });
 
   const RemoteCredentials.anonymous()
     : username = '',
       password = '',
       domain = '',
-      playbackHeaders = const {};
+      playbackHeaders = const {},
+      openListDriver = null,
+      openListAuthorization = const {};
 
   final String username;
   final String password;
   final String domain;
   final Map<String, String> playbackHeaders;
+  final String? openListDriver;
+  final Map<String, dynamic> openListAuthorization;
 
   bool get isAnonymous =>
       username.isEmpty &&
       password.isEmpty &&
       domain.isEmpty &&
-      playbackHeaders.isEmpty;
+      playbackHeaders.isEmpty &&
+      openListDriver == null &&
+      openListAuthorization.isEmpty;
 
   Map<String, dynamic> toJson() => {
     'username': username,
     'password': password,
     'domain': domain,
     'playbackHeaders': playbackHeaders,
+    if (openListDriver != null) 'openListDriver': openListDriver,
+    if (openListAuthorization.isNotEmpty)
+      'openListAuthorization': openListAuthorization,
   };
 
   factory RemoteCredentials.fromJson(Map<String, dynamic> json) {
@@ -57,6 +68,10 @@ class RemoteCredentials {
       password: json['password'] as String? ?? '',
       domain: json['domain'] as String? ?? '',
       playbackHeaders: headers,
+      openListDriver: json['openListDriver'] as String?,
+      openListAuthorization:
+          (json['openListAuthorization'] as Map?)?.cast<String, dynamic>() ??
+          const {},
     );
   }
 
@@ -65,12 +80,17 @@ class RemoteCredentials {
     String? password,
     String? domain,
     Map<String, String>? playbackHeaders,
+    String? openListDriver,
+    Map<String, dynamic>? openListAuthorization,
   }) {
     return RemoteCredentials(
       username: username ?? this.username,
       password: password ?? this.password,
       domain: domain ?? this.domain,
       playbackHeaders: playbackHeaders ?? this.playbackHeaders,
+      openListDriver: openListDriver ?? this.openListDriver,
+      openListAuthorization:
+          openListAuthorization ?? this.openListAuthorization,
     );
   }
 
@@ -85,13 +105,19 @@ class RemoteCredentials {
           username == other.username &&
           password == other.password &&
           domain == other.domain &&
-          mapEquals(playbackHeaders, other.playbackHeaders);
+          mapEquals(playbackHeaders, other.playbackHeaders) &&
+          openListDriver == other.openListDriver &&
+          mapEquals(openListAuthorization, other.openListAuthorization);
 
   @override
   int get hashCode => Object.hash(
     username,
     password,
     domain,
+    openListDriver,
+    Object.hashAllUnordered(
+      openListAuthorization.entries.map((e) => Object.hash(e.key, e.value)),
+    ),
     Object.hashAll(
       playbackHeaders.entries.map((e) => Object.hash(e.key, e.value)),
     ),

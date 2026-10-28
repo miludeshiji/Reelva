@@ -10,14 +10,16 @@ import '../../metadata/infrastructure/tmdb_token_store.dart';
 import '../../player/domain/player_settings.dart';
 import '../../player/domain/player_shortcuts.dart';
 import '../../player/infrastructure/player_settings_store.dart';
+import '../../sources/domain/openlist_models.dart';
 import '../../sources/domain/source_models.dart';
+import '../../sources/infrastructure/openlist_service.dart';
 import '../../sources/infrastructure/remote_credentials_store.dart';
 import '../domain/application_sync.dart';
 import '../domain/sync_models.dart';
 import '../../../core/database/app_database.dart';
 import 'library_index_store.dart';
 
-/// 配置同步的基线与凭据均留在安全存储，SQLite 仅保留现有的凭据引用。
+/// 配置同步基线保存在安全存储，网盘备份回读当前内核授权，不复制内核数据库。
 class ApplicationSyncStore {
   ApplicationSyncStore({
     required this.repository,
@@ -25,6 +27,7 @@ class ApplicationSyncStore {
     required this.tmdb,
     required this.player,
     required this.deviceId,
+    this.openList,
     FlutterSecureStorage? storage,
     TargetPlatform? platform,
     DateTime Function()? clock,
@@ -39,6 +42,7 @@ class ApplicationSyncStore {
   final TmdbTokenStore tmdb;
   final PlayerSettingsStore player;
   final Future<String> Function() deviceId;
+  final OpenListService? openList;
   final FlutterSecureStorage _storage;
   final TargetPlatform platform;
   final DateTime Function() _clock;
@@ -134,8 +138,15 @@ class ApplicationSyncStore {
     final sources = await repository.db
         .select(repository.db.mediaSources)
         .get();
+    final cloudSecrets = <String, RemoteCredentials>{};
     for (final row in sources) {
-      if (!const {'local', 'androidSaf', 'webdav', 'smb'}.contains(row.kind)) {
+      if (!const {
+        'local',
+        'androidSaf',
+        'webdav',
+        'smb',
+        'openlist',
+      }.contains(row.kind)) {
         continue;
       }
       final identity = _identity(row.kind, row.rootLocator);
@@ -146,8 +157,19 @@ class ApplicationSyncStore {
           binding?.key ??
           ApplicationSyncDocument.sourceKey(row.kind, row.rootLocator, id);
       final original = state.document.records[key]?.value;
-      final remote = row.kind == 'webdav' || row.kind == 'smb';
+      final remote = const {'webdav', 'smb', 'openlist'}.contains(row.kind);
       if (!remote) state.bindings[key] = identity;
+      RemoteCredentials? secret;
+      if (remote && row.enabled) {
+        if (row.kind == 'openlist' && openList != null) {
+          final accountId = OpenListRoot.parse(row.rootLocator).accountId;
+          secret = cloudSecrets[accountId] ??= await openList!.readAccount(
+            accountId,
+          );
+        } else {
+          secret = await credentials.read(row.credentialRef);
+        }
+      }
       values[key] = {
         'kind': original?['kind'] ?? row.kind,
         'rootLocator': original?['rootLocator'] ?? row.rootLocator,
@@ -156,10 +178,7 @@ class ApplicationSyncStore {
         'enabled': row.enabled,
         'extensions': jsonDecode(row.extensions),
         'excludedDirectories': jsonDecode(row.excludedDirectories),
-        if (remote)
-          'credentials': row.enabled
-              ? (await credentials.read(row.credentialRef)).toJson()
-              : null,
+        if (remote) 'credentials': secret?.toJson(),
       };
       if (row.enabled && !_activeScans().contains(row.id)) {
         final index = await LibraryIndexStore(repository.db)
@@ -213,7 +232,20 @@ class ApplicationSyncStore {
     final merged = state.document.merge(incoming);
     final current = await _current(state);
     var applied = 0;
-    for (final entry in merged.records.entries) {
+    final sourceEntries = merged.records.entries.where(
+      (entry) =>
+          entry.key.startsWith('source:') &&
+          entry.value.value?['enabled'] == false,
+    );
+    final entries = [
+      ...merged.records.entries.where(
+        (entry) =>
+            !entry.key.startsWith('source:') ||
+            entry.value.value?['enabled'] != false,
+      ),
+      ...sourceEntries,
+    ];
+    for (final entry in entries) {
       final key = entry.key;
       if (key.startsWith('index:')) continue;
       final value = entry.value.value;
@@ -278,7 +310,7 @@ class ApplicationSyncStore {
     final value = state.document.records[key]?.value;
     if (value == null) return Future.value(null);
     final kind = value['kind'] as String;
-    if (kind == 'webdav' || kind == 'smb') {
+    if (const {'webdav', 'smb', 'openlist'}.contains(kind)) {
       return repository.findSourceByRoot(kind, value['rootLocator'] as String);
     }
     final binding = state.bindings[key];
@@ -297,7 +329,7 @@ class ApplicationSyncStore {
   ) async {
     var kind = value['kind'] as String;
     var root = value['rootLocator'] as String;
-    final remote = kind == 'webdav' || kind == 'smb';
+    final remote = const {'webdav', 'smb', 'openlist'}.contains(kind);
     if (!remote) {
       final binding = state.bindings[key];
       if (binding == null) return false;
@@ -308,11 +340,21 @@ class ApplicationSyncStore {
     final existing = await repository.findSourceByRoot(kind, root);
     if (value['enabled'] == false) {
       if (existing != null) {
-        if (existing.credentialRef != null) {
+        if (kind != 'openlist' && existing.credentialRef != null) {
           await credentials.delete(existing.credentialRef!);
         }
         await repository.updateSourceCredentials(existing.id, null);
         await repository.disableSource(existing.id);
+      }
+      if (kind == 'openlist') {
+        final accountId = OpenListRoot.parse(root).accountId;
+        if (openList != null) {
+          await openList!.deleteAccount(accountId);
+        } else if (!await _hasEnabledAccount(accountId)) {
+          await credentials.delete(
+            OpenListService.credentialReference(accountId),
+          );
+        }
       }
       return true;
     }
@@ -322,7 +364,22 @@ class ApplicationSyncStore {
       final secret = raw == null
           ? const RemoteCredentials.anonymous()
           : RemoteCredentials.fromJson(raw);
-      if (secret.isAnonymous) {
+      if (kind == 'openlist') {
+        final accountId = OpenListRoot.parse(root).accountId;
+        reference = OpenListService.credentialReference(accountId);
+        if (openList != null) {
+          await openList!.restoreAccount(
+            accountId: accountId,
+            name: value['name'] as String,
+            credentials: secret,
+          );
+        } else {
+          final local = await _readCloudCredentials(
+            existing?.credentialRef ?? reference,
+          );
+          await credentials.write(reference, local ?? secret);
+        }
+      } else if (secret.isAnonymous) {
         if (reference != null) await credentials.delete(reference);
         reference = null;
       } else {
@@ -343,11 +400,45 @@ class ApplicationSyncStore {
       );
     } catch (_) {
       if (reference != null && reference != existing?.credentialRef) {
-        await credentials.delete(reference);
+        if (kind == 'openlist') {
+          final accountId = OpenListRoot.parse(root).accountId;
+          if (openList != null) {
+            await openList!.deleteAccount(accountId);
+          } else if (!await _hasEnabledAccount(accountId)) {
+            await credentials.delete(reference);
+          }
+        } else {
+          await credentials.delete(reference);
+        }
       }
       rethrow;
     }
     return true;
+  }
+
+  Future<RemoteCredentials?> _readCloudCredentials(String reference) async {
+    try {
+      final secret = await credentials.read(reference);
+      return secret.openListDriver != null &&
+              secret.openListAuthorization.isNotEmpty
+          ? secret
+          : null;
+    } on MediaSourceException catch (error) {
+      if (error.code == 'credential_not_found') return null;
+      rethrow;
+    }
+  }
+
+  Future<bool> _hasEnabledAccount(String accountId) async {
+    final sources = await repository.db
+        .select(repository.db.mediaSources)
+        .get();
+    return sources.any(
+      (source) =>
+          source.enabled &&
+          source.kind == 'openlist' &&
+          OpenListRoot.parse(source.rootLocator).accountId == accountId,
+    );
   }
 
   Future<List<PendingSourceBinding>> pendingSources(String scope) async {

@@ -42,6 +42,7 @@ on:
       - 'assets/**'
       - 'android/**'
       - 'windows/**'
+      - 'native/openlist_core/**'
       - 'pubspec.yaml'
       - 'pubspec.lock'
       - '.fvmrc'
@@ -141,6 +142,12 @@ jobs:
           flutter-version-file: .fvmrc
           architecture: x64
           cache: true
+      - name: 设置 Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: 获取并校验 OpenList 内核
+        run: python .github/scripts/fetch_openlist_core.py android
       - name: 解析依赖
         run: flutter pub get --enforce-lockfile
       - name: 恢复 Android 签名凭据
@@ -258,6 +265,14 @@ jobs:
           flutter-version-file: .fvmrc
           architecture: x64
           cache: true
+      - name: 设置 Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: 获取并校验 OpenList 内核
+        run: |
+          python .github/scripts/fetch_openlist_core.py windows-x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: 解析依赖
         run: |
           $ErrorActionPreference = 'Stop'

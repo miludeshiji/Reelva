@@ -38,6 +38,7 @@ final applicationSyncStoreProvider = Provider<ApplicationSyncStore>((ref) {
   return ApplicationSyncStore(
     repository: ref.watch(mediaLibraryRepositoryProvider),
     credentials: ref.watch(remoteCredentialsStoreProvider),
+    openList: ref.watch(openListServiceProvider),
     tmdb: ref.watch(tmdbTokenStoreProvider),
     player: ref.watch(playerSettingsStoreProvider),
     deviceId: ref.watch(syncRepositoryProvider).deviceId,

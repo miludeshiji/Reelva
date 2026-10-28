@@ -19,6 +19,21 @@ fvm flutter --version
 fvm flutter pub get
 ```
 
+## OpenList 原生内核
+
+内核使用 [Venera-OpenList-Core 的固定 Release](https://github.com/Venera-Works/Venera-OpenList-Core/releases/tag/core-v0.1.0-beta.5)，版本为 `0.1.0-beta.5`、JSON RPC ABI 为 `1`。`native/openlist_core/core.lock.json` 固定源码提交和平台包 SHA-256；`.github/scripts/fetch_openlist_core.py` 校验下载包摘要、版本、源码提交、ABI、目标架构和许可证后安装，不在用户设备运行时下载。
+
+开发者准备对应目标的原生库：
+
+```powershell
+python .github/scripts/fetch_openlist_core.py windows-x64
+python .github/scripts/fetch_openlist_core.py android
+```
+
+Windows 库安装到 `native/openlist_core/artifacts/windows/`，CMake 将 DLL 与许可证复制到应用目录；Android AAR 安装到 `android/app/libs/`，由 Gradle 打包，覆盖 armeabi-v7a、arm64-v8a、x86_64。CI 的构建工作流在构建前执行对应获取步骤，原生包不提交入库。以上命令只获取预编译依赖，不构建或启动 Reelva；应用构建仍遵守下方授权要求。
+
+内置网页登录使用 `flutter_inappwebview`。Windows 需要 Microsoft Edge WebView2 Runtime，缺失时可使用手动 Token / Cookie 配置；真实登录、原生加载和媒体播放仍需 Windows / Android 设备验证。
+
 ## 日常检查
 
 ```sh

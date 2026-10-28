@@ -4,19 +4,45 @@ import 'package:go_router/go_router.dart';
 import 'package:reelva/shared/widgets/glass_widgets.dart';
 
 import 'application/source_providers.dart';
+import 'cloud_source_setup_page.dart';
 import 'domain/source_models.dart';
 import 'infrastructure/remote_credentials_store.dart';
 
 enum SourceSetupKind {
   local('本地目录', '添加设备上的视频文件夹', Icons.folder_outlined),
   webdav('WebDAV', '连接 NAS 或 WebDAV 服务', Icons.cloud_outlined),
-  smb('SMB', '访问局域网共享文件夹', Icons.lan_outlined);
+  smb('SMB', '访问局域网共享文件夹', Icons.lan_outlined),
+  baidu(
+    '百度网盘',
+    '连接百度网盘中的影视目录',
+    Icons.cloud_outlined,
+    openListDriver: 'BaiduNetdisk',
+  ),
+  quark('夸克网盘', '连接夸克网盘中的影视目录', Icons.cloud_outlined, openListDriver: 'Quark'),
+  pan115(
+    '115 网盘',
+    '连接 115 网盘中的影视目录',
+    Icons.cloud_outlined,
+    openListDriver: '115 Open',
+  ),
+  pan123(
+    '123 云盘',
+    '连接 123 云盘中的影视目录',
+    Icons.cloud_outlined,
+    openListDriver: '123 Open',
+  );
 
-  const SourceSetupKind(this.label, this.description, this.icon);
+  const SourceSetupKind(
+    this.label,
+    this.description,
+    this.icon, {
+    this.openListDriver,
+  });
 
   final String label;
   final String description;
   final IconData icon;
+  final String? openListDriver;
 }
 
 class SourceSetupPage extends ConsumerStatefulWidget {
@@ -133,6 +159,10 @@ class _SourceSetupPageState extends ConsumerState<SourceSetupPage> {
 
   @override
   Widget build(BuildContext context) {
+    final openListDriver = widget.kind.openListDriver;
+    if (openListDriver != null) {
+      return CloudSourceSetupPage(driver: openListDriver);
+    }
     final theme = Theme.of(context);
 
     return Scaffold(

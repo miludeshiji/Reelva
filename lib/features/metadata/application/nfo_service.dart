@@ -324,6 +324,7 @@ class NfoService {
       try {
         final source = await repository.getSource(file.sourceId);
         final adapter = adapters[source.kind];
+        if (adapter is ReadOnlyMediaSidecarAdapter) continue;
         if (adapter is! MediaSidecarAdapter) {
           throw const MediaSourceException('媒体源不支持保存元数据');
         }

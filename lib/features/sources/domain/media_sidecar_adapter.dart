@@ -23,6 +23,10 @@ abstract interface class MediaSidecarAdapter implements MediaSourceAdapter {
   });
 }
 
+/// 能读取已有 NFO 和图片，但不自动写回目录。
+abstract interface class ReadOnlyMediaSidecarAdapter
+    implements MediaSidecarAdapter {}
+
 void validateSidecarName(String name) {
   if (name.isEmpty ||
       name == '.' ||

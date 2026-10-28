@@ -81,6 +81,15 @@ install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}
 install(FILES "${FLUTTER_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
+set(OPENLIST_CORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../native/openlist_core/artifacts/windows")
+if(NOT EXISTS "${OPENLIST_CORE_DIR}/venera_openlist.dll" OR
+   NOT EXISTS "${OPENLIST_CORE_DIR}/LICENSE.OpenList.txt")
+  message(FATAL_ERROR "OpenList core is missing. Run: python .github/scripts/fetch_openlist_core.py windows-x64")
+endif()
+install(FILES "${OPENLIST_CORE_DIR}/venera_openlist.dll"
+  "${OPENLIST_CORE_DIR}/LICENSE.OpenList.txt"
+  DESTINATION "${INSTALL_BUNDLE_LIB_DIR}" COMPONENT Runtime)
+
 if(PLUGIN_BUNDLED_LIBRARIES)
   install(FILES "${PLUGIN_BUNDLED_LIBRARIES}"
     DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
