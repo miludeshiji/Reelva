@@ -32,7 +32,7 @@ python .github/scripts/fetch_openlist_core.py android
 
 Windows 库安装到 `native/openlist_core/artifacts/windows/`，CMake 将 DLL 与许可证复制到应用目录；Android AAR 安装到 `android/app/libs/`，由 Gradle 打包，覆盖 armeabi-v7a、arm64-v8a、x86_64。CI 的构建工作流在构建前执行对应获取步骤，原生包不提交入库。以上命令只获取预编译依赖，不构建或启动 Reelva；应用构建仍遵守下方授权要求。
 
-内置网页登录使用固定的 `flutter_inappwebview 6.2.0-beta.3`，其 Android 实现已改用 `proguard-android-optimize.txt`，兼容项目的 AGP 9.1。Windows 需要 Microsoft Edge WebView2 Runtime，缺失时可使用手动 Token / Cookie 配置；真实登录、原生加载和媒体播放仍需 Windows / Android 设备验证。
+内置网页登录使用固定的 `flutter_inappwebview 6.2.0-beta.3`，其 Android 实现已改用 `proguard-android-optimize.txt`，兼容项目的 AGP 9.1。Windows 插件保持 C++17，并单独启用 MSVC `/await:strict`，让 C++/WinRT 使用标准协程，避免 Visual Studio 2026 的实验性协程弃用错误。Windows 需要 Microsoft Edge WebView2 Runtime，缺失时可使用手动 Token / Cookie 配置；真实登录、原生加载和媒体播放仍需 Windows / Android 设备验证。
 
 ## 日常检查
 

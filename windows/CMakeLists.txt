@@ -57,6 +57,9 @@ add_subdirectory("runner")
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+# Use standard coroutines in C++/WinRT; experimental coroutines fail with VS 2026.
+target_compile_options(flutter_inappwebview_windows_plugin PRIVATE /await:strict)
+
 
 # === Installation ===
 # Support files are copied into place next to the executable, so that it can
