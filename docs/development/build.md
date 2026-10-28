@@ -32,7 +32,7 @@ python .github/scripts/fetch_openlist_core.py android
 
 Windows 库安装到 `native/openlist_core/artifacts/windows/`，CMake 将 DLL 与许可证复制到应用目录；Android AAR 安装到 `android/app/libs/`，由 Gradle 打包，覆盖 armeabi-v7a、arm64-v8a、x86_64。CI 的构建工作流在构建前执行对应获取步骤，原生包不提交入库。以上命令只获取预编译依赖，不构建或启动 Reelva；应用构建仍遵守下方授权要求。
 
-内置网页登录使用 `flutter_inappwebview`。Windows 需要 Microsoft Edge WebView2 Runtime，缺失时可使用手动 Token / Cookie 配置；真实登录、原生加载和媒体播放仍需 Windows / Android 设备验证。
+内置网页登录使用固定的 `flutter_inappwebview 6.2.0-beta.3`，其 Android 实现已改用 `proguard-android-optimize.txt`，兼容项目的 AGP 9.1。Windows 需要 Microsoft Edge WebView2 Runtime，缺失时可使用手动 Token / Cookie 配置；真实登录、原生加载和媒体播放仍需 Windows / Android 设备验证。
 
 ## 日常检查
 
@@ -42,7 +42,7 @@ fvm flutter analyze --no-pub
 fvm flutter test --no-pub
 ```
 
-开发完成后先运行 `fvm dart format .`，再执行上述格式检查。CI 的 `analyze.yml`（Ubuntu 24.04）执行相同的锁定依赖、格式、分析与测试检查，并额外上传覆盖率产物。写文件系统相关测试时注意：本地测试使用实际大小写路径，`externalId` 仅在 Windows 转小写，其他平台保留大小写。
+开发完成后先运行 `fvm dart format .`，再执行上述格式检查。CI 的 `analyze.yml` 在推送 `main` 或 `feature/**` 分支、提交 PR 及被发布流程调用时运行；备份分支的推送不会触发。该工作流在 Ubuntu 24.04 执行相同的锁定依赖、格式、分析与测试检查，并额外上传覆盖率产物。写文件系统相关测试时注意：本地测试使用实际大小写路径，`externalId` 仅在 Windows 转小写，其他平台保留大小写。
 
 ## 本地运行（需明确授权）
 

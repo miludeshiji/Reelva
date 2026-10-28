@@ -70,7 +70,7 @@ Reelva 是客户端优先的跨平台影视库与播放器，首批目标平台�
 | `xml` | 7.0.1 |
 | `cryptography` | 2.9.0 |
 | `dart_smb2` | 0.2.3 |
-| `flutter_inappwebview` | 6.1.5 |
+| `flutter_inappwebview` | 6.2.0-beta.3 |
 | Venera OpenList Core / JSON RPC ABI | 0.1.0-beta.5 / 1 |
 
 ## 平台与原生工程
