@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:typed_data';
 
 import '../../../core/logging/app_logger.dart';
 import '../../player/domain/playback_resource.dart';
@@ -51,6 +52,10 @@ class ProgressPlayerEngine implements PlayerEngine {
 
   @override
   Future<PlaybackStatistics> getStatistics() => _inner.getStatistics();
+
+  @override
+  Future<Uint8List?> captureFrame() =>
+      _disposed ? Future.value() : _inner.captureFrame();
 
   @override
   Stream<PlaybackSnapshot> get snapshots => _snapshots.stream;

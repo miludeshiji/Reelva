@@ -430,6 +430,9 @@ jobs:
             exit 1
           }
 
+          python .github/scripts/set_installer_admin.py $installerExe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
           Write-Host "成功生成 Windows 安装程序: $installerExe (大小: $((Get-Item $installerExe).Length) 字节)"
       - name: 上传 Windows 产物
         uses: actions/upload-artifact@v7

@@ -31,6 +31,7 @@ class MainActivity : FlutterActivity() {
     private var channel: MethodChannel? = null
     private var appUpdateBridge: AppUpdateBridge? = null
     private var logExportBridge: LogExportBridge? = null
+    private var playerScreenshotBridge: PlayerScreenshotBridge? = null
     private var openListBridge: OpenListBridge? = null
     private var brightnessChannel: MethodChannel? = null
     private var brightnessBeforePlayback: Float? = null
@@ -45,6 +46,7 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         appUpdateBridge = AppUpdateBridge(this, flutterEngine.dartExecutor.binaryMessenger)
         logExportBridge = LogExportBridge(this, flutterEngine.dartExecutor.binaryMessenger)
+        playerScreenshotBridge = PlayerScreenshotBridge(this, flutterEngine.dartExecutor.binaryMessenger)
         openListBridge = OpenListBridge(flutterEngine.dartExecutor.binaryMessenger)
         lifecycleGeneration++
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).apply {
@@ -94,6 +96,8 @@ class MainActivity : FlutterActivity() {
         appUpdateBridge = null
         logExportBridge?.close()
         logExportBridge = null
+        playerScreenshotBridge?.close()
+        playerScreenshotBridge = null
         openListBridge?.close()
         openListBridge = null
         lifecycleGeneration++
@@ -201,6 +205,15 @@ class MainActivity : FlutterActivity() {
             Log.w(TAG, "Failed to launch document tree picker")
             result.error("FAILED", "Unable to launch document tree picker", null)
         }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        playerScreenshotBridge?.onRequestPermissionsResult(requestCode, grantResults)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

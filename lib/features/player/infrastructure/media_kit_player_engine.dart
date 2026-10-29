@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
@@ -915,6 +916,20 @@ class MediaKitPlayerEngine implements PlayerEngine {
         AppLogger.instance.error('底层设置字幕轨道异常', error: e, stackTrace: st);
         _setPlaybackError(_safeErrorMessage(e));
       }
+    });
+  }
+
+  @override
+  Future<Uint8List?> captureFrame() {
+    if (_disposed) return Future.value();
+    final epoch = _openEpoch;
+    return _enqueue(() async {
+      if (_disposed || epoch != _openEpoch) return null;
+      final image = await _player.screenshot(
+        format: 'image/png',
+        includeLibassSubtitles: true,
+      );
+      return _disposed || epoch != _openEpoch ? null : image;
     });
   }
 

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
 import 'package:reelva/features/player/application/playback_session.dart';
@@ -139,6 +140,9 @@ class FakePlayerEngine implements PlayerEngine {
     statisticsReadCount++;
     return statistics;
   }
+
+  @override
+  Future<Uint8List?> captureFrame() async => null;
 
   @override
   Future<void> executeShortcut(PlayerShortcutAction action) async =>

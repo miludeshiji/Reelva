@@ -19,7 +19,8 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=admin
-PrivilegesRequiredOverridesAllowed=commandline
+; The packaging step sets the loader manifest to requireAdministrator so UAC
+; runs before temporary extraction. Keep the installation mode administrative.
 MinVersion=10.0
 OutputDir={#OutputDir}
 OutputBaseFilename=Reelva-{#AppVersion}-windows-x64-installer
