@@ -46,6 +46,7 @@ on:
       - 'android/**'
       - 'windows/**'
       - 'native/openlist_core/**'
+      - 'third_party/**'
       - 'pubspec.yaml'
       - 'pubspec.lock'
       - '.fvmrc'
@@ -292,6 +293,11 @@ jobs:
           python .github/scripts/write_danmaku_defines.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           flutter build windows --${{ needs.metadata.outputs.mode }} --no-pub --dart-define-from-file=.dart_tool/danmaku-defines.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: 验证内封 PGS 字幕解码与渲染
+        run: |
+          $configName = if ("${{ needs.metadata.outputs.mode }}" -eq "release") { "Release" } else { "Debug" }
+          python .github/scripts/verify_mpv_subtitles.py "build/windows/x64/runner/$configName/libmpv-2.dll"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: 打包 Windows 产物
         run: |

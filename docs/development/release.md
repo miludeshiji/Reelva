@@ -69,6 +69,14 @@ keyPassword=<你的 key 密码>
 
 PR 与手动调试构建不使用上述 Secrets；正式构建若缺失任一凭据将直接失败。
 
+### 弹弹play凭据
+
+在仓库的 **Settings → Secrets and variables → Actions → New repository secret** 中添加 `DANDANPLAY_APP_SECRET`，值为弹弹play应用密钥本身，无需 Base64 编码或添加引号。应用 ID 使用源码默认值。
+
+Android、Windows 构建和标签发布均会通过 `--dart-define-from-file` 注入该 Secret；被 Git 忽略的本机 `dandanplay.local.json` 不会出现在 GitHub runner 上。构建脚本只输出是否已配置，不打印密钥；缺失时产生警告，生成的包仅可使用哔哩哔哩弹幕来源。来自 fork 的 PR 无法读取仓库 Secret。
+
+新增或修改 Secret 后，需重新运行构建工作流并安装新产物，已下载或安装的旧包不会自动获得凭据。
+
 ## 版本发布流程
 
 推送 `v*` 标签（如 `v0.1.0` 或 `v0.1.0-beta1`）触发 `release.yml`，流程不可并发取消：

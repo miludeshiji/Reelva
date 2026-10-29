@@ -162,6 +162,12 @@ void main() {
   });
   test('B站搜索与分集请求保留原始CID，不拼接分集ID', () async {
     final adapter = _Adapter((request) {
+      if (request.path.endsWith('/finger/spi')) {
+        return _json({
+          'code': 0,
+          'data': {'b_3': 'test-visitor'},
+        });
+      }
       if (request.path.endsWith('/search/type')) {
         return _json({
           'code': 0,
@@ -218,6 +224,72 @@ void main() {
         (request) => request.headers['Referer'] == 'https://www.bilibili.com/',
       ),
       isTrue,
+    );
+    expect(
+      adapter.requests.where((request) => request.path.endsWith('/finger/spi')),
+      hasLength(1),
+    );
+    expect(adapter.requests.first.headers['Cookie'], isNull);
+    expect(
+      adapter.requests
+          .skip(1)
+          .every(
+            (request) => request.headers['Cookie'] == 'buvid3=test-visitor',
+          ),
+      isTrue,
+    );
+  });
+  test('B站访客初始化失败后可重新搜索，不缓存失败会话', () async {
+    var attempts = 0;
+    final adapter = _Adapter((request) {
+      if (request.path.endsWith('/finger/spi')) {
+        if (++attempts == 1) return _json({}, status: 503);
+        return _json({
+          'code': 0,
+          'data': {'b_3': 'test-visitor'},
+        });
+      }
+      return _json({
+        'code': 0,
+        'data': {'result': <Object>[]},
+      });
+    });
+    final api = DanmakuApi(
+      store: MemoryDanmakuStore(),
+      dio: Dio()..httpClientAdapter = adapter,
+    );
+    addTearDown(api.dispose);
+    await expectLater(
+      api.search('Example', DanmakuSource.bilibili),
+      throwsA(isA<DanmakuException>()),
+    );
+    expect(await api.search('Example', DanmakuSource.bilibili), isEmpty);
+    expect(attempts, 2);
+  });
+  test('B站HTTP风控响应提示请求受限', () async {
+    final adapter = _Adapter((request) {
+      if (request.path.endsWith('/finger/spi')) {
+        return _json({
+          'code': 0,
+          'data': {'b_3': 'test-visitor'},
+        });
+      }
+      return _json({}, status: 412);
+    });
+    final api = DanmakuApi(
+      store: MemoryDanmakuStore(),
+      dio: Dio()..httpClientAdapter = adapter,
+    );
+    addTearDown(api.dispose);
+    await expectLater(
+      api.search('Example', DanmakuSource.bilibili),
+      throwsA(
+        isA<DanmakuException>().having(
+          (error) => error.message,
+          'message',
+          contains('请求受限'),
+        ),
+      ),
     );
   });
   test('200业务错误不被当成空搜索结果', () async {

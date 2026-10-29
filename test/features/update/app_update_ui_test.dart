@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -35,6 +36,50 @@ void main() {
       buildSignature: '',
     );
   });
+
+  testWidgets(
+    '关闭自动检查时 Android 启动仍按实际安装版本清理 APK，Windows 不清理',
+    (tester) async {
+      final downloader = _CleanupRecordingDownloader();
+      addTearDown(downloader.close);
+      final adapter = UpdateHttpAdapter((_) => jsonResponse({}));
+      final client = GithubReleaseClient(
+        dio: Dio()..httpClientAdapter = adapter,
+      );
+      addTearDown(client.close);
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (_, _) => const Scaffold(body: Text('首页')),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            apkDownloaderProvider.overrideWithValue(downloader),
+            githubReleaseClientProvider.overrideWithValue(client),
+          ],
+          child: MaterialApp.router(
+            routerConfig: router,
+            builder: (context, child) =>
+                UpdatePromptHost(router: router, child: child!),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final android = defaultTargetPlatform == TargetPlatform.android;
+      expect(downloader.versions, android ? ['0.1.0'] : isEmpty);
+      expect(adapter.requests, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets('手动检查显示新版本说明，Windows 按钮打开对应附件和版本页', (tester) async {
     final adapter = UpdateHttpAdapter(
@@ -404,4 +449,13 @@ void main() {
     expect(adapter.requests, hasLength(1));
     expect(find.text('已打开系统安装界面'), findsOneWidget);
   }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+}
+
+class _CleanupRecordingDownloader extends ApkDownloader {
+  final versions = <String>[];
+
+  @override
+  Future<void> removeInstalledApks(String currentVersion) async {
+    versions.add(currentVersion);
+  }
 }

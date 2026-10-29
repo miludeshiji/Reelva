@@ -55,6 +55,11 @@ class DanmakuApi {
   final String appSecret;
   final String dandanBase;
   final String bilibiliBase;
+  Future<String>? _bilibiliCookie;
+  static const _bilibiliHeaders = {
+    'User-Agent': 'Mozilla/5.0',
+    'Referer': 'https://www.bilibili.com/',
+  };
   bool get dandanConfigured => appId.isNotEmpty && appSecret.isNotEmpty;
   void dispose() => _dio.close(force: true);
 
@@ -122,6 +127,10 @@ class DanmakuApi {
       return json;
     } on DioException catch (error) {
       if (CancelToken.isCancel(error)) rethrow;
+      if (error.response?.statusCode == 412 ||
+          error.response?.statusCode == 429) {
+        throw const DanmakuException('弹幕服务请求受限，请稍后重试或更换来源');
+      }
       if (error.response?.statusCode == 401 ||
           error.response?.statusCode == 403) {
         throw const DanmakuException('弹幕服务未授权，请检查应用凭据');
@@ -179,15 +188,37 @@ class DanmakuApi {
     String path, {
     Map<String, dynamic>? query,
     CancelToken? cancelToken,
-  }) => _request(
-    '$bilibiliBase$path',
-    query: query,
-    cancelToken: cancelToken,
-    headers: {
-      'User-Agent': 'Mozilla/5.0',
-      'Referer': 'https://www.bilibili.com/',
-    },
-  );
+  }) async {
+    if (cancelToken?.isCancelled ?? false) throw cancelToken!.cancelError!;
+    // 番剧和影视搜索并发执行，共用一次访客初始化；会话不绑定单个搜索的取消令牌。
+    final pending = _bilibiliCookie ??= _loadBilibiliCookie();
+    final String cookie;
+    try {
+      cookie = await pending;
+    } catch (_) {
+      if (identical(_bilibiliCookie, pending)) _bilibiliCookie = null;
+      rethrow;
+    }
+    return _request(
+      '$bilibiliBase$path',
+      query: query,
+      cancelToken: cancelToken,
+      headers: {..._bilibiliHeaders, 'Cookie': cookie},
+    );
+  }
+
+  Future<String> _loadBilibiliCookie() async {
+    final json = await _request(
+      '$bilibiliBase/x/frontend/finger/spi',
+      headers: _bilibiliHeaders,
+    );
+    final data = json['data'] as Map<String, dynamic>?;
+    final buvid = data?['b_3'];
+    if (buvid is! String || buvid.isEmpty) {
+      throw const DanmakuException('无法初始化哔哩哔哩访客会话，请稍后重试');
+    }
+    return 'buvid3=$buvid';
+  }
 
   Future<List<DanmakuShow>> search(
     String keyword,
@@ -402,10 +433,7 @@ class DanmakuApi {
             cancelToken: cancelToken,
             options: Options(
               responseType: ResponseType.plain,
-              headers: {
-                'User-Agent': 'Mozilla/5.0',
-                'Referer': 'https://www.bilibili.com/',
-              },
+              headers: _bilibiliHeaders,
               followRedirects: false,
             ),
           );
