@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 
+import '../../../core/logging/app_logger.dart';
 import '../domain/source_models.dart';
 
 /// 远程媒体源 HTTP 客户端
@@ -47,6 +48,7 @@ class RemoteHttpClient {
     Set<int> allowedStatusCodes = const {},
   }) async {
     _validateUri(uri);
+    final watch = Stopwatch()..start();
 
     Uri currentUri = uri;
     String currentMethod = method.toUpperCase();
@@ -73,6 +75,12 @@ class RemoteHttpClient {
         );
       } on DioException catch (e) {
         _closeResponseBody(e.response?.data);
+        if (e.type != DioExceptionType.cancel) {
+          AppLogger.instance.warning(
+            '网络请求失败：method=$currentMethod，type=${e.type.name}，status=${e.response?.statusCode}，耗时=${watch.elapsedMilliseconds}ms',
+            module: '网络',
+          );
+        }
         throw _mapDioException(e);
       } catch (e) {
         if (e is MediaSourceException) rethrow;
@@ -186,6 +194,10 @@ class RemoteHttpClient {
       // 错误响应，安全关闭流式数据，绝不耗尽大文件
       _closeResponseBody(response.data);
 
+      AppLogger.instance.warning(
+        '网络响应失败：method=$currentMethod，status=$statusCode，耗时=${watch.elapsedMilliseconds}ms',
+        module: '网络',
+      );
       switch (statusCode) {
         case HttpStatus.unauthorized:
           throw const MediaSourceException(

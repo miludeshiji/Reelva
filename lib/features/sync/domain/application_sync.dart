@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../metadata/infrastructure/tmdb_token_store.dart';
 import '../../player/domain/player_settings.dart';
 import '../../player/domain/player_shortcuts.dart';
+import '../../sources/domain/openlist_models.dart';
 import '../../sources/domain/source_models.dart';
 import '../../sources/infrastructure/remote_credentials_store.dart';
 import 'sync_models.dart';
@@ -68,7 +69,7 @@ class ApplicationSyncDocument {
   }
 
   static String sourceKey(String kind, String root, String deviceId) =>
-      'source:${kind == 'webdav' || kind == 'smb' ? 'network' : deviceId}:'
+      'source:${const {'webdav', 'smb', 'openlist'}.contains(kind) ? 'network' : deviceId}:'
       '${base64Url.encode(utf8.encode('$kind:$root'))}';
 
   static void _validate(String key, Map<String, dynamic>? value) {
@@ -97,7 +98,13 @@ class ApplicationSyncDocument {
       final kind = value['kind'] as String;
       final root = value['rootLocator'] as String;
       final origin = value['originDeviceId'] as String;
-      if (!const {'local', 'androidSaf', 'webdav', 'smb'}.contains(kind) ||
+      if (!const {
+            'local',
+            'androidSaf',
+            'webdav',
+            'smb',
+            'openlist',
+          }.contains(kind) ||
           !RegExp(r'^[0-9a-f]{32}$').hasMatch(origin) ||
           sourceKey(kind, root, origin) != key ||
           value['name'] is! String ||
@@ -105,12 +112,24 @@ class ApplicationSyncDocument {
         throw const FormatException();
       }
       sanitizeAndValidateRootLocator(kind: kind, rawInput: root);
+      if (kind == 'openlist') OpenListRoot.parse(root);
       (value['extensions'] as List<dynamic>).cast<String>().toList();
       (value['excludedDirectories'] as List<dynamic>).cast<String>().toList();
       final credentials = value['credentials'];
       if (credentials != null) {
-        if (kind != 'webdav' && kind != 'smb') throw const FormatException();
-        RemoteCredentials.fromJson(credentials as Map<String, dynamic>);
+        if (!const {'webdav', 'smb', 'openlist'}.contains(kind)) {
+          throw const FormatException();
+        }
+        final secret = RemoteCredentials.fromJson(
+          credentials as Map<String, dynamic>,
+        );
+        if (kind == 'openlist' &&
+            (!openListDrivers.containsKey(secret.openListDriver) ||
+                secret.openListAuthorization.isEmpty)) {
+          throw const FormatException();
+        }
+      } else if (kind == 'openlist' && value['enabled'] == true) {
+        throw const FormatException();
       }
     } else {
       throw const FormatException();

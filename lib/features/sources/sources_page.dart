@@ -15,8 +15,29 @@ import '../../shared/widgets/empty_state_view.dart';
 import '../metadata/application/metadata_providers.dart';
 import '../metadata/presentation/metadata_status_card.dart';
 import 'application/source_providers.dart';
+import 'cloud_source_setup_page.dart';
+import 'domain/openlist_models.dart';
 import 'domain/source_models.dart';
+import 'infrastructure/openlist_service.dart';
+import 'infrastructure/remote_credentials_store.dart';
 import 'remote_source_dialog.dart';
+
+final _cloudDriverProvider = FutureProvider.autoDispose.family<String?, String>(
+  (ref, locator) async {
+    final root = OpenListRoot.parse(locator);
+    try {
+      final credentials = await ref
+          .watch(openListServiceProvider)
+          .readAccount(root.accountId);
+      return credentials.openListDriver;
+    } on MediaSourceException {
+      final credentials = await ref
+          .watch(remoteCredentialsStoreProvider)
+          .read(OpenListService.credentialReference(root.accountId));
+      return credentials.openListDriver;
+    }
+  },
+);
 
 /// 媒体源管理页面
 ///
@@ -442,10 +463,20 @@ class _SourceCard extends ConsumerWidget {
     final colorScheme = theme.colorScheme;
     final isScanning = progress?.running ?? false;
     final activeError = progress?.error ?? source.errorMessage;
+    final cloudDriver = source.kind == 'openlist'
+        ? ref.watch(_cloudDriverProvider(source.rootLocator)).asData?.value
+        : null;
+    final locator = source.kind == 'openlist'
+        ? Uri.tryParse(source.rootLocator)?.path ?? source.rootLocator
+        : source.rootLocator;
     final (kindLabel, kindColor) = switch (source.kind) {
       'androidSaf' => ('Android 存储目录', const Color(0xFFC38A28)),
       'smb' => ('SMB', const Color(0xFF159B77)),
       'webdav' => ('WebDAV', const Color(0xFF637ACC)),
+      'openlist' => (
+        openListDrivers[cloudDriver] ?? '网盘',
+        const Color(0xFF637ACC),
+      ),
       _ => ('本地目录', ReelvaDesign.accent),
     };
     final status = isScanning
@@ -507,9 +538,9 @@ class _SourceCard extends ConsumerWidget {
                     ),
                     const SizedBox(height: ReelvaDesign.space4),
                     Tooltip(
-                      message: source.rootLocator,
+                      message: locator,
                       child: Text(
-                        '$kindLabel · ${source.rootLocator}',
+                        '$kindLabel · $locator',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -766,6 +797,41 @@ class _SourceCard extends ConsumerWidget {
 
   Future<void> _reauthorize(BuildContext context, WidgetRef ref) async {
     try {
+      if (source.kind == 'openlist') {
+        final root = OpenListRoot.parse(source.rootLocator);
+        RemoteCredentials credentials;
+        try {
+          credentials = await ref
+              .read(openListServiceProvider)
+              .readAccount(root.accountId);
+        } on MediaSourceException {
+          credentials = await ref
+              .read(remoteCredentialsStoreProvider)
+              .read(
+                source.credentialRef ??
+                    OpenListService.credentialReference(root.accountId),
+              );
+        }
+        final driver = credentials.openListDriver;
+        if (!openListDrivers.containsKey(driver)) {
+          throw const MediaSourceException('网盘账号配置无效，请重新添加媒体源');
+        }
+        if (!context.mounted) return;
+        final updated = await Navigator.of(context).push<bool>(
+          MaterialPageRoute(
+            builder: (_) =>
+                CloudSourceSetupPage(driver: driver!, source: source),
+          ),
+        );
+        if (updated == true) {
+          ref.invalidate(_cloudDriverProvider(source.rootLocator));
+          if (context.mounted) {
+            ScaffoldMessenger.of(context)
+                .showSnackBar(const SnackBar(content: Text('网盘授权已更新')));
+          }
+        }
+        return;
+      }
       await ref
           .read(sourceControllerProvider.notifier)
           .reauthorizeSource(source.id);
@@ -817,6 +883,7 @@ class _SourceCard extends ConsumerWidget {
       case 'androidSaf':
         return Icons.folder_shared_outlined;
       case 'webdav':
+      case 'openlist':
         return Icons.cloud_outlined;
       case 'smb':
         return Icons.lan_outlined;

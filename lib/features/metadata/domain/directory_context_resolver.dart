@@ -31,6 +31,12 @@ class DirectoryContextResolver {
         relative = locator;
       }
       relative = relative.replaceAll(r'\', '/');
+    } else if (kind == 'openlist') {
+      final root = Uri.tryParse(rootLocator);
+      if (root?.scheme != 'openlist') return const [];
+      rootName =
+          root!.pathSegments.where((part) => part.isNotEmpty).lastOrNull ?? '';
+      relative = locator;
     } else if (kind == 'webdav') {
       final root = Uri.tryParse(rootLocator);
       if (root == null || root.userInfo.isNotEmpty) return const [];

@@ -10,6 +10,9 @@ import '../../library/domain/library_work.dart';
 import '../../player/domain/playback_playlist_entry.dart';
 import '../../player/domain/playback_resource.dart';
 import '../domain/source_models.dart';
+import '../domain/openlist_models.dart';
+import '../infrastructure/openlist_service.dart';
+import '../infrastructure/openlist_source_adapter.dart';
 import '../infrastructure/remote_credentials_store.dart';
 import 'source_providers.dart';
 import 'source_subtitles.dart';
@@ -177,6 +180,64 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
     }
   }
 
+  Future<MediaSourceConfig> addOpenListSource({
+    required String accountId,
+    required String directory,
+    String? name,
+    List<String> extensions = defaultVideoExtensions,
+    List<String> excludedDirectories = defaultExcludedDirectories,
+  }) async {
+    final service = ref.read(openListServiceProvider);
+    final credentials = await service.readAccount(accountId);
+    final root = buildOpenListRoot(accountId, directory);
+    final repo = ref.read(mediaLibraryRepositoryProvider);
+    final existing = await repo.findSourceByRoot('openlist', root);
+    if (existing != null) {
+      cancelScan(existing.id);
+      await _activeScans[existing.id];
+    }
+    final source = await repo.upsertSource(
+      kind: 'openlist',
+      rootLocator: root,
+      name: name?.trim().isNotEmpty == true
+          ? name!.trim()
+          : '${openListDrivers[credentials.openListDriver]}${directory == '/' ? '' : ' · ${p.posix.basename(normalizeOpenListPath(directory))}'}',
+      credentialRef: OpenListService.credentialReference(accountId),
+      extensions: extensions,
+      excludedDirectories: excludedDirectories,
+    );
+    unawaited(refreshSource(source.id));
+    return source;
+  }
+
+  Future<void> reauthorizeOpenListSource(
+    int id,
+    Map<String, dynamic> addition,
+  ) async {
+    final repo = ref.read(mediaLibraryRepositoryProvider);
+    final source = await repo.getSource(id);
+    if (source.kind != 'openlist') {
+      throw const MediaSourceException('媒体源类型无效', code: 'unsupported_kind');
+    }
+    final root = OpenListRoot.parse(source.rootLocator);
+    cancelScan(id);
+    final scan = _activeScans[id];
+    if (scan != null) await scan;
+    final service = ref.read(openListServiceProvider);
+    final current = await service.readAccount(root.accountId);
+    await service.saveAccount(
+      accountId: root.accountId,
+      driver: current.openListDriver!,
+      name: source.name,
+      addition: addition,
+    );
+    await repo.updateSourceCredentials(
+      id,
+      OpenListService.credentialReference(root.accountId),
+    );
+    unawaited(refreshSource(id));
+  }
+
   /// 更新已有媒体源的安全凭据
   ///
   /// - 保持原有根目录不变；
@@ -240,6 +301,14 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
   /// 仅中断目录遍历与批次写入，不会撤销操作系统已授予的目录访问权限。
   void cancelScan(int id) {
     _cancellations[id] = true;
+    final cloud = ref.read(sourceAdaptersProvider)['openlist'];
+    if (cloud is OpenListSourceAdapter) {
+      unawaited(
+        cloud.cancelListings(id).catchError((Object error, StackTrace stack) {
+          AppLogger.instance.error('取消网盘扫描失败', error: error, stackTrace: stack);
+        }),
+      );
+    }
     _safeSetState((s) {
       final current = s[id];
       if (current == null) return s;
@@ -270,13 +339,32 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
     final credStore = ref.read(remoteCredentialsStoreProvider);
     final source = await repo.getSource(id);
 
-    // 先删除安全存储中的凭据；若存储删除失败直接抛出异常，绝不声明删除成功导致机密残留
-    if (source.credentialRef != null) {
-      await credStore.delete(source.credentialRef!);
+    if (source.kind == 'openlist') {
+      await repo.disableSource(id);
+      try {
+        await ref
+            .read(openListServiceProvider)
+            .deleteAccount(OpenListRoot.parse(source.rootLocator).accountId);
+      } catch (_) {
+        await repo.upsertSource(
+          kind: source.kind,
+          rootLocator: source.rootLocator,
+          name: source.name,
+          credentialRef: source.credentialRef,
+          extensions: source.extensions,
+          excludedDirectories: source.excludedDirectories,
+        );
+        rethrow;
+      }
       await repo.updateSourceCredentials(id, null);
+    } else {
+      // 安全存储删除失败时不声明源已移除。
+      if (source.credentialRef != null) {
+        await credStore.delete(source.credentialRef!);
+        await repo.updateSourceCredentials(id, null);
+      }
+      await repo.disableSource(id);
     }
-
-    await repo.disableSource(id);
     _safeSetState(
       (s) => {
         ...s,
@@ -442,6 +530,8 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
   }
 
   Future<void> _executeScan(int id) async {
+    final watch = Stopwatch()..start();
+    AppLogger.instance.info('开始扫描：sourceId=$id', module: '扫描');
     _safeSetState(
       (s) => {
         ...s,
@@ -661,6 +751,10 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
       }
 
       await repo.finishScan(id, scanId);
+      AppLogger.instance.info(
+        '扫描完成：sourceId=$id，目录=$visitedCount，视频=$videoCount，耗时=${watch.elapsedMilliseconds}ms',
+        module: '扫描',
+      );
       _safeSetState(
         (s) => {
           ...s,
@@ -674,7 +768,25 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
         },
       );
     } catch (e, st) {
-      AppLogger.instance.error('扫描媒体源失败: $id', error: e, stackTrace: st);
+      if (_cancellations[id] == true) {
+        _safeSetState(
+          (s) => {
+            ...s,
+            id: (s[id] ?? const ScanProgress()).copyWith(
+              running: false,
+              cancelled: true,
+              clearError: true,
+            ),
+          },
+        );
+        return;
+      }
+      AppLogger.instance.error(
+        '扫描媒体源失败: $id',
+        module: '扫描',
+        error: e,
+        stackTrace: st,
+      );
       final safeMessage = e is MediaSourceException
           ? e.message
           : '扫描媒体源失败，请检查网络或目录权限';
@@ -692,6 +804,13 @@ class SourceController extends Notifier<Map<int, ScanProgress>> {
           ),
         },
       );
+    } finally {
+      if (_cancellations[id] == true) {
+        AppLogger.instance.info(
+          '扫描取消：sourceId=$id，目录=$visitedCount，视频=$videoCount，耗时=${watch.elapsedMilliseconds}ms',
+          module: '扫描',
+        );
+      }
     }
   }
 

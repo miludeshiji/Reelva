@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:reelva/features/player/domain/playback_resource.dart';
@@ -110,6 +111,9 @@ class _FakeInnerEngine implements PlayerEngine {
   @override
   Future<PlaybackStatistics> getStatistics() async =>
       const PlaybackStatistics();
+
+  @override
+  Future<Uint8List?> captureFrame() async => null;
 
   @override
   Future<void> executeShortcut(PlayerShortcutAction action) async {

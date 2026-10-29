@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'playback_resource.dart';
 import 'playback_snapshot.dart';
 import 'playback_statistics.dart';
@@ -47,6 +49,9 @@ abstract interface class PlayerEngine {
 
   /// 按需读取播放统计，不改变播放或进度状态。
   Future<PlaybackStatistics> getStatistics();
+
+  /// 获取包含当前字幕的视频帧 PNG，不改变播放或进度状态。
+  Future<Uint8List?> captureFrame();
 
   /// 停止播放并将状态重置为空闲
   Future<void> stop();

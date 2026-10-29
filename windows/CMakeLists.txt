@@ -57,6 +57,9 @@ add_subdirectory("runner")
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+# Use standard coroutines in C++/WinRT; experimental coroutines fail with VS 2026.
+target_compile_options(flutter_inappwebview_windows_plugin PRIVATE /await:strict)
+
 
 # === Installation ===
 # Support files are copied into place next to the executable, so that it can
@@ -80,6 +83,15 @@ install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}
 
 install(FILES "${FLUTTER_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
+
+set(OPENLIST_CORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../native/openlist_core/artifacts/windows")
+if(NOT EXISTS "${OPENLIST_CORE_DIR}/venera_openlist.dll" OR
+   NOT EXISTS "${OPENLIST_CORE_DIR}/LICENSE.OpenList.txt")
+  message(FATAL_ERROR "OpenList core is missing. Run: python .github/scripts/fetch_openlist_core.py windows-x64")
+endif()
+install(FILES "${OPENLIST_CORE_DIR}/venera_openlist.dll"
+  "${OPENLIST_CORE_DIR}/LICENSE.OpenList.txt"
+  DESTINATION "${INSTALL_BUNDLE_LIB_DIR}" COMPONENT Runtime)
 
 if(PLUGIN_BUNDLED_LIBRARIES)
   install(FILES "${PLUGIN_BUNDLED_LIBRARIES}"

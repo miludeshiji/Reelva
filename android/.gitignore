@@ -12,3 +12,7 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+
+# Fixed release assets are fetched and verified before building.
+/app/libs/openlistcore.aar
+/app/src/main/assets/licenses/LICENSE.OpenList.txt

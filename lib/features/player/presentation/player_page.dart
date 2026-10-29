@@ -23,6 +23,7 @@ import '../domain/player_engine.dart';
 import '../domain/player_shortcuts.dart';
 import '../infrastructure/media_file_picker.dart';
 import '../infrastructure/android_screen_brightness.dart';
+import '../infrastructure/android_screenshot_store.dart';
 import '../infrastructure/windows_player_input.dart';
 import 'network_address_dialog.dart';
 import 'player_controls.dart';
@@ -69,6 +70,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   PlaybackStatus? _controlsStatus;
   bool _usesOverlayControls = false;
   bool _controlsVisible = true;
+  bool _screenLocked = false;
+  bool _capturingScreenshot = false;
   bool _pointerOverControls = false;
   bool _controlsHaveFocus = false;
   int _controlsInteractions = 0;
@@ -127,11 +130,76 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   bool get _isMobile =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
+  bool get _canCaptureScreenshot =>
+      _isMobile &&
+      !_isExiting &&
+      !_capturingScreenshot &&
+      _canOperateMedia &&
+      (_session?.engine.snapshot.videoWidth ?? 0) > 0 &&
+      (_session?.engine.snapshot.videoHeight ?? 0) > 0;
+
+  void _toggleScreenLock() {
+    if (!_isMobile || _isExiting) return;
+    _cancelSpeedHold();
+    _gestureId++;
+    _endScreenAdjustment(cancel: true);
+    _focusNode.requestFocus();
+    setState(() {
+      _screenLocked = !_screenLocked;
+      _statisticsVisible = false;
+      _controlsVisible = true;
+    });
+    _scheduleControlsHide();
+  }
+
+  Future<void> _captureScreenshot() async {
+    final session = _session;
+    if (session == null || !_canCaptureScreenshot) return;
+    final snapshot = session.engine.snapshot;
+    final title = String.fromCharCodes(
+      (_currentResource?.displayName ?? '视频')
+          .replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1F]'), '_')
+          .trim()
+          .runes
+          .take(48),
+    );
+    final position = formatDuration(snapshot.position).replaceAll(':', '-');
+    final name =
+        '${title.isEmpty ? '视频' : title}_${position}_${DateTime.now().millisecondsSinceEpoch}.png';
+    setState(() => _capturingScreenshot = true);
+    _showControls();
+    try {
+      final image = await session.engine.captureFrame();
+      if (image == null || image.isEmpty) {
+        throw StateError('当前视频没有可截图的画面');
+      }
+      await const AndroidScreenshotStore().save(image, name: name);
+      if (mounted && !_isExiting) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('截图已保存到相册 · Reelva')));
+      }
+    } catch (error, stack) {
+      AppLogger.instance.error('保存视频截图失败', error: error, stackTrace: stack);
+      if (mounted && !_isExiting) {
+        final denied =
+            error is PlatformException && error.code == 'PERMISSION_DENIED';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(denied ? '未获得存储权限，无法保存截图' : '截图失败，请重试')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _capturingScreenshot = false);
+        _scheduleControlsHide();
+      }
+    }
+  }
+
   Future<void> _startScreenAdjustment(
     DragStartDetails details,
     double width,
   ) async {
-    if (!_canOperateMedia || _speedHolds.isNotEmpty) return;
+    if (_screenLocked || !_canOperateMedia || _speedHolds.isNotEmpty) return;
     final type = details.localPosition.dx < width / 2
         ? _ScreenAdjustment.brightness
         : _ScreenAdjustment.volume;
@@ -451,6 +519,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     if (held) {
       if (!mounted ||
           _isExiting ||
+          _screenLocked ||
           !_canOperateMedia ||
           !_speedHolds.add(source)) {
         return;
@@ -534,11 +603,12 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     _controlsHideTimer?.cancel();
     if (_isExiting ||
         !_usesOverlayControls ||
-        _controlsStatus != PlaybackStatus.playing ||
-        _pointerOverControls ||
-        _controlsHaveFocus ||
-        _controlsInteractions > 0 ||
-        _hasProgressError) {
+        (!_screenLocked &&
+            (_controlsStatus != PlaybackStatus.playing ||
+                _pointerOverControls ||
+                _controlsHaveFocus ||
+                _controlsInteractions > 0 ||
+                _hasProgressError))) {
       return;
     }
     _controlsHideTimer = Timer(const Duration(seconds: 3), () {
@@ -566,19 +636,24 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     _controlsStatus = snapshot.status;
     _usesOverlayControls = overlay;
     _hasProgressError = hasProgressError;
-    _controlsVisible = true;
+    if (snapshot.status == PlaybackStatus.idle) _screenLocked = false;
+    if (!_screenLocked) _controlsVisible = true;
     _scheduleControlsHide();
   }
 
-  Widget _buildControlsVisibility(Widget child) {
+  Widget _buildControlsVisibility(
+    Widget child, {
+    bool allowWhenLocked = false,
+  }) {
+    final visible = _controlsVisible && (!_screenLocked || allowWhenLocked);
     return IgnorePointer(
-      ignoring: !_controlsVisible,
+      ignoring: !visible,
       child: ExcludeFocus(
-        excluding: !_controlsVisible,
+        excluding: !visible,
         child: ExcludeSemantics(
-          excluding: !_controlsVisible,
+          excluding: !visible,
           child: AnimatedOpacity(
-            opacity: _controlsVisible ? 1 : 0,
+            opacity: visible ? 1 : 0,
             duration: const Duration(milliseconds: 200),
             child: child,
           ),
@@ -1072,6 +1147,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   }
 
   bool _canHandleShortcuts(BuildContext context) {
+    if (_screenLocked) return false;
     final route = ModalRoute.of(context);
     if (route != null && !route.isCurrent) {
       return false;
@@ -1151,7 +1227,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   );
 
   Future<void> _runShortcut(PlayerShortcutAction action) async {
-    if (!mounted || _isExiting) return;
+    if (!mounted || _isExiting || _screenLocked) return;
     _showControls();
     try {
       if (action == PlayerShortcutAction.toggleFullscreen) {
@@ -1308,7 +1384,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   }
 
   void _handleScroll(PointerSignalEvent event) {
-    if (event is! PointerScrollEvent || !_canOperateMedia) return;
+    if (_screenLocked || event is! PointerScrollEvent || !_canOperateMedia) {
+      return;
+    }
     final vertical = event.scrollDelta.dy.abs() >= event.scrollDelta.dx.abs();
     if ((vertical && !_input.wheelVolume) ||
         (!vertical && !_input.horizontalWheelSeek)) {
@@ -1337,7 +1415,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   }
 
   Future<void> _showContextMenu(Offset position) async {
-    if (!_canOperateMedia) return;
+    if (_screenLocked || !_canOperateMedia) return;
     _focusNode.requestFocus();
     _showControls();
     _controlsInteractions++;
@@ -1592,6 +1670,53 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     );
   }
 
+  Widget _buildMobileActions() {
+    final style = IconButton.styleFrom(
+      backgroundColor: Colors.black.withValues(alpha: 0.35),
+      foregroundColor: Colors.white,
+      disabledForegroundColor: Colors.white38,
+      fixedSize: const Size(48, 48),
+      iconSize: 26,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    );
+    return _buildControlsVisibility(
+      SafeArea(
+        key: const Key('player_mobile_actions'),
+        minimum: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            IconButton(
+              key: const Key('player_screen_lock_button'),
+              tooltip: _screenLocked ? '解锁屏幕' : '锁定屏幕',
+              style: style,
+              onPressed: _toggleScreenLock,
+              icon: Icon(
+                _screenLocked ? Icons.lock_rounded : Icons.lock_open_rounded,
+              ),
+            ),
+            IconButton(
+              key: const Key('player_screenshot_button'),
+              tooltip: _capturingScreenshot ? '正在保存截图' : '视频截图',
+              style: style,
+              onPressed: _canCaptureScreenshot ? _captureScreenshot : null,
+              icon: _capturingScreenshot
+                  ? const SizedBox.square(
+                      dimension: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.photo_camera_rounded),
+            ),
+          ],
+        ),
+      ),
+      allowWhenLocked: true,
+    );
+  }
+
   Widget _buildVideoRegion(
     BuildContext context, {
     required PlaybackSession session,
@@ -1643,12 +1768,12 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                   },
                   behavior: HitTestBehavior.opaque,
                   onTap: _toggleSurfaceControls,
-                  onDoubleTap: _isMobile
+                  onDoubleTap: _isMobile && !_screenLocked
                       ? () => unawaited(
                           _runShortcut(PlayerShortcutAction.togglePause),
                         )
                       : null,
-                  onVerticalDragStart: _isMobile
+                  onVerticalDragStart: _isMobile && !_screenLocked
                       ? (details) => unawaited(
                           _startScreenAdjustment(
                             details,
@@ -1656,21 +1781,24 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                           ),
                         )
                       : null,
-                  onVerticalDragUpdate: _isMobile
+                  onVerticalDragUpdate: _isMobile && !_screenLocked
                       ? (details) => _updateScreenAdjustment(details, height)
                       : null,
-                  onVerticalDragEnd: _isMobile
+                  onVerticalDragEnd: _isMobile && !_screenLocked
                       ? (_) => _endScreenAdjustment()
                       : null,
-                  onVerticalDragCancel: _isMobile
+                  onVerticalDragCancel: _isMobile && !_screenLocked
                       ? () => _endScreenAdjustment(cancel: true)
                       : null,
-                  onLongPressStart: (_) {
-                    _focusNode.requestFocus();
-                    _setSpeedHold(_SpeedHoldSource.screen, true);
-                  },
-                  onLongPressEnd: (_) =>
-                      _setSpeedHold(_SpeedHoldSource.screen, false),
+                  onLongPressStart: _screenLocked
+                      ? null
+                      : (_) {
+                          _focusNode.requestFocus();
+                          _setSpeedHold(_SpeedHoldSource.screen, true);
+                        },
+                  onLongPressEnd: _screenLocked
+                      ? null
+                      : (_) => _setSpeedHold(_SpeedHoldSource.screen, false),
                   child: Listener(
                     onPointerSignal: _handleScroll,
                     onPointerCancel: (_) =>
@@ -1680,7 +1808,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       behavior: HitTestBehavior.opaque,
                       onTap: () {
                         _focusNode.requestFocus();
-                        if (_input.clickToPause) {
+                        if (_input.clickToPause && !_screenLocked) {
                           unawaited(
                             _runShortcut(PlayerShortcutAction.togglePause),
                           );
@@ -1688,14 +1816,15 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                           _toggleSurfaceControls();
                         }
                       },
-                      onDoubleTap: _input.doubleClickFullscreen
+                      onDoubleTap:
+                          _input.doubleClickFullscreen && !_screenLocked
                           ? () => unawaited(
                               _runShortcut(
                                 PlayerShortcutAction.toggleFullscreen,
                               ),
                             )
                           : null,
-                      onSecondaryTapUp: _input.rightClickMenu
+                      onSecondaryTapUp: _input.rightClickMenu && !_screenLocked
                           ? (details) => unawaited(
                               _showContextMenu(details.globalPosition),
                             )
@@ -1714,7 +1843,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                 ),
                 if (idle)
                   _buildEmptySurface(context)
-                else
+                else if (!_screenLocked)
                   Positioned.fill(
                     top: (height * 0.25).clamp(0.0, 80.0),
                     bottom: (height * 0.4).clamp(0.0, 156.0),
@@ -1793,6 +1922,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                       ),
                     ),
                   ),
+                if (!idle && _isMobile)
+                  Positioned.fill(child: _buildMobileActions()),
                 if (!idle && _speedHolds.isNotEmpty && snapshot.rate == 3)
                   Positioned(
                     left: 0,
@@ -1938,6 +2069,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       canPop: _canPopAfterExit,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
+        if (_screenLocked) {
+          _toggleScreenLock();
+          return;
+        }
         if (_isFullscreen) {
           await _setFullscreen(false);
           return;

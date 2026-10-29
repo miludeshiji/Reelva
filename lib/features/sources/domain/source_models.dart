@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import 'openlist_models.dart';
+
 const List<String> defaultVideoExtensions = [
   'mkv',
   'mp4',
@@ -364,6 +366,10 @@ String sanitizeAndValidateRootLocator({
     case 'local':
     case 'androidSaf':
       return trimmed;
+
+    case 'openlist':
+      final root = OpenListRoot.parse(trimmed);
+      return buildOpenListRoot(root.accountId, root.path);
 
     case 'webdav':
       final uri = Uri.tryParse(trimmed);

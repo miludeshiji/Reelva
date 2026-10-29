@@ -62,6 +62,15 @@ flutter {
     source = "../.."
 }
 
+val openListCore = file("libs/openlistcore.aar")
+check(openListCore.isFile) {
+    "缺少 OpenList 内核，请先运行 python .github/scripts/fetch_openlist_core.py android。"
+}
+
+dependencies {
+    implementation(files(openListCore))
+}
+
 tasks.configureEach {
     if (name == "preReleaseBuild") {
         doFirst {
