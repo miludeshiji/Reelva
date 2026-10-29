@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:xml/xml.dart';
 
 Map<String, dynamic> releaseJson(
   String version, {
@@ -41,6 +42,39 @@ ResponseBody jsonResponse(Object? body, {int status = 200}) =>
         Headers.contentTypeHeader: [Headers.jsonContentType],
       },
     );
+
+ResponseBody atomResponse(List<String> versions) {
+  final builder = XmlBuilder();
+  builder.element(
+    'feed',
+    namespaceUris: {null: 'http://www.w3.org/2005/Atom'},
+    nest: () {
+      for (final version in versions) {
+        builder.element(
+          'entry',
+          nest: () {
+            builder.element('title', nest: '发行说明');
+            builder.element(
+              'link',
+              attributes: {
+                'rel': 'alternate',
+                'href':
+                    'https://github.com/miludeshiji/Reelva/releases/tag/v$version',
+              },
+            );
+          },
+        );
+      }
+    },
+  );
+  return ResponseBody.fromString(
+    builder.buildDocument().toXmlString(),
+    200,
+    headers: {
+      Headers.contentTypeHeader: ['application/atom+xml; charset=utf-8'],
+    },
+  );
+}
 
 class UpdateHttpAdapter implements HttpClientAdapter {
   UpdateHttpAdapter(this.handler);

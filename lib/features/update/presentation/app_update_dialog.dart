@@ -117,7 +117,8 @@ class _AppUpdateDialogState extends ConsumerState<AppUpdateDialog> {
   Widget build(BuildContext context) {
     final release = widget.release;
     final android = defaultTargetPlatform == TargetPlatform.android;
-    final abis = android ? ref.watch(updateAbisProvider) : null;
+    final hasAssets = release.assets.isNotEmpty;
+    final abis = android && hasAssets ? ref.watch(updateAbisProvider) : null;
     final supportedAbis = abis?.asData?.value ?? const <String>[];
     final apk = release.androidApk(supportedAbis);
     final abi = AppRelease.androidAbi(supportedAbis);
@@ -202,7 +203,7 @@ class _AppUpdateDialogState extends ConsumerState<AppUpdateDialog> {
                   child: const Text('取消下载'),
                 ),
               ],
-              if (android) ...[
+              if (android && hasAssets) ...[
                 if (abis!.hasError)
                   FilledButton(
                     onPressed: () => ref.invalidate(updateAbisProvider),
@@ -225,7 +226,8 @@ class _AppUpdateDialogState extends ConsumerState<AppUpdateDialog> {
                           : '下载并安装（$abi）',
                     ),
                   ),
-              ] else if (defaultTargetPlatform == TargetPlatform.windows) ...[
+              ] else if (hasAssets &&
+                  defaultTargetPlatform == TargetPlatform.windows) ...[
                 FilledButton.icon(
                   key: const Key('update_windows_installer'),
                   onPressed: release.windowsInstaller == null
@@ -249,7 +251,7 @@ class _AppUpdateDialogState extends ConsumerState<AppUpdateDialog> {
                 key: const Key('update_release_github'),
                 onPressed: () => _open(release.url),
                 icon: const Icon(Icons.open_in_new_rounded),
-                label: const Text('在 GitHub 查看此版本'),
+                label: Text(hasAssets ? '在 GitHub 查看此版本' : '在 GitHub 查看并下载'),
               ),
             ],
           ),

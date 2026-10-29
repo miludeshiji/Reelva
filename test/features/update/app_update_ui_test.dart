@@ -148,6 +148,69 @@ void main() {
     expect(attempt, 2);
   });
 
+  testWidgets(
+    '限流后仍能提示新版本，并打开对应发布页下载',
+    (tester) async {
+      final client = GithubReleaseClient(
+        dio: Dio()
+          ..httpClientAdapter = UpdateHttpAdapter((options) {
+            return options.uri.host == 'api.github.com'
+                ? jsonResponse({}, status: 403)
+                : atomResponse(['0.2.0']);
+          }),
+      );
+      addTearDown(client.close);
+      final opened = <Uri>[];
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (_, _) => const Scaffold(body: UpdateSettingsCard()),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            githubReleaseClientProvider.overrideWithValue(client),
+            openUpdateUrlProvider.overrideWithValue(
+              (uri) async => opened.add(uri),
+            ),
+            updateAbisProvider.overrideWith(
+              (ref) => throw StateError('无需识别架构'),
+            ),
+          ],
+          child: MaterialApp.router(
+            theme: ReelvaTheme.light,
+            routerConfig: router,
+            builder: (context, child) =>
+                UpdatePromptHost(router: router, child: child!),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('check_update_button')));
+      await tester.pumpAndSettle();
+      expect(find.text('0.1.0 → 0.2.0'), findsOneWidget);
+      expect(find.text('在 GitHub 查看并下载'), findsOneWidget);
+      expect(find.byKey(const Key('update_android_apk')), findsNothing);
+      expect(find.byKey(const Key('update_windows_installer')), findsNothing);
+      expect(find.byKey(const Key('update_windows_portable')), findsNothing);
+      await tester.tap(find.byKey(const Key('update_release_github')));
+      await tester.pumpAndSettle();
+      expect(
+        opened.single.toString(),
+        'https://github.com/miludeshiji/Reelva/releases/tag/v0.2.0',
+      );
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets('启动自动检查，播放期间延后至返回时提示且只弹一次', (tester) async {
     FlutterSecureStorage.setMockInitialValues({});
     final response = Completer<ResponseBody>();
