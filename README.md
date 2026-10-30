@@ -13,7 +13,7 @@ Reelva 是一款 Windows / Android 影视库播放器：扫描你自己的视频
 
 ## 下载安装
 
-当前预发布版本为 [v0.1.0-beta1](https://github.com/miludeshiji/Reelva/releases/tag/v0.1.0-beta1)。**beta版可能存在大量bug，无必要请勿下载**。请在该版本页面按平台选择下载文件：
+当前预发布版本为 [v0.1.0-beta2](https://github.com/miludeshiji/Reelva/releases/tag/v0.1.0-beta2)。**beta版可能存在大量bug，无必要请勿下载**。请在该版本页面按平台选择下载文件：
 
 | 文件 | 适合 | 使用方式 |
 | --- | --- | --- |
