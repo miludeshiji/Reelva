@@ -1,7 +1,7 @@
 name: reelva
 description: "Reelva - modern cross-platform media player."
 publish_to: 'none'
-version: 0.1.0-beta2+2
+version: 0.1.0-beta3+3
 
 environment:
   sdk: ^3.13.5
