@@ -141,6 +141,9 @@ class _CloudSourceSetupPageState extends ConsumerState<CloudSourceSetupPage> {
           'RefreshToken',
           'access_token',
           'refresh_token',
+          'access_token_expires_at',
+          'token_updated_at',
+          'expires_in',
           'cookie',
           'Cookie',
         }.contains(key),
@@ -182,8 +185,20 @@ class _CloudSourceSetupPageState extends ConsumerState<CloudSourceSetupPage> {
         _directory = '/';
         _directories = _sortedDirectories(entries);
       });
-    } catch (_) {
-      if (mounted) setState(() => _error = '连接网盘失败，请检查登录状态和网络后重试');
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _error =
+              error is MediaSourceException &&
+                  const {
+                    'unauthorized',
+                    'invalid_token',
+                    'invalid_grant',
+                  }.contains(error.code)
+              ? '网盘登录已失效，请重新授权'
+              : '连接网盘失败，请检查登录状态和网络后重试',
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }

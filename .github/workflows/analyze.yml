@@ -1,7 +1,6 @@
 name: 代码分析
 
 on:
-  workflow_call:
   pull_request:
   push:
     branches:
@@ -10,7 +9,7 @@ on:
 
 concurrency:
   group: analyze-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

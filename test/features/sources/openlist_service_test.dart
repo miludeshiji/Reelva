@@ -283,6 +283,119 @@ void main() {
     );
   });
 
+  test('123 授权失效后导入新令牌不触网，备份不回退且下次访问更新旧内核', () async {
+    const old = RemoteCredentials(
+      openListDriver: '123 Open',
+      openListAuthorization: {
+        'AccessToken': 'old-access',
+        'RefreshToken': 'old-refresh',
+        'token_updated_at': 1000,
+        'access_token_expires_at': 2000,
+      },
+    );
+    const newer = RemoteCredentials(
+      openListDriver: '123 Open',
+      openListAuthorization: {
+        'AccessToken': 'new-access',
+        'RefreshToken': 'new-refresh',
+        'token_updated_at': 2000,
+        'access_token_expires_at': 3000,
+      },
+    );
+    await credentials.write(
+      OpenListService.credentialReference(_accountId),
+      old,
+    );
+    rpc.putAccount(_accountId, '123 Open', old.openListAuthorization);
+    rpc.fileOperation = (_, _) =>
+        (rpc.accounts[_accountId]!['addition'] as Map)['AccessToken'] ==
+            'old-access'
+        ? {
+            'error': {
+              'code': 'invalid_grant',
+              'message': 'refresh_token=private-secret',
+            },
+          }
+        : {
+            'data': {'entries': <Map<String, dynamic>>[]},
+          };
+    await expectLater(
+      service.list(_accountId, '/'),
+      throwsA(
+        isA<MediaSourceException>()
+            .having((e) => e.code, 'code', 'invalid_grant')
+            .having((e) => e.message, 'message', '网盘登录已失效，请重新授权'),
+      ),
+    );
+    final calls = rpc.calls.length;
+    expect(
+      await service.restoreAccount(
+        accountId: _accountId,
+        name: '同步',
+        credentials: newer,
+      ),
+      newer,
+    );
+    expect(rpc.calls, hasLength(calls));
+    expect(await service.readAccount(_accountId), newer);
+    expect(rpc.accounts[_accountId]!['addition'], old.openListAuthorization);
+    expect(rpc.calls.where((call) => call.method == 'saveAccount'), isEmpty);
+    expect(await service.list(_accountId, '/'), isEmpty);
+    expect(rpc.accounts[_accountId]!['addition'], newer.openListAuthorization);
+    expect(
+      await credentials.read(OpenListService.credentialReference(_accountId)),
+      newer,
+    );
+    expect(
+      rpc.calls.where((call) => call.method == 'saveAccount'),
+      hasLength(1),
+    );
+    expect(
+      await service.restoreAccount(
+        accountId: _accountId,
+        name: '旧备份',
+        credentials: old,
+      ),
+      newer,
+    );
+  });
+
+  test('123 内核已刷新时保留较新令牌，不加载旧同步快照', () async {
+    const stale = RemoteCredentials(
+      openListDriver: '123 Open',
+      openListAuthorization: {
+        'AccessToken': 'stale-access',
+        'RefreshToken': 'stale-refresh',
+        'token_updated_at': 1000,
+      },
+    );
+    const rotated = <String, dynamic>{
+      'AccessToken': 'rotated-access',
+      'RefreshToken': 'rotated-refresh',
+      'token_updated_at': 2000,
+      'access_token_expires_at': 3000,
+    };
+    await credentials.write(
+      OpenListService.credentialReference(_accountId),
+      stale,
+    );
+    rpc.putAccount(_accountId, '123 Open', rotated);
+    rpc.fileOperation = (_, _) => {
+      'data': {'entries': <Map<String, dynamic>>[]},
+    };
+    await service.list(_accountId, '/');
+    expect(rpc.calls.where((call) => call.method == 'saveAccount'), isEmpty);
+    expect(
+      (await service.readAccount(_accountId)).openListAuthorization,
+      rotated,
+    );
+    expect(
+      (await credentials.read(OpenListService.credentialReference(_accountId)))
+          .openListAuthorization,
+      rotated,
+    );
+  });
+
   test('已有内核授权优先于旧安全快照，文件访问不会覆盖轮换 Token', () async {
     rpc.putAccount(_accountId, '115 Open', {'refresh_token': 'native-new'});
     await service.restoreAccount(

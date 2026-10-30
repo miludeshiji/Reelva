@@ -6,11 +6,11 @@ Reelva 通过 GitHub Actions 提供 3 个工作流，覆盖质量分析、跨平
 
 | 工作流 | 文件 | 触发条件 | 产物（保留期） |
 | --- | --- | --- | --- |
-| 代码分析 | `.github/workflows/analyze.yml` | Pull Request、`main` 分支推送、被发布工作流调用（`workflow_call`） | `dart-coverage` 覆盖率（14 天） |
+| 代码分析 | `.github/workflows/analyze.yml` | Pull Request、`main` / `feature/**` 分支推送 | `dart-coverage` 覆盖率（14 天） |
 | 跨平台构建 | `.github/workflows/build.yml` | Pull Request（覆盖源码、资源、配置及脚本等关键路径）、手动触发（`workflow_dispatch`）、被发布工作流调用（`workflow_call`） | `android-arm64-v8a`、`android-armeabi-v7a`、`android-x86_64`、`windows-x64`（各 7 天） |
 | 版本发布 | `.github/workflows/release.yml` | 仅推送版本标签 `v*` | `release-notes` 发布日志（1 天）与 GitHub Release 附件 |
 
-- **代码分析**：检查锁定依赖（`flutter pub get --enforce-lockfile`）、全项目 Dart 格式、静态分析、单元与部件测试及覆盖率，并运行发布元数据校验脚本的标准单元测试。PR 与常规推送可取消旧运行；被发布流程调用时禁止取消。
+- **代码分析**：检查锁定依赖（`flutter pub get --enforce-lockfile`）、全项目 Dart 格式、静态分析、单元与部件测试及覆盖率，并运行发布元数据校验脚本的标准单元测试。PR 与分支推送会取消旧运行。
 - **跨平台构建**：输入参数 `build_android`（布尔，默认 `true`）、`build_windows`（布尔，默认 `true`）、`release`（布尔，手动默认 `true`）。手动运行默认生成 Release 安装包，取消勾选 `release` 可生成 Debug 包。构建平台不可全部关闭。PR 冒烟构建无条件执行 Debug 模式，严禁注入或读取正式签名 Secrets。
 
 ### 构建产物命名（`{version}` 为 `pubspec.yaml` 去除 `+build` 后的版本名）
@@ -81,10 +81,11 @@ Android、Windows 构建和标签发布均会通过 `--dart-define-from-file` �
 
 推送 `v*` 标签（如 `v0.1.0` 或 `v0.1.0-beta1`）触发 `release.yml`，流程不可并发取消：
 
+代码分析随分支推送或 PR 独立执行，发布工作流不重复调用。
+
 1. **元数据校验**：调用 `.github/scripts/release_metadata.py` 核验版本规范、Tag 严格匹配、CHANGELOG 对应章节、Beta 警告与正式版 README 下载链接，提取发布日志并上传 `release-notes` 产物。
-2. **质量门禁**：调用 `analyze.yml` 执行完整分析与测试。
-3. **正式构建**：调用 `build.yml`（双平台、`release: true`），传入仓库 Android 签名 Secrets。
-4. **GitHub Release**：下载全部 5 个产物与发布日志；已公开版本严禁修改覆盖，若存在同名草稿则予以恢复；一次性完整上传产物并公开。正式版设为 latest 发布，Beta 版设为 prerelease 且不设为 latest。
+2. **正式构建**：调用 `build.yml`（双平台、`release: true`），传入仓库 Android 签名 Secrets。
+3. **GitHub Release**：下载全部 5 个产物与发布日志；已公开版本严禁修改覆盖，若存在同名草稿则予以恢复；一次性完整上传产物并公开。正式版设为 latest 发布，Beta 版设为 prerelease 且不设为 latest。
 
 ### 发布准备清单
 

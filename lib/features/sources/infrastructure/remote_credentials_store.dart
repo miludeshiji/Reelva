@@ -35,6 +35,19 @@ class RemoteCredentials {
   final String? openListDriver;
   final Map<String, dynamic> openListAuthorization;
 
+  /// 123 授权按整组令牌的更新时间比较；其他驱动沿用原有优先级。
+  int compareOpenListAuthorization(RemoteCredentials other) {
+    if (openListDriver != '123 Open' ||
+        other.openListDriver != openListDriver) {
+      return 0;
+    }
+    final updatedAt = openListAuthorization['token_updated_at'];
+    final otherUpdatedAt = other.openListAuthorization['token_updated_at'];
+    return (updatedAt is num ? updatedAt.toInt() : 0).compareTo(
+      otherUpdatedAt is num ? otherUpdatedAt.toInt() : 0,
+    );
+  }
+
   bool get isAnonymous =>
       username.isEmpty &&
       password.isEmpty &&

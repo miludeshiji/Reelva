@@ -71,7 +71,7 @@ class FetchOpenListCoreTest(unittest.TestCase):
         lock = load_lock()
         for target in EXPECTED_ARCHITECTURES:
             self.assertEqual(selected_asset(lock, target)["name"], f"openlist-core-{target}.zip")
-        self.assertEqual(lock["version"], "0.1.0-beta.5")
+        self.assertEqual(lock["version"], "0.1.0-beta.6")
         self.assertEqual(lock["rpcAbi"], 1)
 
     def test_rejects_incomplete_lock(self):

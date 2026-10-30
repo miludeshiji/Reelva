@@ -34,14 +34,9 @@ jobs:
           path: release-notes.md
           retention-days: 1
 
-  quality:
-    name: 质量门禁检查
-    needs: metadata
-    uses: ./.github/workflows/analyze.yml
-
   build:
     name: 跨平台正式构建
-    needs: [metadata, quality]
+    needs: metadata
     uses: ./.github/workflows/build.yml
     with:
       build_android: true

@@ -65,6 +65,47 @@ class ApplicationSyncDocument {
         merged[entry.key] = entry.value;
       }
     }
+    // 目录设置的版本不能淘汰较新的令牌；同账号的目录共用整组授权。
+    final accounts = <String, RemoteCredentials>{};
+    for (final entry in [...records.entries, ...other.records.entries]) {
+      final value = entry.value.value;
+      if (!entry.key.startsWith('source:') ||
+          value?['kind'] != 'openlist' ||
+          value?['enabled'] != true) {
+        continue;
+      }
+      final secret = RemoteCredentials.fromJson(
+        value!['credentials'] as Map<String, dynamic>,
+      );
+      if (secret.openListDriver != '123 Open') continue;
+      final accountId = OpenListRoot.parse(value['rootLocator'] as String)
+          .accountId;
+      final current = accounts[accountId];
+      if (current == null || secret.compareOpenListAuthorization(current) > 0) {
+        accounts[accountId] = secret;
+      }
+    }
+    for (final entry in merged.entries.toList()) {
+      final value = entry.value.value;
+      if (!entry.key.startsWith('source:') ||
+          value?['kind'] != 'openlist' ||
+          value?['enabled'] != true) {
+        continue;
+      }
+      final accountId = OpenListRoot.parse(value!['rootLocator'] as String)
+          .accountId;
+      final newest = accounts[accountId];
+      if (newest == null) continue;
+      final current = RemoteCredentials.fromJson(
+        value['credentials'] as Map<String, dynamic>,
+      );
+      if (newest.compareOpenListAuthorization(current) > 0) {
+        merged[entry.key] = ApplicationSyncRecord(
+          version: entry.value.version,
+          value: {...value, 'credentials': newest.toJson()},
+        );
+      }
+    }
     return ApplicationSyncDocument(merged);
   }
 

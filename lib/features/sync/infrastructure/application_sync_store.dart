@@ -377,7 +377,12 @@ class ApplicationSyncStore {
           final local = await _readCloudCredentials(
             existing?.credentialRef ?? reference,
           );
-          await credentials.write(reference, local ?? secret);
+          await credentials.write(
+            reference,
+            local == null || secret.compareOpenListAuthorization(local) > 0
+                ? secret
+                : local,
+          );
         }
       } else if (secret.isAnonymous) {
         if (reference != null) await credentials.delete(reference);

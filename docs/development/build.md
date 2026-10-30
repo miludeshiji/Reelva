@@ -22,7 +22,7 @@ fvm flutter pub get
 
 ## OpenList 原生内核
 
-内核使用 [Venera-OpenList-Core 的固定 Release](https://github.com/Venera-Works/Venera-OpenList-Core/releases/tag/core-v0.1.0-beta.5)，版本为 `0.1.0-beta.5`、JSON RPC ABI 为 `1`。`native/openlist_core/core.lock.json` 固定源码提交和平台包 SHA-256；`.github/scripts/fetch_openlist_core.py` 校验下载包摘要、版本、源码提交、ABI、目标架构和许可证后安装，不在用户设备运行时下载。
+内核使用 [Venera-OpenList-Core 的固定 Release](https://github.com/Venera-Works/Venera-OpenList-Core/releases/tag/core-v0.1.0-beta.6)，版本为 `0.1.0-beta.6`、JSON RPC ABI 为 `1`。`native/openlist_core/core.lock.json` 固定源码提交和平台包 SHA-256；`.github/scripts/fetch_openlist_core.py` 校验下载包摘要、版本、源码提交、ABI、目标架构和许可证后安装，不在用户设备运行时下载。
 
 开发者准备对应目标的原生库：
 
@@ -43,7 +43,7 @@ fvm flutter analyze --no-pub
 fvm flutter test --no-pub
 ```
 
-开发完成后先运行 `fvm dart format .`，再执行上述格式检查。CI 的 `analyze.yml` 在推送 `main` 或 `feature/**` 分支、提交 PR 及被发布流程调用时运行；备份分支的推送不会触发。该工作流在 Ubuntu 24.04 执行相同的锁定依赖、格式、分析与测试检查，并额外上传覆盖率产物。写文件系统相关测试时注意：本地测试使用实际大小写路径，`externalId` 仅在 Windows 转小写，其他平台保留大小写。
+开发完成后先运行 `fvm dart format .`，再执行上述格式检查。CI 的 `analyze.yml` 在推送 `main` 或 `feature/**` 分支、提交 PR 时运行；备份分支的推送不会触发。该工作流在 Ubuntu 24.04 执行相同的锁定依赖、格式、分析与测试检查，并额外上传覆盖率产物。写文件系统相关测试时注意：本地测试使用实际大小写路径，`externalId` 仅在 Windows 转小写，其他平台保留大小写。
 
 ## 本地运行（需明确授权）
 

@@ -24,11 +24,23 @@ const _account = 'cccccccccccccccccccccccccccccccc';
 const _deviceA = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const _deviceB = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
-RemoteCredentials _authorization(String token, {String driver = '115 Open'}) =>
-    RemoteCredentials(
-      openListDriver: driver,
-      openListAuthorization: {'refresh_token': token},
-    );
+RemoteCredentials _authorization(
+  String token, {
+  String driver = '115 Open',
+  int? updatedAt,
+}) => RemoteCredentials(
+  openListDriver: driver,
+  openListAuthorization: driver == '123 Open'
+      ? {
+          'AccessToken': '$token-access',
+          'RefreshToken': token,
+          if (updatedAt != null) ...{
+            'token_updated_at': updatedAt,
+            'access_token_expires_at': updatedAt + 3600000,
+          },
+        }
+      : {'refresh_token': token},
+);
 
 class _Rpc implements OpenListRpcClient {
   final methods = <String>[];
@@ -120,6 +132,9 @@ ApplicationSyncDocument _document({
   String? root,
   String driver = '115 Open',
   bool enabled = true,
+  String name = '影视',
+  int stamp = 1000,
+  RemoteCredentials? authorization,
 }) {
   root ??= buildOpenListRoot(_account, '/Movies');
   return ApplicationSyncDocument({
@@ -128,17 +143,18 @@ ApplicationSyncDocument _document({
       root,
       _deviceA,
     ): ApplicationSyncRecord(
-      version: const SyncVersion(stamp: 1000, deviceId: _deviceA),
+      version: SyncVersion(stamp: stamp, deviceId: _deviceA),
       value: {
         'kind': 'openlist',
         'rootLocator': root,
         'originDeviceId': _deviceA,
-        'name': '影视',
+        'name': name,
         'enabled': enabled,
         'extensions': ['mkv'],
         'excludedDirectories': <String>[],
         'credentials': enabled
-            ? _authorization('backup-token', driver: driver).toJson()
+            ? (authorization ?? _authorization('backup-token', driver: driver))
+                  .toJson()
             : null,
       },
     ),
@@ -210,6 +226,85 @@ void main() {
     );
     expect(saved.openListAuthorization['refresh_token'], 'rotated-token');
   });
+
+  test('123 按授权时间合并令牌，同时保留较新的目录设置并统一共享账号', () {
+    final newer = _authorization(
+      'new-token',
+      driver: '123 Open',
+      updatedAt: 2000,
+    );
+    final older = _authorization(
+      'old-token',
+      driver: '123 Open',
+      updatedAt: 1000,
+    );
+    final tokens = _document(authorization: newer);
+    final settings = _document(
+      name: '重命名目录',
+      stamp: 3000,
+      authorization: older,
+    );
+    final shows = _document(
+      root: buildOpenListRoot(_account, '/Shows'),
+      stamp: 4000,
+      authorization: older,
+    );
+    final another = _document(
+      root: buildOpenListRoot(_deviceB, '/Movies'),
+      authorization: older,
+    );
+    for (final merged in [tokens.merge(settings), settings.merge(tokens)]) {
+      final movie = merged.records.values.single;
+      expect(movie.version.stamp, 3000);
+      expect(movie.value!['name'], '重命名目录');
+      expect(movie.value!['credentials'], newer.toJson());
+      final combined = ApplicationSyncDocument.fromJson(
+        merged.merge(shows).merge(another).toJson(),
+      );
+      for (final record in combined.records.values) {
+        final id = OpenListRoot.parse(record.value!['rootLocator'] as String)
+            .accountId;
+        expect(
+          record.value!['credentials'],
+          (id == _account ? newer : older).toJson(),
+        );
+      }
+    }
+  });
+
+  for (final withCore in [true, false]) {
+    test('123 同步较新授权并阻止旧内核快照回写（内核服务：$withCore）', () async {
+      final device = _Device(_deviceB, withCore: withCore);
+      addTearDown(device.close);
+      final old = _authorization(
+        'old-token',
+        driver: '123 Open',
+        updatedAt: 1000,
+      );
+      final newer = _authorization(
+        'new-token',
+        driver: '123 Open',
+        updatedAt: 2000,
+      );
+      final reference = OpenListService.credentialReference(_account);
+      await device.credentials.write(reference, old);
+      await device.addSource('/Movies');
+      device.time = DateTime.fromMillisecondsSinceEpoch(3000);
+      if (withCore) device.rpc.setAccount(old);
+      await device.store.apply(_scope, _document(authorization: newer));
+      expect(await device.credentials.read(reference), newer);
+      expect(device.rpc.methods, isNot(contains('saveAccount')));
+      final backup = jsonEncode((await device.store.capture(_scope)).toJson());
+      expect(backup, contains('new-token'));
+      expect(backup, isNot(contains('old-token')));
+      await device.store.apply(
+        _scope,
+        _document(stamp: 4000, authorization: old),
+      );
+      expect(await device.credentials.read(reference), newer);
+      if (!withCore) expect(device.rpc.methods, isEmpty);
+    });
+  }
 
   test('新设备恢复授权和相对索引时不触发内核加载或目录扫描', () async {
     final a = _Device(_deviceA);

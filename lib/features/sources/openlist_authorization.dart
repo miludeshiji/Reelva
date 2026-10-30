@@ -80,7 +80,19 @@ Map<String, dynamic> parseOpenListAuthorization(
       );
     }
     if (decoded is! Map<String, dynamic>) throw const FormatException();
-    return normalizeOpenListAuthorization(decoded, driver: driver);
+    final value = normalizeOpenListAuthorization(decoded, driver: driver);
+    if (driver == '123 Open') {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final rawExpiresIn = value.remove('expires_in');
+      final expiresIn = rawExpiresIn is num
+          ? rawExpiresIn.toInt()
+          : int.tryParse('$rawExpiresIn') ?? 0;
+      value['token_updated_at'] ??= now;
+      value['access_token_expires_at'] ??= expiresIn > 0
+          ? now + expiresIn * 1000
+          : 0;
+    }
+    return value;
   } on FormatException {
     throw const FormatException('授权结果格式无效，请重新登录或手动填写凭据');
   }
@@ -111,6 +123,19 @@ Map<String, dynamic> buildOpenListAuthorization({
   }
   final result = normalizeOpenListAuthorization(value, driver: driver);
   _validateTokens(result, driver);
+  if (driver == '123 Open') {
+    final original = normalizeOpenListAuthorization(previous, driver: driver);
+    if (const [
+      'AccessToken',
+      'RefreshToken',
+    ].any((key) => _text(original[key]) != _text(result[key]))) {
+      result['token_updated_at'] = DateTime.now().millisecondsSinceEpoch;
+      if (_text(original['AccessToken']) != _text(result['AccessToken'])) {
+        result['access_token_expires_at'] = 0;
+      }
+    }
+    result.remove('expires_in');
+  }
   return result;
 }
 

@@ -30,6 +30,7 @@ class _FakeService extends OpenListService {
   final deleted = <String>[];
   final listed = <String>[];
   bool failList = false;
+  bool invalidGrant = false;
 
   @override
   Future<String> saveAccount({
@@ -38,6 +39,12 @@ class _FakeService extends OpenListService {
     required String name,
     required Map<String, dynamic> addition,
   }) async {
+    if (invalidGrant) {
+      throw const MediaSourceException(
+        'private grant message',
+        code: 'invalid_grant',
+      );
+    }
     saved.add({
       'accountId': accountId,
       'driver': driver,
@@ -237,6 +244,29 @@ void main() {
     await tester.tap(find.byKey(const Key('cloud_source_back_button')));
     await tester.pumpAndSettle();
     expect(service.deleted, [_accountId]);
+  });
+
+  testWidgets('123 授权失效显示重新授权提示并隐藏原始错误', (tester) async {
+    final service = _FakeService()..invalidGrant = true;
+    await tester.pumpWidget(
+      app(
+        const CloudSourceSetupPage(driver: '123 Open'),
+        service,
+        _FakeController(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('cloud_manual_options')));
+    await tester.pumpAndSettle();
+    final field = find.byKey(const Key('cloud_refresh_token_field'));
+    await tester.ensureVisible(field);
+    await tester.enterText(field, 'refresh-token');
+    final connect = find.byKey(const Key('cloud_manual_connect_button'));
+    await tester.ensureVisible(connect);
+    await tester.tap(connect);
+    await tester.pumpAndSettle();
+    expect(find.text('网盘登录已失效，请重新授权'), findsOneWidget);
+    expect(find.text('private grant message'), findsNothing);
   });
 
   testWidgets('重新授权不回显旧凭据，通过控制器保留账号及根目录', (tester) async {

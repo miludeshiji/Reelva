@@ -1,18 +1,18 @@
 {
   "schema": 1,
   "repository": "Venera-Works/Venera-OpenList-Core",
-  "version": "0.1.0-beta.5",
-  "tag": "core-v0.1.0-beta.5",
-  "sourceCommit": "ebe5c896c56c91388d2ea4f16b9e45d4cbaf7b12",
+  "version": "0.1.0-beta.6",
+  "tag": "core-v0.1.0-beta.6",
+  "sourceCommit": "36e90ae48ed50319daa7fff0612b5c1ed349abdc",
   "rpcAbi": 1,
   "assets": {
     "android": {
       "name": "openlist-core-android.zip",
-      "sha256": "356b77e8c30bd0480dea99d1f89a7c030f05d79db938835c44c2eaf6c3518b01"
+      "sha256": "eed6ce349d3518c065d88fdca5323c729c9f765bb61cf27461b045cbcb96abe8"
     },
     "windows-x64": {
       "name": "openlist-core-windows-x64.zip",
-      "sha256": "be2ea228a38fc05478f6384e8d11de103b28a33f8e67834814b9a92fc1d4e83e"
+      "sha256": "6f9b8b2a1977557342e89deb3e3009b90fff6982f8b85a0baee7b5b9500ccfcd"
     }
   }
 }

@@ -109,26 +109,42 @@ class OpenListService {
     );
   }
 
-  Future<RemoteCredentials> _readSaved(String id) =>
-      credentials.read(credentialReference(id));
+  Future<RemoteCredentials?> _readSaved(String id) async {
+    try {
+      return await credentials.read(credentialReference(id));
+    } on MediaSourceException catch (error) {
+      if (error.code == 'credential_not_found') return null;
+      rethrow;
+    }
+  }
 
   Future<RemoteCredentials> _ensureAccount(String id) async {
     await initialize();
     final native = await _nativeAccount(id);
-    if (native != null) return _nativeCredentials(native);
+    final current = native == null ? null : _nativeCredentials(native);
+    if (current != null && current.openListDriver != '123 Open') return current;
     final saved = await _readSaved(id);
+    if (current != null &&
+        (saved == null || saved.compareOpenListAuthorization(current) <= 0)) {
+      return current;
+    }
+    if (saved == null) {
+      throw const MediaSourceException('网盘账号不存在', code: 'credential_not_found');
+    }
     _validate(saved);
     await _data('saveAccount', {
       'id': id,
       'driver': saved.openListDriver,
-      'name': openListDrivers[saved.openListDriver],
+      'name': native?['name'] ?? openListDrivers[saved.openListDriver],
       'addition': saved.openListAuthorization,
     });
     final created = await _nativeAccount(id);
     if (created == null) {
       throw const MediaSourceException('网盘账号不存在', code: 'credential_not_found');
     }
-    return _nativeCredentials(created);
+    final updated = _nativeCredentials(created);
+    await credentials.write(credentialReference(id), updated);
+    return updated;
   }
 
   Future<String> saveAccount({
@@ -181,19 +197,28 @@ class OpenListService {
     });
   }
 
-  Future<RemoteCredentials> readAccount(String accountId) =>
-      _serialize(accountId, () async {
-        await initialize();
-        final native = await _nativeAccount(accountId);
-        final current = native == null
-            ? await _readSaved(accountId)
-            : _nativeCredentials(native);
-        _validate(current);
-        await credentials.write(credentialReference(accountId), current);
-        return current;
-      });
+  Future<RemoteCredentials> readAccount(
+    String accountId,
+  ) => _serialize(accountId, () async {
+    await initialize();
+    final native = await _nativeAccount(accountId);
+    var current = native == null ? null : _nativeCredentials(native);
+    if (current == null || current.openListDriver == '123 Open') {
+      final saved = await _readSaved(accountId);
+      if (current == null ||
+          saved != null && saved.compareOpenListAuthorization(current) > 0) {
+        current = saved;
+      }
+    }
+    if (current == null) {
+      throw const MediaSourceException('网盘账号不存在', code: 'credential_not_found');
+    }
+    _validate(current);
+    await credentials.write(credentialReference(accountId), current);
+    return current;
+  });
 
-  /// 配置恢复不触网，不用旧备份覆盖设备上已有授权；使用时再加载到内核。
+  /// 配置恢复不触网；123 接收较新的整组授权，使用时再加载到内核。
   Future<RemoteCredentials> restoreAccount({
     required String accountId,
     required String name,
@@ -201,14 +226,12 @@ class OpenListService {
   }) => _serialize(accountId, () async {
     buildOpenListRoot(accountId, '/');
     _validate(credentials);
-    try {
-      final current = await _readSaved(accountId);
-      if (current.openListDriver != null &&
-          current.openListAuthorization.isNotEmpty) {
-        return current;
-      }
-    } on MediaSourceException catch (error) {
-      if (error.code != 'credential_not_found') rethrow;
+    final current = await _readSaved(accountId);
+    if (current != null &&
+        current.openListDriver != null &&
+        current.openListAuthorization.isNotEmpty &&
+        credentials.compareOpenListAuthorization(current) <= 0) {
+      return current;
     }
     await this.credentials.write(credentialReference(accountId), credentials);
     return credentials;
@@ -401,6 +424,7 @@ class OpenListService {
           const {
             'unauthorized',
             'invalid_token',
+            'invalid_grant',
             'not_found',
             'cancelled',
             'operation_failed',
@@ -418,7 +442,7 @@ class OpenListService {
         );
       }
       throw MediaSourceException(switch (code) {
-        'unauthorized' || 'invalid_token' => '网盘登录已失效，请重新授权',
+        'unauthorized' || 'invalid_token' || 'invalid_grant' => '网盘登录已失效，请重新授权',
         'not_found' => '网盘文件或目录不存在',
         'cancelled' => '网盘操作已取消',
         _ => '网盘操作失败，请检查网络或重新授权',

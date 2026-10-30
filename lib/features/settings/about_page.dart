@@ -167,7 +167,7 @@ class AboutPage extends ConsumerWidget {
                   '原生库基于构建钩子校验使用固定版本 libsmb2-r9，源码开放于 https://github.com/sahlberg/libsmb2 。\n\n'
                   '网盘内核说明：\n'
                   '百度、夸克、115 和 123 网盘通过 Venera OpenList Core 提供访问，内核使用 AGPL-3.0 许可。'
-                  '固定版本 core-v0.1.0-beta.5 的对应源码见 https://github.com/Venera-Works/Venera-OpenList-Core/tree/core-v0.1.0-beta.5 ，完整许可证见下方入口。\n\n'
+                  '固定版本 core-v0.1.0-beta.6 的对应源码见 https://github.com/Venera-Works/Venera-OpenList-Core/tree/core-v0.1.0-beta.6 ，完整许可证见下方入口。\n\n'
                   'Dart 与 Flutter 第三方依赖包的开源许可证详情可通过下方入口查看。',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: colorScheme.onSurfaceVariant,
@@ -200,7 +200,7 @@ class AboutPage extends ConsumerWidget {
                           '$tmdbRequiredNotice\n'
                           'Native playback engines incorporate FFmpeg and libmpv under LGPL/GPL licenses.\n'
                           'SMB functionality incorporates dart_smb2 (BSD-3-Clause) and libsmb2 (LGPL-2.1+, https://github.com/sahlberg/libsmb2).\n'
-                          'Cloud drive functionality incorporates Venera OpenList Core (AGPL-3.0, https://github.com/Venera-Works/Venera-OpenList-Core/tree/core-v0.1.0-beta.5).',
+                          'Cloud drive functionality incorporates Venera OpenList Core (AGPL-3.0, https://github.com/Venera-Works/Venera-OpenList-Core/tree/core-v0.1.0-beta.6).',
                     ),
                   ),
                 );

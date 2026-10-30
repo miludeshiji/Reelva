@@ -41,7 +41,7 @@ Reelva 是客户端优先的跨平台影视库与播放器，首批目标平台�
 - 主应用 SQLite 的 `media_sources.credential_ref` 只保存凭据引用与稳定文件身份，临时签名直链不入库。WebDAV、SMB、TMDB 及同步服务凭据保存在系统安全存储，输入框不回显旧秘密。
 - 网盘内核另在 `getApplicationSupportDirectory()/openlist/openlist.db` 保存账号驱动配置和刷新后的 Token / Cookie，属于明文凭据；系统安全存储同时保存可迁移的授权快照。Windows 对应 `%APPDATA%\com.github.miludeshiji\Reelva\openlist\`，Android 对应应用私有 `files/openlist/`。手工备份整个应用数据目录会包含这些秘密，不能将该数据库当作无凭据索引分发。
 - 多个媒体目录可以引用同一网盘账号。移除最后一个启用目录时清理内核账号和安全存储快照；仍有其他启用目录时保留账号。内核首次初始化清理没有启用源引用的内核账号，不删除主应用媒体源记录、作品索引或观看历史。
-- 媒体源授权及 TMDB 密钥进入独立的应用配置同步文件，可选密码加密，不设置密码时明文保存，不进入观看进度批次。备份从内核回读最新授权，不复制整个内核数据库，也不导出临时签名直链；恢复优先保留本机已有授权，缺失账号使用同步快照，首次访问文件时再加载。同步服务连接与加密密码仍单独保存在系统安全存储。
+- 媒体源授权及 TMDB 密钥进入独立的应用配置同步文件，可选密码加密，不设置密码时明文保存，不进入观看进度批次。备份从内核回读最新授权，不复制整个内核数据库，也不导出临时签名直链；123 云盘按授权更新时间整组选择较新的 Access Token、Refresh Token 与绝对过期时间，独立于目录设置版本，同账号的目录共用授权，导出时也不会用旧内核数据覆盖新快照。其他网盘恢复优先保留本机已有授权，缺失账号使用同步快照；导入不主动加载账号，首次访问文件时再应用较新授权。同步服务连接与加密密码仍单独保存在系统安全存储。
 - 日志在输出消息、异常和堆栈前过滤常见认证头、Cookie、令牌、密码及 API 密钥字段，并隐藏网络 URL；不记录原始请求载荷、无字段标识的秘密或私密文件内容。网络源错误不会回显服务端原始消息。
 - TMDB 请求不跟随重定向；网络源对重定向执行来源与认证边界检查，不跨来源传播认证头或请求体。根目录 URL 不允许嵌入帐号密码、查询参数或相对跳转段，TLS 证书校验保持启用。
 
@@ -71,7 +71,7 @@ Reelva 是客户端优先的跨平台影视库与播放器，首批目标平台�
 | `cryptography` | 2.9.0 |
 | `dart_smb2` | 0.2.3 |
 | `flutter_inappwebview` | 6.2.0-beta.3 |
-| Venera OpenList Core / JSON RPC ABI | 0.1.0-beta.5 / 1 |
+| Venera OpenList Core / JSON RPC ABI | 0.1.0-beta.6 / 1 |
 
 ## 平台与原生工程
 
@@ -89,7 +89,7 @@ Android 云备份与设备迁移规则排除安全存储使用的 SharedPreferen
 
 - `dart_smb2` 使用 worker isolate 和 libsmb2 原生共享库；首次执行对应平台的测试/构建时，其 hook 从固定的 `libsmb2-r9` 下载原生库并核对 SHA-256，Android 最低 API 24 与项目设置一致。原生库采用 LGPL-2.1+，关于页及第三方许可证入口登记了完整许可文本与[上游源码](https://github.com/sahlberg/libsmb2)、[对应二进制构建来源](https://github.com/ales-drnz/dart_smb2/releases/tag/libsmb2-r9)，应用内附带 `assets/licenses/libsmb2.txt`。
 - 关于页包含保持[官方图形、渐变和宽高比的 TMDB Logo](https://www.themoviedb.org/about/logos-attribution)与[官方要求的署名声明](https://developer.themoviedb.org/docs/faq)；海报缓存按 300 个缓存对象、30 天闲置策略回收（非磁盘字节硬上限）。
-- 内置 [Venera OpenList Core](https://github.com/Venera-Works/Venera-OpenList-Core/tree/core-v0.1.0-beta.5) 采用 AGPL-3.0，固定 `core-v0.1.0-beta.5` 源码与原生包。关于页及第三方许可入口登记内核与源码链接，应用附带 `assets/licenses/openlist.txt`；下载包中的许可证也随原生库安装。
+- 内置 [Venera OpenList Core](https://github.com/Venera-Works/Venera-OpenList-Core/tree/core-v0.1.0-beta.6) 采用 AGPL-3.0，固定 `core-v0.1.0-beta.6` 源码与原生包。关于页及第三方许可入口登记内核与源码链接，应用附带 `assets/licenses/openlist.txt`；下载包中的许可证也随原生库安装。
 - libmpv/FFmpeg 的分发许可仍需结合实际原生构建核对。
 
 ## 验证边界（既有记录，保留待验证事实）

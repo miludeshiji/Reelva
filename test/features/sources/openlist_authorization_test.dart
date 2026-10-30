@@ -68,12 +68,14 @@ void main() {
   });
 
   test('123 支持 base64url 回调并转为实际驱动字段', () {
+    final before = DateTime.now().millisecondsSinceEpoch;
     final encoded = base64Url.encode(
       utf8.encode(
         jsonEncode({
           'driver_txt': '123cloud_oa',
           'access_token': 'access',
           'refresh_token': 'refresh',
+          'expires_in': '3600',
         }),
       ),
     );
@@ -86,10 +88,67 @@ void main() {
     expect(result['ClientID'], '');
     expect(result['ClientSecret'], '');
     expect(result.containsKey('refresh_token'), isFalse);
+    expect(result.containsKey('expires_in'), isFalse);
+    final after = DateTime.now().millisecondsSinceEpoch;
+    expect(result['token_updated_at'], inInclusiveRange(before, after));
+    expect(
+      result['access_token_expires_at'],
+      inInclusiveRange(before + 3600000, after + 3600000),
+    );
     expect(
       result['api_url_address'],
       'https://api.oplist.org/123cloud/renewapi',
     );
+  });
+
+  test('123 导入已有绝对时间时不重新延长令牌有效期', () {
+    final result = parseOpenListAuthorization(
+      jsonEncode({
+        'AccessToken': 'access',
+        'RefreshToken': 'refresh',
+        'expires_in': 3600,
+        'token_updated_at': 1000,
+        'access_token_expires_at': 2000,
+      }),
+      driver: '123 Open',
+    );
+    expect(result['token_updated_at'], 1000);
+    expect(result['access_token_expires_at'], 2000);
+    expect(result.containsKey('expires_in'), isFalse);
+  });
+
+  test('123 手动更新仅在换令牌时更新授权时间，更换访问令牌清除旧有效期', () {
+    const previous = <String, dynamic>{
+      'AccessToken': 'old-access',
+      'RefreshToken': 'old-refresh',
+      'token_updated_at': 1000,
+      'access_token_expires_at': 2000,
+    };
+    final unchanged = buildOpenListAuthorization(
+      driver: '123 Open',
+      accessToken: 'old-access',
+      refreshToken: 'old-refresh',
+      previous: previous,
+    );
+    expect(unchanged['token_updated_at'], 1000);
+    expect(unchanged['access_token_expires_at'], 2000);
+    final refreshOnly = buildOpenListAuthorization(
+      driver: '123 Open',
+      accessToken: 'old-access',
+      refreshToken: 'new-refresh',
+      previous: previous,
+    );
+    expect(refreshOnly['token_updated_at'], greaterThan(1000));
+    expect(refreshOnly['access_token_expires_at'], 2000);
+    final replacement = buildOpenListAuthorization(
+      driver: '123 Open',
+      accessToken: 'new-access',
+      refreshToken: 'new-refresh',
+      previous: previous,
+    );
+    expect(replacement['token_updated_at'], greaterThan(1000));
+    expect(replacement['access_token_expires_at'], 0);
+    expect(previous['access_token_expires_at'], 2000);
   });
 
   test('拒绝非授权来源、端口、凭据、路径以及夸克伪回调', () {
