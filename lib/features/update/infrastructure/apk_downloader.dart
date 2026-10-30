@@ -16,6 +16,24 @@ class ApkDownloader {
   final Dio _dio;
   final Future<Directory> Function() _temporaryDirectory;
 
+  /// 更新成功后，按实际安装版本清理已安装或更旧的 APK，保留待安装版本。
+  Future<void> removeInstalledApks(String currentVersion) async {
+    final installed = AppVersion.tryParse(currentVersion);
+    if (installed == null) return;
+    final cache = await _temporaryDirectory();
+    final directory = Directory(p.join(cache.path, 'updates'));
+    if (!await directory.exists()) return;
+    final pattern = RegExp(r'^Reelva-(.+)-android-[a-zA-Z0-9_-]+\.apk$');
+    await for (final entity in directory.list(followLinks: false)) {
+      if (entity is! File) continue;
+      final match = pattern.firstMatch(p.basename(entity.path));
+      final version = match == null ? null : AppVersion.tryParse(match[1]!);
+      if (version != null && version.compareTo(installed) <= 0) {
+        await entity.delete();
+      }
+    }
+  }
+
   Future<File> download(
     ReleaseAsset asset, {
     required CancelToken cancelToken,

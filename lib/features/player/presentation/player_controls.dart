@@ -34,6 +34,7 @@ class PlayerControls extends StatefulWidget {
     this.onNextEpisode,
     this.onShowPlaylist,
     this.playlistAnchorKey,
+    this.onShowDanmaku,
   });
 
   final PlaybackSnapshot snapshot;
@@ -49,6 +50,7 @@ class PlayerControls extends StatefulWidget {
   final VoidCallback? onNextEpisode;
   final VoidCallback? onShowPlaylist;
   final GlobalKey? playlistAnchorKey;
+  final VoidCallback? onShowDanmaku;
 
   static const List<double> supportedRates = [0.5, 1.0, 1.25, 1.5, 2.0, 3.0];
 
@@ -175,7 +177,8 @@ class _PlayerControlsState extends State<PlayerControls> {
           final controls = _buildControls(
             context,
             constraints.maxWidth <
-                700 * MediaQuery.textScalerOf(context).scale(1),
+                (widget.onShowDanmaku == null ? 700 : 800) *
+                    MediaQuery.textScalerOf(context).scale(1),
           );
           return constraints.hasBoundedHeight
               ? SingleChildScrollView(child: controls)
@@ -551,6 +554,13 @@ class _PlayerControlsState extends State<PlayerControls> {
       runSpacing: ReelvaDesign.space4,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
+        if (widget.onShowDanmaku != null)
+          IconButton(
+            key: const Key('player_danmaku_button'),
+            tooltip: '弹幕',
+            icon: const Icon(Icons.comment_rounded),
+            onPressed: widget.onShowDanmaku,
+          ),
         _buildTrackMenu(
           context,
           menuKey: const Key('player_subtitle_track_button'),

@@ -128,4 +128,91 @@ void main() {
     final missing = AppRelease.fromJson(json, release.version);
     expect(missing.androidApk(['arm64-v8a', 'armeabi-v7a']), isNull);
   });
+
+  for (final status in [403, 429]) {
+    test('$status 时读取发布订阅，按标签选择新版本并提供发布页', () async {
+      final adapter = UpdateHttpAdapter((options) {
+        if (options.uri.host == 'api.github.com') {
+          return jsonResponse({
+            'message': 'API rate limit exceeded',
+          }, status: status);
+        }
+        return atomResponse([
+          '0.2.0-beta2',
+          '0.2.0-beta10',
+          'invalid',
+          '0.1.0',
+        ]);
+      });
+      final client = GithubReleaseClient(
+        dio: Dio()..httpClientAdapter = adapter,
+      );
+      addTearDown(client.close);
+      final release = (await client.findUpdate('0.2.0-beta1'))!;
+      expect(release.version.text, '0.2.0-beta10');
+      expect(
+        release.url.toString(),
+        'https://github.com/miludeshiji/Reelva/releases/tag/v0.2.0-beta10',
+      );
+      expect(release.notes, contains('GitHub 发布页面'));
+      expect(release.assets, isEmpty);
+      expect(adapter.requests, hasLength(2));
+      expect(
+        adapter.requests.last.uri.path,
+        '/miludeshiji/Reelva/releases.atom',
+      );
+      expect(adapter.requests.last.headers['Accept'], 'application/atom+xml');
+    });
+  }
+
+  test('限流后的正式版检查跳过 Beta，按数值选择最高正式版', () async {
+    final client = GithubReleaseClient(
+      dio: Dio()
+        ..httpClientAdapter = UpdateHttpAdapter((options) {
+          if (options.uri.host == 'api.github.com') {
+            return jsonResponse({}, status: 403);
+          }
+          return atomResponse(['0.3.0-beta1', '0.1.9', '0.1.10', 'invalid']);
+        }),
+    );
+    addTearDown(client.close);
+    expect((await client.findUpdate('0.1.0'))!.version.text, '0.1.10');
+  });
+
+  test('限流后的空订阅、同版本、旧版本和正式版遇到 Beta 均不提示更新', () async {
+    for (final versions in <List<String>>[
+      [],
+      ['0.1.0', '0.0.9', '0.2.0-beta1', 'invalid'],
+    ]) {
+      final client = GithubReleaseClient(
+        dio: Dio()
+          ..httpClientAdapter = UpdateHttpAdapter((options) {
+            return options.uri.host == 'api.github.com'
+                ? jsonResponse({}, status: 403)
+                : atomResponse(versions);
+          }),
+      );
+      addTearDown(client.close);
+      expect(await client.findUpdate('0.1.0'), isNull);
+    }
+  });
+
+  test('发布订阅请求失败或内容无效时仍报告失败', () async {
+    for (final response in [
+      jsonResponse({}, status: 503),
+      ResponseBody.fromString('<html>访问受限</html>', 200),
+      ResponseBody.fromString('<feed', 200),
+    ]) {
+      final client = GithubReleaseClient(
+        dio: Dio()
+          ..httpClientAdapter = UpdateHttpAdapter((options) {
+            return options.uri.host == 'api.github.com'
+                ? jsonResponse({}, status: 403)
+                : response;
+          }),
+      );
+      addTearDown(client.close);
+      await expectLater(client.findUpdate('0.1.0'), throwsException);
+    }
+  });
 }

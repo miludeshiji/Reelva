@@ -12,6 +12,10 @@ import '../../../app/theme/reelva_theme.dart';
 import '../../../app/desktop_window_controller.dart';
 import '../../../core/logging/app_logger.dart';
 import '../../../shared/widgets/glass_widgets.dart';
+import '../../danmaku/application/danmaku_providers.dart';
+import '../../danmaku/domain/danmaku.dart';
+import '../../danmaku/presentation/danmaku_layer.dart';
+import '../../danmaku/presentation/danmaku_panel.dart';
 import '../../sources/application/source_providers.dart';
 import '../application/playback_session.dart';
 import '../application/player_providers.dart';
@@ -106,6 +110,28 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     return focusContext != null &&
         (focusContext.widget is EditableText ||
             focusContext.findAncestorWidgetOfExactType<EditableText>() != null);
+  }
+
+  Future<void> _showDanmaku() async {
+    final resource = _currentResource;
+    if (resource == null || _isExiting) return;
+    _controlsInteractions++;
+    _showControls();
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => DanmakuPanel(
+          controller: ref.read(danmakuControllerProvider),
+          initialKeyword: DanmakuQuery.fromResource(resource).title,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        if (_controlsInteractions > 0) _controlsInteractions--;
+        _focusNode.requestFocus();
+        _scheduleControlsHide();
+      }
+    }
   }
 
   void _syncWindowsIme() {
@@ -1656,6 +1682,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               : null,
           onShowPlaylist: _currentResource == null ? null : _showPlaylist,
           playlistAnchorKey: _playlistAnchorKey,
+          onShowDanmaku: _currentResource == null ? null : _showDanmaku,
           onInteractionChanged: (interacting) {
             if (!mounted) return;
             if (interacting) {
@@ -1839,6 +1866,12 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                         ),
                       ),
                     ),
+                  ),
+                ),
+                Positioned.fill(
+                  child: DanmakuLayer(
+                    resource: _isExiting ? null : _currentResource,
+                    snapshot: snapshot,
                   ),
                 ),
                 if (idle)

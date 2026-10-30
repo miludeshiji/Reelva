@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -35,6 +36,50 @@ void main() {
       buildSignature: '',
     );
   });
+
+  testWidgets(
+    '关闭自动检查时 Android 启动仍按实际安装版本清理 APK，Windows 不清理',
+    (tester) async {
+      final downloader = _CleanupRecordingDownloader();
+      addTearDown(downloader.close);
+      final adapter = UpdateHttpAdapter((_) => jsonResponse({}));
+      final client = GithubReleaseClient(
+        dio: Dio()..httpClientAdapter = adapter,
+      );
+      addTearDown(client.close);
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (_, _) => const Scaffold(body: Text('首页')),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            apkDownloaderProvider.overrideWithValue(downloader),
+            githubReleaseClientProvider.overrideWithValue(client),
+          ],
+          child: MaterialApp.router(
+            routerConfig: router,
+            builder: (context, child) =>
+                UpdatePromptHost(router: router, child: child!),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final android = defaultTargetPlatform == TargetPlatform.android;
+      expect(downloader.versions, android ? ['0.1.0'] : isEmpty);
+      expect(adapter.requests, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets('手动检查显示新版本说明，Windows 按钮打开对应附件和版本页', (tester) async {
     final adapter = UpdateHttpAdapter(
@@ -147,6 +192,69 @@ void main() {
     );
     expect(attempt, 2);
   });
+
+  testWidgets(
+    '限流后仍能提示新版本，并打开对应发布页下载',
+    (tester) async {
+      final client = GithubReleaseClient(
+        dio: Dio()
+          ..httpClientAdapter = UpdateHttpAdapter((options) {
+            return options.uri.host == 'api.github.com'
+                ? jsonResponse({}, status: 403)
+                : atomResponse(['0.2.0']);
+          }),
+      );
+      addTearDown(client.close);
+      final opened = <Uri>[];
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (_, _) => const Scaffold(body: UpdateSettingsCard()),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            githubReleaseClientProvider.overrideWithValue(client),
+            openUpdateUrlProvider.overrideWithValue(
+              (uri) async => opened.add(uri),
+            ),
+            updateAbisProvider.overrideWith(
+              (ref) => throw StateError('无需识别架构'),
+            ),
+          ],
+          child: MaterialApp.router(
+            theme: ReelvaTheme.light,
+            routerConfig: router,
+            builder: (context, child) =>
+                UpdatePromptHost(router: router, child: child!),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('check_update_button')));
+      await tester.pumpAndSettle();
+      expect(find.text('0.1.0 → 0.2.0'), findsOneWidget);
+      expect(find.text('在 GitHub 查看并下载'), findsOneWidget);
+      expect(find.byKey(const Key('update_android_apk')), findsNothing);
+      expect(find.byKey(const Key('update_windows_installer')), findsNothing);
+      expect(find.byKey(const Key('update_windows_portable')), findsNothing);
+      await tester.tap(find.byKey(const Key('update_release_github')));
+      await tester.pumpAndSettle();
+      expect(
+        opened.single.toString(),
+        'https://github.com/miludeshiji/Reelva/releases/tag/v0.2.0',
+      );
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets('启动自动检查，播放期间延后至返回时提示且只弹一次', (tester) async {
     FlutterSecureStorage.setMockInitialValues({});
@@ -341,4 +449,13 @@ void main() {
     expect(adapter.requests, hasLength(1));
     expect(find.text('已打开系统安装界面'), findsOneWidget);
   }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+}
+
+class _CleanupRecordingDownloader extends ApkDownloader {
+  final versions = <String>[];
+
+  @override
+  Future<void> removeInstalledApks(String currentVersion) async {
+    versions.add(currentVersion);
+  }
 }

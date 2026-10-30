@@ -16,6 +16,9 @@ on:
         default: false
         description: '是否正式构建（Android 正式签名，打包发布版）'
     secrets:
+      DANDANPLAY_APP_SECRET:
+        required: false
+        description: '弹弹play应用密钥；未配置时仍可使用哔哩哔哩来源'
       ANDROID_KEYSTORE:
         required: false
         description: 'Base64 编码的 Android Keystore 文件内容'
@@ -43,6 +46,7 @@ on:
       - 'android/**'
       - 'windows/**'
       - 'native/openlist_core/**'
+      - 'third_party/**'
       - 'pubspec.yaml'
       - 'pubspec.lock'
       - '.fvmrc'
@@ -172,8 +176,11 @@ jobs:
             exit 1
           fi
       - name: 构建 Android APK
+        env:
+          DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
         run: |
-          flutter build apk --${{ needs.metadata.outputs.mode }} --split-per-abi --target-platform android-arm,android-arm64,android-x64 --no-pub
+          python3 .github/scripts/write_danmaku_defines.py
+          flutter build apk --${{ needs.metadata.outputs.mode }} --split-per-abi --target-platform android-arm,android-arm64,android-x64 --no-pub --dart-define-from-file=.dart_tool/danmaku-defines.json
       - name: 清理 Android 签名凭据
         if: always()
         run: |
@@ -279,9 +286,18 @@ jobs:
           flutter pub get --enforce-lockfile
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: 构建 Windows 应用
+        env:
+          DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
         run: |
           $ErrorActionPreference = 'Stop'
-          flutter build windows --${{ needs.metadata.outputs.mode }} --no-pub
+          python .github/scripts/write_danmaku_defines.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          flutter build windows --${{ needs.metadata.outputs.mode }} --no-pub --dart-define-from-file=.dart_tool/danmaku-defines.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: 验证内封 PGS 字幕解码与渲染
+        run: |
+          $configName = if ("${{ needs.metadata.outputs.mode }}" -eq "release") { "Release" } else { "Debug" }
+          python .github/scripts/verify_mpv_subtitles.py "build/windows/x64/runner/$configName/libmpv-2.dll"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: 打包 Windows 产物
         run: |

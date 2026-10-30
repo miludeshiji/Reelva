@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -34,8 +35,21 @@ class _UpdatePromptHostState extends ConsumerState<UpdatePromptHost>
     WidgetsBinding.instance.addObserver(this);
     widget.router.routerDelegate.addListener(_schedulePrompt);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(_checkAutomatically());
+      if (!mounted) return;
+      unawaited(_removeInstalledApks());
+      unawaited(_checkAutomatically());
     });
+  }
+
+  Future<void> _removeInstalledApks() async {
+    if (defaultTargetPlatform != TargetPlatform.android) return;
+    try {
+      final info = await ref.read(packageInfoProvider.future);
+      if (!mounted) return;
+      await ref.read(apkDownloaderProvider).removeInstalledApks(info.version);
+    } catch (e, st) {
+      AppLogger.instance.warning('清理已安装更新包失败', error: e, stackTrace: st);
+    }
   }
 
   Future<void> _checkAutomatically() async {

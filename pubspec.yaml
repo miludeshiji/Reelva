@@ -32,6 +32,14 @@ dependencies:
   url_launcher: ^6.3.3
   xml: ^7.0.1
   dart_smb2: ^0.2.3
+  canvas_danmaku: 0.3.3
+  crypto: 3.0.7
+
+dependency_overrides:
+  media_kit_libs_android_video:
+    path: third_party/media_kit_libs_android_video
+  media_kit_libs_windows_video:
+    path: third_party/media_kit_libs_windows_video
 
 dev_dependencies:
   flutter_test:

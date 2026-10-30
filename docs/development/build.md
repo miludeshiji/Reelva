@@ -8,6 +8,7 @@ Reelva 的开发环境、日常检查与本地运行说明。发布签名与 CI 
 - 应用依赖版本由 `pubspec.lock` 锁定；依赖解析沿用既有腾讯云 Pub 镜像配置（CI 中为 `PUB_HOSTED_URL`），下载源与校验摘要记录于 `pubspec.lock`。
 - 静态检查使用 `flutter_lints`，并启用严格类型转换、类型推断和泛型检查。
 - Windows 构建：需要 Visual Studio 桌面 C++ 工具链（MSVC x64）；`flutter_secure_storage_windows` 还要求安装 C++ ATL 组件。
+- Windows / Android 的 media_kit 原生库提供插件固定在 `third_party/`，通过 `dependency_overrides` 使用支持 PGS 位图字幕的完整 libmpv，版本及 SHA-256 见对应 CMake / Gradle 文件；构建时自动获取，不修改 Pub 缓存。Windows 构建流程另用无界面 PGS 样例检查解码与合成，详见 [third_party/README.md](../../third_party/README.md)。
 - Android 构建：需要 Android SDK、JDK 17 和已接受的 SDK 许可证；许可证需由开发者自行审阅并接受，可通过 `fvm flutter doctor -v` 查看环境状态。
 - Android 工程使用 Flutter 3.47.7 模板的 AGP 9.1.0、Gradle 9.3.1 和 Kotlin 2.4.0，Java 目标版本为 17；Windows 工程使用 CMake 3.14+ 和 C++17。
 

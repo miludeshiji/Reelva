@@ -48,6 +48,7 @@ jobs:
       build_windows: true
       release: true
     secrets:
+      DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
       ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
       ANDROID_KEY_PROPERTIES: ${{ secrets.ANDROID_KEY_PROPERTIES }}
 
