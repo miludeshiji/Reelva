@@ -93,7 +93,7 @@ Android、Windows 构建和标签发布均会通过 `--dart-define-from-file` �
    - 正式版本：`X.Y.Z+<正整数>`（如 `0.1.0+1`），Git Tag 必须为 `vX.Y.Z`（如 `v0.1.0`）。
    - Beta 版本：`X.Y.Z-beta<N>+<正整数>`（`N ≥ 1`，如 `0.1.0-beta1+1`），Git Tag 必须为 `vX.Y.Z-beta<N>`。
 2. **CHANGELOG.md**：必须建立 `## v<版本名>` 章节并包含非空更新日志。
-   - **Beta 版本**：发布工具会在 Release 日志正文顶部自动添加两行警告（`## **注意**` 与 `**beta版可能存在大量bug，无必要请勿下载**`），无需在 CHANGELOG 中手动编写。
+   - **Beta 版本**：发布工具会在 Release 日志正文顶部自动添加两行警告（`## **注意**` 与 `**beta版可能存在大量bug，下载前做好备份**`），无需在 CHANGELOG 中手动编写。
    - **正式版本严禁**在 CHANGELOG 中带有上述 Beta 警告。
 3. **README.md 下载链接（仅正式版要求）**：正式版本发布前，必须在 README.md 中提供当前版本全部 5 个产物的完整 GitHub Release 下载链接，形如：
 

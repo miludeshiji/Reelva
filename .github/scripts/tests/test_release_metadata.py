@@ -111,7 +111,7 @@ class TestReleaseMetadata(unittest.TestCase):
 
         expected_prefix = (
             "## **注意**\n"
-            "**beta版可能存在大量bug，无必要请勿下载**\n\n"
+            "**beta版可能存在大量bug，下载前做好备份**\n\n"
         )
         notes_content = notes_out.read_text(encoding="utf-8")
         self.assertTrue(notes_content.startswith(expected_prefix))
@@ -222,7 +222,7 @@ class TestReleaseMetadata(unittest.TestCase):
         changelog = (
             "## v0.1.0\n\n"
             "## **注意**\n"
-            "**beta版可能存在大量bug，无必要请勿下载**\n\n"
+            "**beta版可能存在大量bug，下载前做好备份**\n\n"
             "- 正式发布日志\n"
         )
         readme = (
