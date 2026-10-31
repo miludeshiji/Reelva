@@ -12,7 +12,7 @@ import re
 import sys
 
 BETA_WARNING_LINE1 = "## **注意**"
-BETA_WARNING_LINE2 = "**beta版可能存在大量bug，无必要请勿下载**"
+BETA_WARNING_LINE2 = "**beta版可能存在大量bug，下载前做好备份**"
 
 FORMAL_VERSION_RE = re.compile(r"^(\d+\.\d+\.\d+)\+([1-9]\d*)$")
 BETA_VERSION_RE = re.compile(r"^(\d+\.\d+\.\d+-beta[1-9]\d*)\+([1-9]\d*)$")
