@@ -2,9 +2,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../player/domain/playback_resource.dart';
 import '../../sources/application/source_providers.dart';
+import '../../sources/domain/media_sidecar_adapter.dart';
 import '../domain/danmaku.dart';
 import '../infrastructure/danmaku_api.dart';
 import '../infrastructure/danmaku_store.dart';
+import '../infrastructure/local_danmaku_loader.dart';
 import 'danmaku_controller.dart';
 
 final danmakuStoreProvider = Provider<DanmakuStore>((ref) => DanmakuStore());
@@ -18,9 +20,28 @@ final danmakuApiProvider = Provider.autoDispose<DanmakuApi>((ref) {
 final danmakuControllerProvider = Provider.autoDispose<DanmakuController>((
   ref,
 ) {
+  const localFiles = LocalDanmakuLoader();
   final controller = DanmakuController(
     api: ref.watch(danmakuApiProvider),
     store: ref.watch(danmakuStoreProvider),
+    localPicker: localFiles.pick,
+    localLoader: (resource) async {
+      if (resource.uri.scheme == 'file' || resource.libraryFileId == null) {
+        return localFiles.loadSibling(resource);
+      }
+      final repository = ref.read(mediaLibraryRepositoryProvider);
+      final video = await repository.getVideo(resource.libraryFileId!);
+      if (video == null) return null;
+      final source = await repository.getSource(video.sourceId);
+      final adapter = ref.read(sourceAdaptersProvider)[source.kind];
+      if (!source.enabled || adapter is! MediaSidecarAdapter) return null;
+      return localFiles.loadFromSource(
+        adapter: adapter,
+        source: source,
+        videoId: video.externalId,
+        fileName: resource.fileName,
+      );
+    },
     queryLoader: (PlaybackResource resource) async {
       final fallback = DanmakuQuery.fromResource(resource);
       if (resource.libraryFileId == null) return fallback;

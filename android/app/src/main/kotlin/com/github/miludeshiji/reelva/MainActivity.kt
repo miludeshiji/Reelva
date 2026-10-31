@@ -130,6 +130,8 @@ class MainActivity : FlutterActivity() {
         when (call.method) {
             "pickVideo" -> handlePickDocument(result, "video/*")
             "pickSubtitle" -> handlePickDocument(result, "*/*")
+            "pickDanmaku" -> handlePickDocument(result, "*/*")
+            "readDocument" -> handleReadDocument(call, result)
             "openRead" -> handleOpenRead(call, result)
             "close" -> handleClose(call, result)
             "pickDirectory" -> handlePickDirectory(call, result)
@@ -659,6 +661,50 @@ class MainActivity : FlutterActivity() {
     }
 
 
+    private fun readDocumentBytes(uri: Uri, limit: Int): ByteArray =
+        contentResolver.openInputStream(uri).use { input ->
+            checkNotNull(input)
+            val output = ByteArrayOutputStream()
+            val buffer = ByteArray(65536)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                require(output.size() + count <= limit) { "File too large" }
+                output.write(buffer, 0, count)
+            }
+            output.toByteArray()
+        }
+
+    private fun handleReadDocument(call: MethodCall, result: MethodChannel.Result) {
+        val uriString = call.argument<String>("uri")
+        if (uriString.isNullOrBlank()) {
+            result.error("INVALID_ARGUMENT", "Document URI is required", null)
+            return
+        }
+        val uri = Uri.parse(uriString)
+        if (uri.scheme != "content") {
+            result.error("INVALID_SCHEME", "Only content URI is supported", null)
+            return
+        }
+        val generation = lifecycleGeneration
+        val limit = (call.argument<Number>("maxBytes")?.toInt() ?: 2097152).coerceIn(1, 16777216)
+        ioExecutor.execute {
+            try {
+                val bytes = readDocumentBytes(uri, limit)
+                mainHandler.post {
+                    if (lifecycleGeneration == generation && !isDestroyed && !isFinishing) result.success(bytes)
+                    else result.error("ACTIVITY_DESTROYED", "Activity detached", null)
+                }
+            } catch (e: SecurityException) {
+                mainHandler.post { result.error("SECURITY_ERROR", "Document read permission is required", null) }
+            } catch (e: IllegalArgumentException) {
+                mainHandler.post { result.error("FILE_TOO_LARGE", "Document exceeds size limit", null) }
+            } catch (e: Exception) {
+                mainHandler.post { result.error("IO_ERROR", "Unable to read document", null) }
+            }
+        }
+    }
+
     private fun handleSidecar(call: MethodCall, result: MethodChannel.Result, write: Boolean) {
         val treeString = call.argument<String>("treeUri")
         val targetString = call.argument<String>(if (write) "directoryUri" else "uri")
@@ -677,18 +723,7 @@ class MainActivity : FlutterActivity() {
                 val scoped = DocumentsContract.buildDocumentUriUsingTree(tree, documentId)
                 val value: Any? = if (!write) {
                     val limit = (call.argument<Number>("maxBytes")?.toInt() ?: 2097152).coerceIn(1, 16777216)
-                    contentResolver.openInputStream(scoped).use { input ->
-                        requireNotNull(input)
-                        val output = ByteArrayOutputStream()
-                        val buffer = ByteArray(65536)
-                        while (true) {
-                            val count = input.read(buffer)
-                            if (count < 0) break
-                            require(output.size() + count <= limit) { "File too large" }
-                            output.write(buffer, 0, count)
-                        }
-                        output.toByteArray()
-                    }
+                    readDocumentBytes(scoped, limit)
                 } else {
                     if (!contentResolver.persistedUriPermissions.any {
                         it.uri == tree && it.isWritePermission

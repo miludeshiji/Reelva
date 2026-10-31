@@ -135,12 +135,21 @@ void main() {
       api: api,
       store: store,
       queryLoader: (_) async => testDanmakuQuery,
+      localPicker: () async => const LocalDanmakuFile(
+        fileName: '20261025-021023-127-随便聊聊.xml',
+        comments: [DanmakuComment(timeMs: 72063, text: '录播弹幕')],
+      ),
     );
     addTearDown(() {
       controller.dispose();
       api.dispose();
     });
-    await controller.open(null);
+    await controller.open(
+      PlaybackResource(
+        uri: Uri.parse('https://example.test/recording.flv'),
+        displayName: 'recording.flv',
+      ),
+    );
     await tester.pumpWidget(
       MaterialApp(
         builder: (context, child) => MediaQuery(
@@ -154,9 +163,12 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('显示弹幕'));
+    await tester.tap(find.byKey(const Key('danmaku_pick_local')));
     await tester.pumpAndSettle();
     expect(controller.settings.enabled, isTrue);
+    expect(find.text('已加载 1 条本地弹幕'), findsOneWidget);
+    expect(find.byKey(const Key('danmaku_local_file')), findsOneWidget);
+    expect(api.searchCount, 0);
     await tester.tap(find.text('显示与时间设置'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);

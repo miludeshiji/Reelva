@@ -13,19 +13,26 @@ class DanmakuController extends ChangeNotifier {
     required this.api,
     required this.store,
     required this.queryLoader,
+    this.localLoader,
+    this.localPicker,
   });
 
   final DanmakuApi api;
   final DanmakuStore store;
   final Future<DanmakuQuery> Function(PlaybackResource) queryLoader;
+  final Future<LocalDanmakuFile?> Function(PlaybackResource)? localLoader;
+  final Future<LocalDanmakuFile?> Function()? localPicker;
   DanmakuSettings settings = const DanmakuSettings();
   DanmakuQuery? query;
   DanmakuEpisode? selected;
+  String? localFileName;
   List<DanmakuComment> comments = const [];
   String message = '开启后自动搜索并挂载弹幕';
   bool loading = false;
+  bool pickingLocal = false;
   double offsetSeconds = 0;
   PlaybackResource? _resource;
+  LocalDanmakuFile? _manualLocal;
   Future<void>? _initialization;
   Future<void> _saveQueue = Future<void>.value();
   CancelToken? _cancel;
@@ -49,9 +56,11 @@ class DanmakuController extends ChangeNotifier {
     final generation = ++_generation;
     _cancel?.cancel();
     _cancel = CancelToken();
+    if (_resource != resource) _manualLocal = null;
     _resource = resource;
     query = null;
     selected = null;
+    localFileName = null;
     comments = const [];
     offsetSeconds = 0;
     loading = false;
@@ -67,15 +76,26 @@ class DanmakuController extends ChangeNotifier {
     message = '正在匹配弹幕';
     _changed();
     try {
+      final fallback = DanmakuQuery.fromResource(resource);
+      query = fallback;
+      await _readOffset(fallback, generation);
+      if (!_current(generation)) return;
+      final local = _manualLocal ?? await localLoader?.call(resource);
+      if (!_current(generation)) return;
+      if (local != null) {
+        _applyLocal(local);
+        return;
+      }
       final resolved = await queryLoader(resource);
       if (!_current(generation)) return;
       query = resolved;
+      if (resolved.versionKey != fallback.versionKey) {
+        await _readOffset(resolved, generation);
+        if (!_current(generation)) return;
+      }
       DanmakuEpisode? binding;
       try {
         binding = await store.readBinding(resolved.contentKey);
-        final offset = await store.readOffset(resolved.versionKey);
-        if (!_current(generation)) return;
-        offsetSeconds = offset;
       } catch (_) {
         /* 存储读取失败时仍可搜索在线弹幕。 */
       }
@@ -92,6 +112,70 @@ class DanmakuController extends ChangeNotifier {
         loading = false;
         _changed();
       }
+    }
+  }
+
+  Future<void> _readOffset(DanmakuQuery current, int generation) async {
+    try {
+      final offset = await store.readOffset(current.versionKey);
+      if (_current(generation)) offsetSeconds = offset;
+    } catch (_) {
+      /* 偏移读取失败不影响弹幕加载。 */
+    }
+  }
+
+  void _applyLocal(LocalDanmakuFile file) {
+    selected = null;
+    localFileName = file.fileName;
+    comments = List.unmodifiable(file.comments);
+    message = comments.isEmpty
+        ? '此文件没有支持的普通弹幕'
+        : '已加载 ${comments.length} 条本地弹幕';
+    _changed();
+  }
+
+  Future<void> pickLocal() async {
+    final resource = _resource;
+    final picker = localPicker;
+    if (resource == null || picker == null || pickingLocal || _disposed) return;
+    final generation = ++_generation;
+    _cancel?.cancel();
+    final previousMessage = loading ? '请选择弹幕来源或重新自动匹配' : message;
+    pickingLocal = true;
+    loading = true;
+    message = '正在加载本地弹幕';
+    _changed();
+    try {
+      await _initialize();
+      if (!_current(generation)) return;
+      final file = await picker();
+      if (!_current(generation)) return;
+      if (file == null) {
+        message = previousMessage;
+        return;
+      }
+      if (!settings.enabled) {
+        final next = settings.copyWith(enabled: true);
+        await store.saveSettings(next);
+        if (!_current(generation)) return;
+        settings = next;
+      }
+      if (query == null) {
+        final fallback = DanmakuQuery.fromResource(resource);
+        query = fallback;
+        await _readOffset(fallback, generation);
+        if (!_current(generation)) return;
+      }
+      _manualLocal = file;
+      _applyLocal(file);
+    } catch (error) {
+      if (_current(generation)) message = _error(error);
+    } finally {
+      pickingLocal = false;
+      if (_current(generation)) {
+        loading = false;
+      }
+      _changed();
     }
   }
 
@@ -179,7 +263,7 @@ class DanmakuController extends ChangeNotifier {
         settings = settings.copyWith(enabled: true);
         await store.saveSettings(settings);
       }
-      if (query == null && _resource != null) {
+      if (_resource != null) {
         final resolved = await queryLoader(_resource!);
         if (!_current(generation)) return;
         query = resolved;
@@ -207,6 +291,8 @@ class DanmakuController extends ChangeNotifier {
     if (!_current(generation)) return;
     comments = List.unmodifiable(result);
     selected = episode;
+    localFileName = null;
+    _manualLocal = null;
     message = result.isEmpty ? '此来源暂无弹幕，可搜索其他来源' : '已加载 ${result.length} 条弹幕';
     _changed();
     if (manual && query != null) {
@@ -219,6 +305,7 @@ class DanmakuController extends ChangeNotifier {
   }
 
   Future<void> retryAutomatic() async {
+    _manualLocal = null;
     final current = query;
     if (current != null) {
       try {

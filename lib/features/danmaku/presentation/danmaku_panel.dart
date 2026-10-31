@@ -317,7 +317,7 @@ class _DanmakuPanelState extends State<DanmakuPanel> {
                                 key: const Key('danmaku_enabled'),
                                 contentPadding: EdgeInsets.zero,
                                 title: const Text('显示弹幕'),
-                                subtitle: const Text('开启后自动为播放的视频搜索弹幕'),
+                                subtitle: const Text('开启后优先加载同目录弹幕，否则在线匹配'),
                                 value: controller.settings.enabled,
                                 onChanged: (value) => controller.updateSettings(
                                   controller.settings.copyWith(enabled: value),
@@ -329,6 +329,17 @@ class _DanmakuPanelState extends State<DanmakuPanel> {
                                 controller.message,
                                 key: const Key('danmaku_status'),
                               ),
+                              if (controller.localFileName != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 8),
+                                  child: Text(
+                                    '本地弹幕 · ${controller.localFileName}',
+                                    key: const Key('danmaku_local_file'),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall,
+                                  ),
+                                ),
                               if (controller.selected != null)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 8),
@@ -339,6 +350,19 @@ class _DanmakuPanelState extends State<DanmakuPanel> {
                                         .bodySmall,
                                   ),
                                 ),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: TextButton.icon(
+                                  key: const Key('danmaku_pick_local'),
+                                  onPressed:
+                                      controller.localPicker == null ||
+                                          controller.pickingLocal
+                                      ? null
+                                      : controller.pickLocal,
+                                  icon: const Icon(Icons.file_open_outlined),
+                                  label: const Text('选择本地弹幕'),
+                                ),
+                              ),
                               Align(
                                 alignment: Alignment.centerRight,
                                 child: TextButton.icon(

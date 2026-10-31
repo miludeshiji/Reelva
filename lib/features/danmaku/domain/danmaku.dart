@@ -25,6 +25,13 @@ class DanmakuComment {
   final bool bilibili;
 }
 
+class LocalDanmakuFile {
+  const LocalDanmakuFile({required this.fileName, required this.comments});
+
+  final String fileName;
+  final List<DanmakuComment> comments;
+}
+
 class DanmakuShow {
   const DanmakuShow({
     required this.source,

@@ -31,6 +31,23 @@ class AndroidMediaDocuments {
 
   Future<PlaybackResource?> pickSubtitle() => _pick('pickSubtitle');
 
+  Future<PlaybackResource?> pickDanmaku() => _pick('pickDanmaku');
+
+  Future<Uint8List> readBytes(Uri uri, {required int maxBytes}) async {
+    try {
+      final bytes = await channel.invokeMethod<Uint8List>('readDocument', {
+        'uri': uri.toString(),
+        'maxBytes': maxBytes,
+      });
+      if (bytes == null) {
+        throw const MediaDocumentException('读取媒体文档失败', code: 'IO_ERROR');
+      }
+      return bytes;
+    } on PlatformException catch (e) {
+      throw _mapPlatformException(e, defaultMessage: '读取媒体文档失败');
+    }
+  }
+
   Future<PlaybackResource?> _pick(String method) async {
     try {
       final result = await channel.invokeMapMethod<String, dynamic>(method);
@@ -95,6 +112,8 @@ class AndroidMediaDocuments {
         return MediaDocumentException('不支持的媒体资源格式', code: e.code);
       case 'IO_ERROR':
         return MediaDocumentException('读取媒体资源发生错误', code: e.code);
+      case 'FILE_TOO_LARGE':
+        return MediaDocumentException('媒体文档过大', code: e.code);
       case 'CLOSE_FAILED':
         return MediaDocumentException('关闭媒体描述符失败', code: e.code);
       default:
