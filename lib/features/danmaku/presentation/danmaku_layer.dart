@@ -73,21 +73,24 @@ class _DanmakuLayerState extends ConsumerState<DanmakuLayer>
     if (widget.resource != oldWidget.resource) _open();
     final next = widget.snapshot;
     final previous = oldWidget.snapshot;
-    if (next.position != previous.position ||
+    final positionChanged = next.position != previous.position;
+    if (positionChanged ||
         next.status != previous.status ||
         next.rate != previous.rate) {
+      final now = _clock.elapsedMilliseconds;
       final predicted =
           _positionMs +
           (previous.status == PlaybackStatus.playing
-              ? ((_clock.elapsedMilliseconds - _anchorMs) * previous.rate)
-                    .round()
+              ? ((now - _anchorMs) * previous.rate).round()
               : 0);
+      // 倍速和播放状态也会单独更新快照，只有进度变化才可能是跳转。
       final seek =
-          (next.position.inMilliseconds - predicted).abs() > 750 ||
-          next.position < previous.position;
+          positionChanged &&
+          ((next.position.inMilliseconds - predicted).abs() > 750 ||
+              next.position < previous.position);
       _positionMs = next.position.inMilliseconds;
-      _anchorMs = _clock.elapsedMilliseconds;
-      if (seek || next.rate != previous.rate) _reset();
+      _anchorMs = now;
+      if (seek) _reset();
       _syncAfterFrame();
     }
   }
@@ -130,7 +133,7 @@ class _DanmakuLayerState extends ConsumerState<DanmakuLayer>
           opacity: settings.opacity,
           area: settings.area,
           duration: settings.duration / rate,
-          staticDuration: 4 / rate,
+          staticDuration: 4,
           hideTop: !settings.showTop,
           hideBottom: !settings.showBottom,
           safeArea: true,
