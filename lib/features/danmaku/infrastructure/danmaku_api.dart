@@ -428,16 +428,24 @@ class DanmakuApi {
             ),
           );
         } else {
-          final response = await _dio.get<String>(
+          final response = await _dio.get<List<int>>(
             'https://comment.bilibili.com/${episode.id}.xml',
             cancelToken: cancelToken,
             options: Options(
-              responseType: ResponseType.plain,
+              responseType: ResponseType.bytes,
               headers: _bilibiliHeaders,
               followRedirects: false,
             ),
           );
-          body = response.data ?? '';
+          final bytes = response.data ?? const <int>[];
+          final encoding = response.headers.value(
+            HttpHeaders.contentEncodingHeader,
+          );
+          // B 站会返回 raw deflate，Dart 的 HttpClient 只自动解压 gzip。
+          final xmlBytes = encoding?.trim().toLowerCase() == 'deflate'
+              ? ZLibDecoder(raw: true).convert(bytes)
+              : bytes;
+          body = utf8.decode(xmlBytes, allowMalformed: true);
         }
       } catch (_) {
         if (cancelToken?.isCancelled ?? false) throw cancelToken!.cancelError!;
