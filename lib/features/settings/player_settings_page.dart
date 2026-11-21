@@ -105,14 +105,16 @@ class _PlayerSettingsPageState extends ConsumerState<PlayerSettingsPage> {
     required Map<T, String> options,
     required ValueChanged<T> onChanged,
     bool enabled = true,
+    String? helperText,
   }) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 8),
     child: DropdownButtonFormField<T>(
       key: ValueKey('$key:$value'),
       initialValue: value,
       isExpanded: true,
+      style: Theme.of(context).textTheme.bodyLarge,
       borderRadius: BorderRadius.circular(ReelvaDesign.radius),
-      decoration: InputDecoration(labelText: label),
+      decoration: InputDecoration(labelText: label, helperText: helperText),
       items: [
         for (final entry in options.entries)
           DropdownMenuItem(value: entry.key, child: Text(entry.value)),
@@ -158,6 +160,10 @@ class _PlayerSettingsPageState extends ConsumerState<PlayerSettingsPage> {
   @override
   Widget build(BuildContext context) {
     ref.watch(playerSettingsProvider);
+    final playbackRateOptions = {
+      for (final rate in PlayerSettings.playbackRates)
+        rate: '${rate % 1 == 0 ? rate.toInt() : rate}×',
+    };
     return SettingsSubpage(
       title: '播放器',
       trailing: GlassIconButton(
@@ -174,6 +180,31 @@ class _PlayerSettingsPageState extends ConsumerState<PlayerSettingsPage> {
           children: [
             const Text('修改后自动保存。'),
             const SizedBox(height: 16),
+            _section('播放', [
+              _choice(
+                key: 'player_setting_default_playback_rate',
+                label: '默认倍速',
+                helperText: '用于新进入的播放会话',
+                value: _settings.defaultPlaybackRate,
+                options: playbackRateOptions,
+                onChanged: (value) => _save(
+                  (settings) => settings.copyWith(defaultPlaybackRate: value),
+                ),
+              ),
+              _choice(
+                key: 'player_setting_hold_playback_rate',
+                label: '长按倍速',
+                helperText: '长按画面或右方向键时使用',
+                value: _settings.holdPlaybackRate,
+                options: {
+                  for (final entry in playbackRateOptions.entries)
+                    if (entry.key > 1) entry.key: entry.value,
+                },
+                onChanged: (value) => _save(
+                  (settings) => settings.copyWith(holdPlaybackRate: value),
+                ),
+              ),
+            ]),
             _section('视频', [
               _toggle(
                 key: 'player_setting_hwdec',

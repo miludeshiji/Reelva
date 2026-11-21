@@ -91,9 +91,9 @@ class _DanmakuPanelState extends State<DanmakuPanel> {
 
   Future<void> _select(DanmakuEpisode episode) async {
     setState(() => _applying = true);
-    await widget.controller.select(episode);
+    final loaded = await widget.controller.select(episode);
     if (!mounted) return;
-    if (widget.controller.selected?.cacheKey == episode.cacheKey) {
+    if (loaded) {
       Navigator.pop(context);
     } else {
       setState(() => _applying = false);
@@ -292,7 +292,7 @@ class _DanmakuPanelState extends State<DanmakuPanel> {
                     children: [
                       Expanded(
                         child: Text(
-                          '弹幕',
+                          '弹幕设置',
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
                       ),
@@ -317,10 +317,18 @@ class _DanmakuPanelState extends State<DanmakuPanel> {
                                 key: const Key('danmaku_enabled'),
                                 contentPadding: EdgeInsets.zero,
                                 title: const Text('显示弹幕'),
-                                subtitle: const Text('开启后优先加载同目录弹幕，否则在线匹配'),
                                 value: controller.settings.enabled,
-                                onChanged: (value) => controller.updateSettings(
-                                  controller.settings.copyWith(enabled: value),
+                                onChanged: (_) => controller.toggleEnabled(),
+                              ),
+                              _settings(controller),
+                              const Divider(),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
+                                child: Text(
+                                  '弹幕来源',
+                                  style: Theme.of(context).textTheme.titleSmall,
                                 ),
                               ),
                               if (controller.loading)
@@ -350,33 +358,39 @@ class _DanmakuPanelState extends State<DanmakuPanel> {
                                         .bodySmall,
                                   ),
                                 ),
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: TextButton.icon(
-                                  key: const Key('danmaku_pick_local'),
-                                  onPressed:
-                                      controller.localPicker == null ||
-                                          controller.pickingLocal
-                                      ? null
-                                      : controller.pickLocal,
-                                  icon: const Icon(Icons.file_open_outlined),
-                                  label: const Text('选择本地弹幕'),
-                                ),
+                              Wrap(
+                                spacing: 8,
+                                children: [
+                                  TextButton.icon(
+                                    key: const Key('danmaku_pick_local'),
+                                    onPressed:
+                                        controller.localPicker == null ||
+                                            controller.pickingLocal
+                                        ? null
+                                        : controller.pickLocal,
+                                    icon: const Icon(Icons.file_open_outlined),
+                                    label: const Text('选择本地弹幕'),
+                                  ),
+                                  TextButton.icon(
+                                    onPressed:
+                                        controller.settings.enabled &&
+                                            !controller.loading
+                                        ? controller.retryCurrentSource
+                                        : null,
+                                    icon: const Icon(Icons.refresh),
+                                    label: const Text('重试当前来源'),
+                                  ),
+                                  TextButton(
+                                    onPressed:
+                                        controller.settings.enabled &&
+                                            !controller.loading
+                                        ? controller.restoreAutomatic
+                                        : null,
+                                    child: const Text('恢复自动匹配'),
+                                  ),
+                                ],
                               ),
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: TextButton.icon(
-                                  onPressed:
-                                      controller.settings.enabled &&
-                                          !controller.loading
-                                      ? controller.retryAutomatic
-                                      : null,
-                                  icon: const Icon(Icons.refresh),
-                                  label: const Text('重新自动匹配'),
-                                ),
-                              ),
-                              _settings(controller),
-                              const Divider(),
+                              const SizedBox(height: 8),
                               SegmentedButton<DanmakuSource>(
                                 segments: [
                                   for (final source in DanmakuSource.values)

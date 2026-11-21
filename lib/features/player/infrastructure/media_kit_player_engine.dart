@@ -14,6 +14,7 @@ import '../domain/playback_statistics.dart';
 import '../domain/player_engine.dart';
 import '../domain/player_settings.dart';
 import '../domain/player_shortcuts.dart';
+import '../domain/subtitle_adjustment.dart';
 import '../domain/subtitle_files.dart';
 import 'android_media_documents.dart';
 import 'mpv_player_configuration.dart';
@@ -39,6 +40,9 @@ PlaybackSession createMediaKitSession({
     engine: engine,
     videoBuilder: (context) => engine.buildVideoView(context),
     maxVolume: engine._settings.maxVolume.toDouble(),
+    adjustSubtitle: engine._player.platform is NativePlayer
+        ? engine._adjustSubtitle
+        : null,
   );
 }
 
@@ -73,6 +77,7 @@ class MediaKitPlayerEngine implements PlayerEngine {
   int _openEpoch = 0;
   bool _disposed = false;
   bool _isOpening = false;
+  bool _appliedInitialRate = false;
   Duration? _pendingResumeAt;
   Duration? _recoverableErrorPosition;
   Future<void>? _disposeFuture;
@@ -546,6 +551,11 @@ class MediaKitPlayerEngine implements PlayerEngine {
         }
         // 先以 play: false 打开，等待底层就绪后再次确认 epoch
         await _player.open(media, play: false);
+        if (!_appliedInitialRate && !_disposed && epoch == _openEpoch) {
+          final rate = _settings.defaultPlaybackRate;
+          if (_player.state.rate != rate) await _player.setRate(rate);
+          _appliedInitialRate = true;
+        }
       } catch (e, st) {
         _isOpening = false;
         AppLogger.instance.error('打开底层媒体失败', error: e, stackTrace: st);
@@ -915,6 +925,67 @@ class MediaKitPlayerEngine implements PlayerEngine {
         AppLogger.instance.error('底层设置字幕轨道异常', error: e, stackTrace: st);
         _setPlaybackError(_safeErrorMessage(e));
       }
+    });
+  }
+
+  Future<SubtitleAdjustment?> _adjustSubtitle({
+    SubtitleAdjustmentAction? action,
+    int? mediaEpoch,
+  }) {
+    final epoch = _openEpoch;
+    return _enqueue(() async {
+      if (_isEventIgnored ||
+          _isOpening ||
+          epoch != _openEpoch ||
+          (mediaEpoch != null && mediaEpoch != epoch)) {
+        return null;
+      }
+      final native = _player.platform as NativePlayer;
+      final trackId = await native.getProperty('current-tracks/sub/id');
+      if (trackId.isEmpty || epoch != _openEpoch) return null;
+      final codec = await native.getProperty('current-tracks/sub/codec');
+      if (epoch != _openEpoch) return null;
+      final canChangeStyle = switch (codec) {
+        '' ||
+        'hdmv_pgs_subtitle' ||
+        'dvd_subtitle' ||
+        'dvb_subtitle' ||
+        'xsub' => false,
+        'ass' || 'ssa' => _settings.assStyleOverride == AssStyleOverride.force,
+        _ => true,
+      };
+
+      if (action == SubtitleAdjustmentAction.reset) {
+        for (final entry in mpvSubtitleAdjustmentDefaults.entries) {
+          await native.setProperty(entry.key, entry.value);
+        }
+      } else if (action != null && (!action.changesStyle || canChangeStyle)) {
+        await native.command(
+          mpvShortcutCommands(
+            action.shortcut!,
+            android: defaultTargetPlatform == TargetPlatform.android,
+          ).single,
+        );
+      }
+
+      Future<double> readValue(String property) async {
+        final value = double.tryParse(await native.getProperty(property));
+        if (value == null || !value.isFinite) {
+          throw const PlaybackResourceException('无法读取当前字幕校准值');
+        }
+        return value;
+      }
+
+      final delay = await readValue('sub-delay');
+      final scale = canChangeStyle ? await readValue('sub-scale') : null;
+      final position = canChangeStyle ? await readValue('sub-pos') : null;
+      if (epoch != _openEpoch) return null;
+      return SubtitleAdjustment(
+        mediaEpoch: epoch,
+        delay: delay,
+        scale: scale,
+        position: position,
+      );
     });
   }
 

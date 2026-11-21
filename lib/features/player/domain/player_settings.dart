@@ -34,6 +34,8 @@ enum AssStyleOverride {
 @immutable
 class PlayerSettings {
   const PlayerSettings({
+    this.defaultPlaybackRate = 1.0,
+    this.holdPlaybackRate = 3.0,
     this.hardwareDecoding = true,
     this.highQualityRendering = false,
     this.deband = false,
@@ -64,9 +66,12 @@ class PlayerSettings {
         : 'Noto Sans CJK SC',
   );
 
+  static const playbackRates = [0.5, 1.0, 1.25, 1.5, 2.0, 3.0];
   static const cacheSizesMb = [32, 64, 128, 256, 512, 1024];
   static const volumeLimits = [100, 150, 200];
 
+  final double defaultPlaybackRate;
+  final double holdPlaybackRate;
   final bool hardwareDecoding;
   final bool highQualityRendering;
   final bool deband;
@@ -88,6 +93,8 @@ class PlayerSettings {
   final PlayerInputSettings input;
 
   PlayerSettings copyWith({
+    double? defaultPlaybackRate,
+    double? holdPlaybackRate,
     bool? hardwareDecoding,
     bool? highQualityRendering,
     bool? deband,
@@ -108,6 +115,8 @@ class PlayerSettings {
     bool? blendSubtitles,
     PlayerInputSettings? input,
   }) => PlayerSettings(
+    defaultPlaybackRate: defaultPlaybackRate ?? this.defaultPlaybackRate,
+    holdPlaybackRate: holdPlaybackRate ?? this.holdPlaybackRate,
     hardwareDecoding: hardwareDecoding ?? this.hardwareDecoding,
     highQualityRendering: highQualityRendering ?? this.highQualityRendering,
     deband: deband ?? this.deband,
@@ -130,6 +139,8 @@ class PlayerSettings {
   );
 
   Map<String, Object> toJson() => {
+    'defaultPlaybackRate': defaultPlaybackRate,
+    'holdPlaybackRate': holdPlaybackRate,
     'hardwareDecoding': hardwareDecoding,
     'highQualityRendering': highQualityRendering,
     'deband': deband,
@@ -156,6 +167,8 @@ class PlayerSettings {
     required PlayerSettings defaults,
   }) {
     final settings = defaults.copyWith(
+      defaultPlaybackRate: (json['defaultPlaybackRate'] as num?)?.toDouble(),
+      holdPlaybackRate: (json['holdPlaybackRate'] as num?)?.toDouble(),
       hardwareDecoding: json['hardwareDecoding'] as bool?,
       highQualityRendering: json['highQualityRendering'] as bool?,
       deband: json['deband'] as bool?,
@@ -192,7 +205,10 @@ class PlayerSettings {
 
   void validate() {
     input.validate();
-    if (!cacheSizesMb.contains(cacheSizeMb) ||
+    if (!playbackRates.contains(defaultPlaybackRate) ||
+        !playbackRates.contains(holdPlaybackRate) ||
+        holdPlaybackRate <= 1 ||
+        !cacheSizesMb.contains(cacheSizeMb) ||
         !volumeLimits.contains(maxVolume) ||
         subtitleFont.trim().isEmpty ||
         subtitleFont.length > 128 ||

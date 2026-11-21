@@ -69,40 +69,40 @@ class AppShell extends StatelessWidget {
   Widget build(BuildContext context) {
     final isWide =
         MediaQuery.sizeOf(context).width >= ReelvaDesign.desktopBreakpoint;
+    final showBottomNavigationBar =
+        !isWide &&
+        const {
+          '/',
+          '/library',
+          '/sources',
+          '/settings',
+        }.contains(GoRouterState.of(context).uri.path);
 
-    if (isWide) {
-      return Scaffold(
-        backgroundColor: ReelvaDesign.background,
-        body: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            GlassSidebar(
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (isWide)
+          Material(
+            color: ReelvaDesign.background,
+            child: GlassSidebar(
               selectedIndex: navigationShell.currentIndex,
               onDestinationSelected: _onDestinationSelected,
             ),
-            Expanded(child: navigationShell),
-          ],
+          ),
+        Expanded(
+          child: Scaffold(
+            backgroundColor: ReelvaDesign.background,
+            extendBody: showBottomNavigationBar,
+            body: navigationShell,
+            bottomNavigationBar: showBottomNavigationBar
+                ? GlassBottomNavigationBar(
+                    selectedIndex: navigationShell.currentIndex,
+                    onDestinationSelected: _onDestinationSelected,
+                  )
+                : null,
+          ),
         ),
-      );
-    }
-
-    final showBottomNavigationBar = const {
-      '/',
-      '/library',
-      '/sources',
-      '/settings',
-    }.contains(GoRouterState.of(context).uri.path);
-
-    return Scaffold(
-      backgroundColor: ReelvaDesign.background,
-      extendBody: showBottomNavigationBar,
-      body: navigationShell,
-      bottomNavigationBar: showBottomNavigationBar
-          ? GlassBottomNavigationBar(
-              selectedIndex: navigationShell.currentIndex,
-              onDestinationSelected: _onDestinationSelected,
-            )
-          : null,
+      ],
     );
   }
 }

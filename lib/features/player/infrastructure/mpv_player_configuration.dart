@@ -5,6 +5,12 @@ import '../domain/player_settings.dart';
 
 const subtitleFontAsset = 'assets/fonts/NotoSansCJKsc-Regular.otf';
 
+const mpvSubtitleAdjustmentDefaults = {
+  'sub-delay': '0',
+  'sub-scale': '1',
+  'sub-pos': '100',
+};
+
 PlayerConfiguration mediaKitPlayerConfiguration(PlayerSettings settings) =>
     PlayerConfiguration(
       vo: 'null',
@@ -58,4 +64,5 @@ Map<String, String> mpvPlayerProperties(PlayerSettings settings) => {
   'sub-border-color': '#000000',
   'sub-ass-override': settings.assStyleOverride.mpvValue,
   'blend-subtitles': settings.blendSubtitles ? 'video' : 'no',
+  ...mpvSubtitleAdjustmentDefaults,
 };

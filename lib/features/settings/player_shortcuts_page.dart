@@ -87,6 +87,7 @@ class _PlayerShortcutsPageState extends ConsumerState<PlayerShortcutsPage> {
       key: ValueKey('$key:$value'),
       initialValue: value,
       isExpanded: true,
+      style: Theme.of(context).textTheme.bodyLarge,
       borderRadius: BorderRadius.circular(ReelvaDesign.radius),
       decoration: InputDecoration(labelText: label),
       items: [

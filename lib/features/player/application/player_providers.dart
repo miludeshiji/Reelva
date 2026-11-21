@@ -37,5 +37,6 @@ final playerSessionProvider = Provider.autoDispose<PlaybackSession>((ref) {
     engine: progressEngine,
     videoBuilder: session.videoBuilder,
     maxVolume: session.maxVolume,
+    adjustSubtitle: session.adjustSubtitle,
   );
 });

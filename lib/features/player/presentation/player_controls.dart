@@ -3,9 +3,10 @@ import 'package:flutter/material.dart';
 
 import '../../../app/theme/reelva_theme.dart';
 import '../../../shared/widgets/glass_widgets.dart' show GlassPopupMenuItem;
-import 'player_selection_panel.dart';
 import '../domain/playback_snapshot.dart';
 import '../domain/player_engine.dart';
+import '../domain/player_settings.dart';
+import 'player_selection_panel.dart';
 
 /// 格式化时长为分:秒或时:分:秒。
 String formatDuration(Duration d) {
@@ -30,10 +31,12 @@ class PlayerControls extends StatefulWidget {
     this.maxVolume = 100,
     this.onPickLocalSubtitle,
     this.onPickSourceSubtitle,
+    this.onAdjustSubtitle,
     this.onPreviousEpisode,
     this.onNextEpisode,
     this.onShowPlaylist,
     this.playlistAnchorKey,
+    this.danmakuToggle,
     this.onShowDanmaku,
   });
 
@@ -46,13 +49,13 @@ class PlayerControls extends StatefulWidget {
   final double maxVolume;
   final VoidCallback? onPickLocalSubtitle;
   final VoidCallback? onPickSourceSubtitle;
+  final VoidCallback? onAdjustSubtitle;
   final VoidCallback? onPreviousEpisode;
   final VoidCallback? onNextEpisode;
   final VoidCallback? onShowPlaylist;
   final GlobalKey? playlistAnchorKey;
+  final Widget? danmakuToggle;
   final VoidCallback? onShowDanmaku;
-
-  static const List<double> supportedRates = [0.5, 1.0, 1.25, 1.5, 2.0, 3.0];
 
   @override
   State<PlayerControls> createState() => _PlayerControlsState();
@@ -348,8 +351,11 @@ class _PlayerControlsState extends State<PlayerControls> {
                   child: StreamBuilder<PlaybackSnapshot>(
                     stream: engine.snapshots,
                     initialData: engine.snapshot,
-                    builder: (context, state) =>
-                        _buildSettings(context, state.data ?? snapshot),
+                    builder: (context, state) => _buildSettings(
+                      context,
+                      state.data ?? snapshot,
+                      inBottomSheet: true,
+                    ),
                   ),
                 ),
               ),
@@ -420,9 +426,10 @@ class _PlayerControlsState extends State<PlayerControls> {
                 ),
               if (compact) ...[
                 Center(child: transport),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
+                Wrap(
+                  alignment: WrapAlignment.end,
                   children: [
+                    if (widget.danmakuToggle != null) widget.danmakuToggle!,
                     more,
                     if (!mobile) volume,
                     if (!mobile) fullscreen,
@@ -435,7 +442,12 @@ class _PlayerControlsState extends State<PlayerControls> {
                   children: [
                     Row(
                       children: [
-                        const Spacer(),
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: widget.danmakuToggle,
+                          ),
+                        ),
                         SizedBox(width: mobile ? 224 : 136),
                         Expanded(
                           child: Row(
@@ -546,9 +558,14 @@ class _PlayerControlsState extends State<PlayerControls> {
     );
   }
 
-  Widget _buildSettings(BuildContext context, PlaybackSnapshot snapshot) {
+  Widget _buildSettings(
+    BuildContext context,
+    PlaybackSnapshot snapshot, {
+    bool inBottomSheet = false,
+  }) {
     final theme = Theme.of(context);
     final engine = widget.engine;
+    final adjustSubtitle = widget.onAdjustSubtitle;
     return Wrap(
       spacing: ReelvaDesign.space4,
       runSpacing: ReelvaDesign.space4,
@@ -557,8 +574,8 @@ class _PlayerControlsState extends State<PlayerControls> {
         if (widget.onShowDanmaku != null)
           IconButton(
             key: const Key('player_danmaku_button'),
-            tooltip: '弹幕',
-            icon: const Icon(Icons.comment_rounded),
+            tooltip: '弹幕设置',
+            icon: const Icon(Icons.tune_rounded),
             onPressed: widget.onShowDanmaku,
           ),
         _buildTrackMenu(
@@ -575,6 +592,18 @@ class _PlayerControlsState extends State<PlayerControls> {
               '__local_subtitle': ('选择本地字幕', widget.onPickLocalSubtitle!),
             if (widget.onPickSourceSubtitle != null)
               '__source_subtitle': ('选择媒体源字幕', widget.onPickSourceSubtitle!),
+            if (adjustSubtitle != null)
+              '__adjust_subtitle': (
+                '字幕校准',
+                () {
+                  if (inBottomSheet &&
+                      context.mounted &&
+                      ModalRoute.of(context)?.isCurrent == true) {
+                    Navigator.pop(context);
+                  }
+                  adjustSubtitle();
+                },
+              ),
           },
         ),
         _buildTrackMenu(
@@ -596,7 +625,7 @@ class _PlayerControlsState extends State<PlayerControls> {
             widget.onInteractionChanged?.call(false);
             engine.setRate(rate);
           },
-          itemBuilder: (context) => PlayerControls.supportedRates
+          itemBuilder: (context) => PlayerSettings.playbackRates
               .map(
                 (rate) => GlassPopupMenuItem<double>(
                   value: rate,

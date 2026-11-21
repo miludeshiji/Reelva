@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../domain/player_engine.dart';
+import '../domain/subtitle_adjustment.dart';
 
 /// 播放会话模型（Flutter 视图与纯领域播放引擎的组合）
 ///
@@ -11,6 +12,7 @@ class PlaybackSession {
     required this.engine,
     required this.videoBuilder,
     this.maxVolume = 100,
+    this.adjustSubtitle,
   });
 
   /// 领域播放引擎实例
@@ -20,4 +22,6 @@ class PlaybackSession {
   final WidgetBuilder videoBuilder;
 
   final double maxVolume;
+
+  final AdjustSubtitle? adjustSubtitle;
 }

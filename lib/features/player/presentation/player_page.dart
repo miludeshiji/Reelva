@@ -33,6 +33,7 @@ import 'network_address_dialog.dart';
 import 'player_controls.dart';
 import 'player_selection_panel.dart';
 import 'player_statistics_overlay.dart';
+import 'player_subtitle_adjustment_panel.dart';
 import 'source_subtitle_dialog.dart';
 
 enum _SpeedHoldSource { screen, keyboard }
@@ -66,6 +67,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   int _actionCounter = 0;
   final FocusNode _focusNode = FocusNode();
   late final PlayerInputSettings _input;
+  late final double _holdPlaybackRate;
   double _lastNonZeroVolume = 100;
   bool _isWindowClosing = false;
   final GlobalKey _controlsKey = GlobalKey();
@@ -552,7 +554,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       }
       if (_speedHolds.length > 1) return;
       _rateBeforeHold = engine.snapshot.rate;
-      rate = 3;
+      rate = _holdPlaybackRate;
     } else {
       if (!_speedHolds.remove(source) || _speedHolds.isNotEmpty) return;
       rate = _rateBeforeHold;
@@ -691,7 +693,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
   @override
   void initState() {
     super.initState();
-    _input = ref.read(playerSettingsProvider).input;
+    final settings = ref.read(playerSettingsProvider);
+    _input = settings.input;
+    _holdPlaybackRate = settings.holdPlaybackRate;
     WidgetsBinding.instance.addObserver(this);
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
       _desktopWindow = ref.read(desktopWindowControllerProvider);
@@ -1036,6 +1040,38 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
       _pickingSubtitle = false;
       if (_controlsInteractions > 0) _controlsInteractions--;
       if (mounted && !_isExiting) _showControls();
+    }
+  }
+
+  Future<void> _showSubtitleAdjustment() async {
+    final adjustSubtitle = _session?.adjustSubtitle;
+    final anchor = _playlistAnchorKey.currentContext;
+    if (adjustSubtitle == null ||
+        anchor == null ||
+        _isExiting ||
+        !_canOperateMedia) {
+      return;
+    }
+    _controlsInteractions++;
+    _showControls();
+    try {
+      await showDialog<void>(
+        context: anchor,
+        useSafeArea: false,
+        barrierColor: Colors.transparent,
+        builder: (context) => PlayerSelectionPanel(
+          anchorKey: _playlistAnchorKey,
+          panelKey: const Key('player_subtitle_adjustment_panel'),
+          title: '字幕校准',
+          child: PlayerSubtitleAdjustmentPanel(adjustSubtitle: adjustSubtitle),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        _controlsInteractions--;
+        _showControls();
+        _focusNode.requestFocus();
+      }
     }
   }
 
@@ -1641,6 +1677,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     final entries =
         _currentResource?.playlist ?? const <PlaybackPlaylistEntry>[];
     final index = _playlistIndex;
+    final hasResource = _currentResource != null;
     return MouseRegion(
       onEnter: (_) {
         _pointerOverControls = true;
@@ -1669,6 +1706,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
           onToggleFullscreen: () => _setFullscreen(!_isFullscreen),
           onPickLocalSubtitle: () => _pickSubtitle(fromSource: false),
           onPickSourceSubtitle: () => _pickSubtitle(fromSource: true),
+          onAdjustSubtitle: _canOperateMedia && _session!.adjustSubtitle != null
+              ? _showSubtitleAdjustment
+              : null,
           onPreviousEpisode:
               !_switchingEpisode && index > 0 && entries[index - 1].available
               ? () => _playEpisode(index - 1)
@@ -1680,9 +1720,30 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                   entries[index + 1].available
               ? () => _playEpisode(index + 1)
               : null,
-          onShowPlaylist: _currentResource == null ? null : _showPlaylist,
+          onShowPlaylist: hasResource ? _showPlaylist : null,
           playlistAnchorKey: _playlistAnchorKey,
-          onShowDanmaku: _currentResource == null ? null : _showDanmaku,
+          danmakuToggle: hasResource
+              ? Consumer(
+                  builder: (context, ref, _) {
+                    final danmaku = ref.watch(danmakuControllerProvider);
+                    return ListenableBuilder(
+                      listenable: danmaku,
+                      builder: (context, _) {
+                        final enabled = danmaku.settings.enabled;
+                        return IconButton(
+                          key: const Key('player_danmaku_toggle'),
+                          tooltip: enabled ? '关闭弹幕' : '开启弹幕',
+                          isSelected: enabled,
+                          icon: const Icon(Icons.speaker_notes_off_rounded),
+                          selectedIcon: const Icon(Icons.speaker_notes_rounded),
+                          onPressed: danmaku.toggleEnabled,
+                        );
+                      },
+                    );
+                  },
+                )
+              : null,
+          onShowDanmaku: hasResource ? _showDanmaku : null,
           onInteractionChanged: (interacting) {
             if (!mounted) return;
             if (interacting) {
@@ -1754,6 +1815,9 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
     required Widget? controls,
   }) {
     final idle = snapshot.status == PlaybackStatus.idle;
+    final holdRate = _holdPlaybackRate % 1 == 0
+        ? _holdPlaybackRate.toInt()
+        : _holdPlaybackRate;
     return SizedBox(
       key: const Key('player_video_region'),
       height: height,
@@ -1970,14 +2034,14 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
                           key: const Key('player_speed_hold_indicator'),
                           color: Colors.black.withValues(alpha: 0.65),
                           borderRadius: BorderRadius.circular(28),
-                          child: const Padding(
-                            padding: EdgeInsets.symmetric(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
                               horizontal: 18,
                               vertical: 10,
                             ),
                             child: Text(
-                              '3倍速中',
-                              style: TextStyle(
+                              '$holdRate倍速中',
+                              style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 16,
                               ),
