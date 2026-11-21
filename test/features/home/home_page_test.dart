@@ -15,6 +15,7 @@ import 'package:reelva/features/home/home_page.dart';
 import 'package:reelva/features/library/domain/library_work.dart';
 import 'package:reelva/features/library/infrastructure/media_library_repository.dart';
 import 'package:reelva/features/library/presentation/work_details_page.dart';
+import 'package:reelva/features/metadata/application/metadata_providers.dart';
 import 'package:reelva/features/player/application/player_providers.dart';
 import 'package:reelva/features/player/domain/playback_resource.dart';
 import 'package:reelva/features/player/presentation/player_page.dart';
@@ -26,6 +27,7 @@ import 'package:reelva/features/sources/domain/source_models.dart';
 import 'package:reelva/shared/widgets/poster_image.dart';
 import 'package:reelva/features/sources/sources_page.dart';
 import 'package:reelva/shared/widgets/empty_state_view.dart';
+import 'package:reelva/shared/widgets/glass_navigation.dart';
 
 import '../player/fake_player_engine.dart';
 
@@ -458,7 +460,7 @@ void main() {
     );
 
     testWidgets(
-      'Unavailable continue watching item routes to work details for recovery',
+      'Unavailable continue watching item opens details and returns home',
       (tester) async {
         final db = AppDatabase(executor: NativeDatabase.memory());
         final router = createRouter(initialLocation: '/');
@@ -488,12 +490,16 @@ void main() {
                 recentWorksProvider.overrideWith(
                   (ref) => Stream.value(const <LibraryWork>[]),
                 ),
+                workDetailsProvider.overrideWith(
+                  (ref, id) => Stream.value(null),
+                ),
               ],
             ),
           );
           await tester.pumpAndSettle();
 
           expect(find.text('文件离线'), findsOneWidget);
+          final homeState = tester.state(find.byType(HomePage));
 
           // Tap the card
           final cardFinder = find.byKey(const Key('continue_watching_card_99'));
@@ -506,6 +512,18 @@ void main() {
           // Routed to WorkDetailsPage with id 99
           expect(find.byType(WorkDetailsPage), findsOneWidget);
           expect(find.text('媒体文件当前不可用，已打开作品详情进行恢复'), findsOneWidget);
+
+          final missingWork = find.byKey(const Key('work_not_found_view'));
+          await tester.tap(
+            find.descendant(
+              of: missingWork,
+              matching: find.byType(FilledButton),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(tester.state(find.byType(HomePage)), same(homeState));
+          expect(find.byType(WorkDetailsPage), findsNothing);
         } finally {
           await _cleanUpTestWidgets(tester, router: router, db: db);
         }
@@ -596,10 +614,10 @@ void main() {
     );
 
     testWidgets(
-      'Recently added covers and badges enlarge on hover without moving text, and cards open details',
+      'Recently added cards animate on hover and preserve home when returning from details',
       (tester) async {
         tester.view.devicePixelRatio = 1;
-        tester.view.physicalSize = const Size(1200, 900);
+        tester.view.physicalSize = const Size(1200, 700);
         addTearDown(tester.view.resetDevicePixelRatio);
         addTearDown(tester.view.resetPhysicalSize);
         final db = AppDatabase(executor: NativeDatabase.memory());
@@ -632,6 +650,14 @@ void main() {
                   (ref) => Stream.value(const <ContinueWatchingEntry>[]),
                 ),
                 recentWorksProvider.overrideWith((ref) => Stream.value(works)),
+                workDetailsProvider.overrideWith(
+                  (ref, id) => Stream.value(
+                    WorkDetails(
+                      work: works.firstWhere((work) => work.id == id),
+                      versions: const [],
+                    ),
+                  ),
+                ),
               ],
             ),
           );
@@ -687,10 +713,30 @@ void main() {
           await mouse.removePointer();
 
           // 标题区域仍可打开作品详情。
+          final homeState = tester.state(find.byType(HomePage));
+          final scroll = Scrollable.of(
+            tester.element(title),
+            axis: Axis.vertical,
+          ).position;
+          final offset = scroll.pixels;
+          expect(offset, greaterThan(0));
           await tester.tap(title);
           await tester.pumpAndSettle();
 
           expect(find.byType(WorkDetailsPage), findsOneWidget);
+          expect(
+            tester
+                .widget<GlassSidebar>(find.byType(GlassSidebar))
+                .selectedIndex,
+            0,
+          );
+
+          await tester.tap(find.byKey(const Key('work_details_back_button')));
+          await tester.pumpAndSettle();
+
+          expect(tester.state(find.byType(HomePage)), same(homeState));
+          expect(scroll.pixels, closeTo(offset, 0.1));
+          expect(find.byType(WorkDetailsPage), findsNothing);
         } finally {
           await _cleanUpTestWidgets(tester, router: router, db: db);
         }

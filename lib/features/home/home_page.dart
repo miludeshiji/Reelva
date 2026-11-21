@@ -52,7 +52,7 @@ class _HomePageState extends ConsumerState<HomePage> {
           ),
         );
       }
-      context.go('/library/work/${entry.workId}');
+      _openWorkDetails(entry.workId);
       return;
     }
 
@@ -90,7 +90,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   void _openWorkDetails(int workId) {
-    context.go('/library/work/$workId');
+    context.push<void>('/library/work/$workId');
   }
 
   static String _formatDuration(Duration duration) {

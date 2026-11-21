@@ -41,6 +41,14 @@ class _WorkDetailsPageState extends ConsumerState<WorkDetailsPage> {
     if (oldWidget.workId != widget.workId) _selectedSeason = null;
   }
 
+  void _goBack() {
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/library');
+    }
+  }
+
   Future<void> _playVersion(LibraryVersion version) async {
     if (_resolvingFileId != null) return;
     if (!version.available) {
@@ -103,8 +111,8 @@ class _WorkDetailsPageState extends ConsumerState<WorkDetailsPage> {
     if (!mounted || canonicalId == null) return;
 
     if (canonicalId != widget.workId) {
-      // 合并导致工作 ID 迁移，路由自动切换至主作品
-      context.go('/library/work/$canonicalId');
+      // 合并后只更新当前详情，保留进入详情前的页面。
+      context.replace('/library/work/$canonicalId');
     }
   }
 
@@ -168,8 +176,8 @@ class _WorkDetailsPageState extends ConsumerState<WorkDetailsPage> {
                     icon: Icons.movie_filter_outlined,
                     title: '作品不存在或已被合并',
                     message: '该条目可能已被更新、合并到其他作品或被移除。',
-                    actionLabel: '返回影视库',
-                    onAction: () => context.go('/library'),
+                    actionLabel: '返回',
+                    onAction: _goBack,
                   ),
                 );
               }
@@ -292,8 +300,8 @@ class _WorkDetailsPageState extends ConsumerState<WorkDetailsPage> {
                 key: const Key('work_details_back_button'),
                 icon: Icons.arrow_back_rounded,
                 size: ReelvaDesign.pageHeaderButtonSize,
-                tooltip: '返回影视库',
-                onPressed: () => context.go('/library'),
+                tooltip: '返回',
+                onPressed: _goBack,
               ),
             ),
             const SizedBox(width: ReelvaDesign.space12),

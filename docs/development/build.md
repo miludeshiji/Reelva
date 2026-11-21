@@ -69,4 +69,4 @@ pip install resvg-py pillow
 python tool/generate_icons.py
 ```
 
-应用运行不依赖 Python。Android 自适应图标使用黑色背景和带安全边距的前景。
+应用运行不依赖 Python。Windows 和 Android 普通启动图标使用透明圆角。Android 自适应图标使用黑色背景和带安全边距的前景，由启动器裁切外形。

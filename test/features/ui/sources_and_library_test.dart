@@ -22,6 +22,8 @@ import 'package:reelva/features/metadata/infrastructure/tmdb_token_store.dart';
 import 'package:reelva/features/player/application/player_providers.dart';
 import 'package:reelva/features/player/domain/playback_resource.dart';
 import 'package:reelva/features/player/presentation/player_page.dart';
+import 'package:reelva/features/progress/application/progress_providers.dart';
+import 'package:reelva/features/progress/presentation/watch_history_page.dart';
 import 'package:reelva/features/sources/application/source_providers.dart';
 import 'package:reelva/features/sources/domain/media_source_adapter.dart';
 import 'package:reelva/features/sources/domain/source_models.dart';
@@ -622,10 +624,8 @@ void main() {
           ..movieSearchResults = [tmdbInterstellar]
           ..movieDetailsMap[157336] = tmdbInterstellar;
 
-        // 3. 从待匹配的候选作品（candidateWork.id）详情页进入
-        final testRouter = createRouter(
-          initialLocation: '/library/work/${candidateWork.id}',
-        );
+        // 3. 从观看历史的离线记录打开候选作品详情
+        final testRouter = createRouter(initialLocation: '/history');
         addTearDown(testRouter.dispose);
 
         try {
@@ -637,6 +637,22 @@ void main() {
                 nfoServiceProvider.overrideWithValue(FakeNfoService()),
                 tmdbTokenStoreProvider.overrideWithValue(fakeTokenStore),
                 tmdbClientProvider.overrideWithValue(fakeTmdbClient),
+                watchHistoryProvider.overrideWith(
+                  (ref) => Stream.value([
+                    WatchHistoryEntry(
+                      id: 1,
+                      entry: ContinueWatchingEntry(
+                        workId: candidateWork.id,
+                        title: candidateWork.title,
+                        position: const Duration(minutes: 5),
+                        duration: const Duration(hours: 1),
+                        available: false,
+                      ),
+                      completed: false,
+                      updatedAt: DateTime(2026, 10, 26),
+                    ),
+                  ]),
+                ),
                 platformOverrideProvider.overrideWithValue(
                   TargetPlatform.windows,
                 ),
@@ -645,6 +661,13 @@ void main() {
               child: MaterialApp.router(routerConfig: testRouter),
             ),
           );
+          await tester.pumpAndSettle();
+
+          final historyState = tester.state(find.byType(WatchHistoryPage));
+          final historyEntry = find.byKey(const Key('watch_history_play_1'));
+          await tester.tap(historyEntry);
+          await tester.pumpAndSettle();
+          await tester.pump(const Duration(seconds: 4));
           await tester.pumpAndSettle();
 
           // 4. 确认在候选作品详情页，点击“手动匹配”
@@ -699,7 +722,10 @@ void main() {
           // 7. 观测端到端行为：
           // (a) 弹窗关闭，路由自动切换并导航至规范作品详情页（/library/work/$canonicalId）
           expect(find.byType(ManualMatchPage), findsNothing);
-          expect(find.byType(WorkDetailsPage), findsOneWidget);
+          expect(
+            tester.widget<WorkDetailsPage>(find.byType(WorkDetailsPage)).workId,
+            canonicalId,
+          );
 
           // (b) 两个版本文件完整保留于 canonical 作品下
           final canonicalDetails = await tester.runAsync(
@@ -733,6 +759,15 @@ void main() {
           );
           expect(afterAutoWork!.work.title, '星际穿越');
           expect(afterAutoWork.work.metadataLocked, isTrue);
+
+          // (e) 系统返回直接回到原来的观看历史，离线记录仍可打开。
+          await tester.binding.handlePopRoute();
+          await tester.pumpAndSettle();
+          expect(
+            tester.state(find.byType(WatchHistoryPage)),
+            same(historyState),
+          );
+          expect(historyEntry.hitTestable(), findsOneWidget);
         } finally {
           await tester.pumpWidget(const SizedBox.shrink());
           await tester.pump(Duration.zero);

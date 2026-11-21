@@ -12,6 +12,7 @@ Dependencies:
 Workflow:
     Directly renders assets/Reelva.svg via resvg with geometric precision
     to preserve mathematical circular arcs.
+    Windows and legacy Android icons have antialiased transparent corners.
     Adaptive foreground insets the rendered brand mark into a transparent
     canvas with safe margins, preserving the original black background and
     cutout to blend with @color/reelva_icon_background.
@@ -20,7 +21,7 @@ Workflow:
 import io
 import sys
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageChops, ImageDraw
 import resvg_py
 
 LEGACY_SIZES = {
@@ -49,6 +50,7 @@ ICO_SIZES = [
     (256, 256),
 ]
 
+CORNER_RADIUS_RATIO = 0.22
 ADAPTIVE_SCALE = 0.72  # Safe inset inside adaptive icon canvas
 
 
@@ -61,6 +63,21 @@ def render_svg(svg_path: Path, width: int, height: int) -> Image.Image:
         shape_rendering="geometric_precision",
     )
     return Image.open(io.BytesIO(png_bytes))
+
+
+def generate_rounded_icon(svg_path: Path, size: int) -> Image.Image:
+    """Clips the rendered artwork with an antialiased rounded rectangle."""
+    icon = render_svg(svg_path, size, size).convert("RGBA")
+    mask_size = size * 8
+    mask = Image.new("L", (mask_size, mask_size))
+    ImageDraw.Draw(mask).rounded_rectangle(
+        (0, 0, mask_size - 1, mask_size - 1),
+        radius=round(mask_size * CORNER_RADIUS_RATIO),
+        fill=255,
+    )
+    mask = mask.resize(icon.size, Image.Resampling.BOX)
+    icon.putalpha(ImageChops.multiply(icon.getchannel("A"), mask))
+    return icon
 
 
 def generate_adaptive_foreground(svg_path: Path, size: int, scale: float) -> Image.Image:
@@ -87,10 +104,7 @@ def main():
     windows_res_dir.mkdir(parents=True, exist_ok=True)
     ico_dest = windows_res_dir / "app_icon.ico"
 
-    ico_images = [
-        render_svg(svg_path, width, height)
-        for width, height in ICO_SIZES
-    ]
+    ico_images = [generate_rounded_icon(svg_path, size) for size, _ in ICO_SIZES]
     ico_base = ico_images[-1]  # 256x256 image
     ico_base.save(
         ico_dest,
@@ -106,7 +120,7 @@ def main():
         density_dir = res_dir / f"mipmap-{density}"
         density_dir.mkdir(parents=True, exist_ok=True)
         dest = density_dir / "ic_launcher.png"
-        img = render_svg(svg_path, size, size)
+        img = generate_rounded_icon(svg_path, size)
         img.save(dest, format="PNG", optimize=True)
         generated_files.append((dest, dest.stat().st_size))
 

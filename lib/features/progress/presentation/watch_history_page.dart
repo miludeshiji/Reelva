@@ -22,21 +22,22 @@ class _WatchHistoryPageState extends ConsumerState<WatchHistoryPage> {
 
   Future<void> _openEntry(WatchHistoryEntry history) async {
     if (_openingEntryId != null) return;
-    setState(() => _openingEntryId = history.id);
     final entry = history.entry;
+    final fileId = entry.fileId;
+    if (!entry.available || fileId == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('媒体文件当前不可用，已打开作品详情进行恢复')));
+      context.push<void>('/library/work/${entry.workId}');
+      return;
+    }
+
+    setState(() => _openingEntryId = history.id);
     try {
-      if (!entry.available || entry.fileId == null) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('媒体文件当前不可用，已打开作品详情进行恢复')));
-        await context.push<void>('/library/work/${entry.workId}');
-      } else {
-        final resource = await ref
-            .read(sourceControllerProvider.notifier)
-            .resolvePlayback(entry.fileId!);
-        if (!mounted) return;
-        await context.push<void>('/player', extra: resource);
-      }
+      final resource = await ref
+          .read(sourceControllerProvider.notifier)
+          .resolvePlayback(fileId);
+      if (!mounted) return;
+      await context.push<void>('/player', extra: resource);
     } catch (error, stack) {
       AppLogger.instance.error('打开观看历史失败', error: error, stackTrace: stack);
       if (!mounted) return;
