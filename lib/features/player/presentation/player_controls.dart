@@ -36,7 +36,6 @@ class PlayerControls extends StatefulWidget {
     this.onNextEpisode,
     this.onShowPlaylist,
     this.playlistAnchorKey,
-    this.danmakuToggle,
     this.onShowDanmaku,
   });
 
@@ -54,7 +53,6 @@ class PlayerControls extends StatefulWidget {
   final VoidCallback? onNextEpisode;
   final VoidCallback? onShowPlaylist;
   final GlobalKey? playlistAnchorKey;
-  final Widget? danmakuToggle;
   final VoidCallback? onShowDanmaku;
 
   @override
@@ -429,7 +427,6 @@ class _PlayerControlsState extends State<PlayerControls> {
                 Wrap(
                   alignment: WrapAlignment.end,
                   children: [
-                    if (widget.danmakuToggle != null) widget.danmakuToggle!,
                     more,
                     if (!mobile) volume,
                     if (!mobile) fullscreen,
@@ -442,12 +439,7 @@ class _PlayerControlsState extends State<PlayerControls> {
                   children: [
                     Row(
                       children: [
-                        Expanded(
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: widget.danmakuToggle,
-                          ),
-                        ),
+                        const Spacer(),
                         SizedBox(width: mobile ? 224 : 136),
                         Expanded(
                           child: Row(

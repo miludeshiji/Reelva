@@ -1722,27 +1722,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage>
               : null,
           onShowPlaylist: hasResource ? _showPlaylist : null,
           playlistAnchorKey: _playlistAnchorKey,
-          danmakuToggle: hasResource
-              ? Consumer(
-                  builder: (context, ref, _) {
-                    final danmaku = ref.watch(danmakuControllerProvider);
-                    return ListenableBuilder(
-                      listenable: danmaku,
-                      builder: (context, _) {
-                        final enabled = danmaku.settings.enabled;
-                        return IconButton(
-                          key: const Key('player_danmaku_toggle'),
-                          tooltip: enabled ? '关闭弹幕' : '开启弹幕',
-                          isSelected: enabled,
-                          icon: const Icon(Icons.speaker_notes_off_rounded),
-                          selectedIcon: const Icon(Icons.speaker_notes_rounded),
-                          onPressed: danmaku.toggleEnabled,
-                        );
-                      },
-                    );
-                  },
-                )
-              : null,
           onShowDanmaku: hasResource ? _showDanmaku : null,
           onInteractionChanged: (interacting) {
             if (!mounted) return;
